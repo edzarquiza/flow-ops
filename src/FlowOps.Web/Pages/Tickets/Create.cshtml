@@ -1,0 +1,60 @@
+@page
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.Pages.Tickets.CreateModel
+@{
+    ViewData["Title"] = "New ticket";
+}
+<h1>New ticket</h1>
+
+<div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
+
+<form method="post">
+    <div class="field">
+        <label asp-for="Input.Title">Title</label>
+        <input asp-for="Input.Title" aria-describedby="title-error" />
+        <span id="title-error" class="field-validation-error" asp-validation-for="Input.Title"></span>
+    </div>
+    <div class="field">
+        <label asp-for="Input.Description">Description</label>
+        <textarea asp-for="Input.Description" rows="6" aria-describedby="description-error"></textarea>
+        <span id="description-error" class="field-validation-error" asp-validation-for="Input.Description"></span>
+    </div>
+    <div class="field">
+        <label asp-for="Input.WorkType">Work type</label>
+        <select asp-for="Input.WorkType" asp-items="Html.GetEnumSelectList<WorkType>()"></select>
+        <span class="field-validation-error" asp-validation-for="Input.WorkType"></span>
+    </div>
+    <div class="field">
+        <label asp-for="Input.Priority">Priority</label>
+        <select asp-for="Input.Priority" asp-items="Html.GetEnumSelectList<Priority>()"></select>
+        <span class="field-validation-error" asp-validation-for="Input.Priority"></span>
+    </div>
+    <div class="field">
+        @* Phase 11 (C-3): one selector, grouped by team via native <optgroup> — no JavaScript,
+           no cascading round-trip. Only teams/categories in Model.Options (the caller's own
+           eligible teams) appear; TeamId itself is derived server-side from the chosen category
+           in CreateModel.OnPostAsync, per TICKET-INV-02. *@
+        <label asp-for="Input.CategoryId">Category</label>
+        <select asp-for="Input.CategoryId" aria-describedby="category-error">
+            <option value="">Select a category</option>
+            @foreach (var team in Model.Options.Teams)
+            {
+                <optgroup label="@team.TeamName">
+                    @foreach (var category in team.Categories)
+                    {
+                        <option value="@category.CategoryId">@category.CategoryName</option>
+                    }
+                </optgroup>
+            }
+        </select>
+        <span id="category-error" class="field-validation-error" asp-validation-for="Input.CategoryId"></span>
+    </div>
+    <div class="field">
+        <label asp-for="Input.ProjectId">Project (optional)</label>
+        <input asp-for="Input.ProjectId" type="number" min="1" />
+        <span class="field-validation-error" asp-validation-for="Input.ProjectId"></span>
+    </div>
+    <button type="submit" class="btn-primary">Create ticket</button>
+</form>
+
+<p><a asp-page="/Tickets/Index">Back to work queue</a></p>

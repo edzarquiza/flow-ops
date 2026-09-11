@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.Application.Tests</RootNamespace>
+    <AssemblyName>FlowOps.Application.Tests</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Real PostgreSQL via Testcontainers, per CLAUDE.md §15 — no in-memory/SQLite provider.
+         Moved here from the (now-removed) FlowOps.Infrastructure.Tests project, which did not
+         match CLAUDE.md §3.1's three-test-project contract (Domain/Application/Web). -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned explicitly to match FlowOps.Infrastructure's version: Testcontainers.PostgreSql
+         4.15.0 otherwise resolves a different transitive Microsoft.EntityFrameworkCore.* patch
+         version than FlowOps.Infrastructure references, producing an MSB3277 warning. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Real PostgreSQL integration tests live in Persistence/ (moved from the removed
+      FlowOps.Infrastructure.Tests project — see git history / Phase 3A reconciliation report).
+      FlowOps.Infrastructure is reachable transitively through FlowOps.Application's own
+      reference to it (ADR-0002); no direct ProjectReference to Infrastructure is added here.
+    -->
+    <ProjectReference Include="..\..\src\FlowOps.Application\FlowOps.Application.csproj" />
+  </ItemGroup>
+
+</Project>

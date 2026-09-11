@@ -1,0 +1,49 @@
+# Local development only (CLAUDE.md §17). Two services: PostgreSQL, and the FlowOps application
+# container itself (Phase 13). Host-based `dotnet run` is unaffected by any of this — it keeps
+# using localhost:5433 exactly as before; only the containerized app service uses the internal
+# postgres:5432 address (docs/deployment.md explains both paths).
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: flowops-postgres-dev
+    restart: unless-stopped
+    environment:
+      # Development-only credentials, never reused anywhere else (CLAUDE.md §17).
+      POSTGRES_DB: flowops_dev
+      POSTGRES_USER: flowops
+      POSTGRES_PASSWORD: flowops_dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - flowops-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowops -d flowops_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Phase 13: the application container. Runs as ASPNETCORE_ENVIRONMENT=Production deliberately —
+  # this exercises the app's real production configuration path (database-backed Data Protection
+  # keys, no CookieSecurePolicy.Always surprises) inside local Docker, without this being an actual
+  # production deployment (Render/Neon remain Phase 15). Same development-only credentials as
+  # `postgres` above, addressed by service name rather than the host-mapped port.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flowops-app-dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # CLAUDE.md §7.3 / ADR-0007: this container is exactly the case that decision exists for — a
+      # freshly created Postgres volume has no schema until something applies it.
+      FlowOps__Database__ApplyMigrationsOnStartup: "true"
+      ConnectionStrings__FlowOps: Host=postgres;Port=5432;Database=flowops_dev;Username=flowops;Password=flowops_dev_password
+    ports:
+      - "8080:8080"
+
+volumes:
+  flowops-postgres-data:

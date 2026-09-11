@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.Infrastructure</RootNamespace>
+    <AssemblyName>FlowOps.Infrastructure</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FlowOps.Domain\FlowOps.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned explicitly and identically across every project that touches EF Core
+         (Infrastructure, Application, Application.Tests, Web, Web.Tests) so no project's restore
+         floats to a different Microsoft.EntityFrameworkCore.* patch version than another — the
+         source of an MSB3277 assembly-version-conflict warning otherwise. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Phase 4: CLAUDE.md §7.1 — FlowOpsDbContext inherits IdentityDbContext<ApplicationUser,
+         ApplicationRole, Guid>. -->
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
+    <!-- CLAUDE.md §12: FlowOpsDbContext implements IDataProtectionKeyContext so data protection
+         keys persist to the database. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

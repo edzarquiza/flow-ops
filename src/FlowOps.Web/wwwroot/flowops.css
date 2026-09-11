@@ -1,0 +1,400 @@
+/* FlowOps — Phase 11 visual foundation.
+   Restrained, operational, calm. No gradients, no animation, no decorative elements.
+   Four semantic tones only (neutral / info / warning / danger), reused consistently across
+   status, priority, SLA, and attention severity — every one of them is always paired with the
+   text CLAUDE.md §22 requires; none of the classes below is ever the only signal on the page. */
+
+:root {
+  --fo-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --fo-text: #1a1d21;
+  --fo-text-muted: #565c63;
+  --fo-bg: #ffffff;
+  --fo-bg-subtle: #f4f5f6;
+  --fo-border: #cdd2d8;
+  --fo-border-strong: #8a9099;
+  --fo-link: #0b4a8f;
+  --fo-focus: #0b4a8f;
+
+  --fo-neutral-bg: #eceef0;
+  --fo-neutral-text: #33383e;
+  --fo-neutral-border: #b7bcc2;
+
+  --fo-info-bg: #e4edf7;
+  --fo-info-text: #0b4a8f;
+  --fo-info-border: #9fbfe0;
+
+  --fo-warning-bg: #fbeed6;
+  --fo-warning-text: #7a4a05;
+  --fo-warning-border: #e6bd7a;
+
+  --fo-danger-bg: #f8dfdd;
+  --fo-danger-text: #8a2420;
+  --fo-danger-border: #e3a29e;
+
+  --fo-space-1: 0.25rem;
+  --fo-space-2: 0.5rem;
+  --fo-space-3: 1rem;
+  --fo-space-4: 1.5rem;
+  --fo-space-5: 2rem;
+
+  --fo-radius: 3px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: var(--fo-font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fo-text);
+  background: var(--fo-bg);
+}
+
+/* ---- Skip link: hidden until focused, per CLAUDE.md §22 ---- */
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--fo-text);
+  color: #fff;
+  padding: var(--fo-space-2) var(--fo-space-3);
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: var(--fo-space-2);
+  top: var(--fo-space-2);
+}
+
+/* ---- Focus states: strengthened, never removed ---- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--fo-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Header / primary navigation ---- */
+.app-header {
+  border-bottom: 1px solid var(--fo-border);
+  background: var(--fo-bg-subtle);
+}
+
+.app-header__bar {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--fo-space-3) var(--fo-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fo-space-3);
+}
+
+.app-header__brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--fo-text);
+  text-decoration: none;
+}
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fo-space-3);
+  margin-left: auto;
+}
+
+.app-nav a {
+  color: var(--fo-text);
+  text-decoration: none;
+  padding: var(--fo-space-1) var(--fo-space-1);
+  border-bottom: 2px solid transparent;
+}
+
+.app-nav a:hover,
+.app-nav a:focus-visible {
+  border-bottom-color: var(--fo-link);
+}
+
+.app-header__account {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+  color: var(--fo-text-muted);
+  font-size: 0.9rem;
+}
+
+.app-header__account form {
+  margin: 0;
+}
+
+/* ---- Page shell ---- */
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--fo-space-4) var(--fo-space-3) var(--fo-space-5);
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 var(--fo-space-3);
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: var(--fo-space-4) 0 var(--fo-space-2);
+  border-bottom: 1px solid var(--fo-border);
+  padding-bottom: var(--fo-space-1);
+}
+
+/* ---- Definition-list detail grids (ticket detail, dashboard KPIs) ---- */
+dl.detail-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--fo-space-1) var(--fo-space-3);
+  margin: 0;
+}
+
+dl.detail-grid dt {
+  color: var(--fo-text-muted);
+  font-weight: 600;
+}
+
+dl.detail-grid dd {
+  margin: 0;
+}
+
+/* ---- KPI summary ---- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--fo-space-3);
+  margin: var(--fo-space-2) 0;
+}
+
+.kpi-card {
+  border: 1px solid var(--fo-border);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-3);
+}
+
+.kpi-card h3 {
+  margin: 0 0 var(--fo-space-1);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fo-text-muted);
+}
+
+.kpi-card a {
+  color: var(--fo-link);
+}
+
+.kpi-card__value {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+/* ---- At-risk preview (dashboard) ---- */
+.attention-list {
+  list-style: none;
+  margin: var(--fo-space-2) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fo-space-2);
+}
+
+.attention-list li {
+  border: 1px solid var(--fo-border);
+  border-left: 4px solid var(--fo-danger-border);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-2) var(--fo-space-3);
+}
+
+.attention-list__title a {
+  font-weight: 600;
+}
+
+.attention-list__reason {
+  color: var(--fo-text-muted);
+  font-size: 0.9rem;
+}
+
+/* ---- Tables ---- */
+.table-responsive {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+caption {
+  text-align: left;
+  color: var(--fo-text-muted);
+  padding-bottom: var(--fo-space-2);
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--fo-space-2);
+  border-bottom: 1px solid var(--fo-border);
+  vertical-align: top;
+}
+
+thead th {
+  border-bottom: 2px solid var(--fo-border-strong);
+  white-space: nowrap;
+}
+
+/* ---- Semantic status/priority/SLA/severity tokens ----
+   Always applied alongside the enum's own text (see every .cshtml file) — never a replacement
+   for it, per CLAUDE.md §22's "never by colour alone". */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--fo-radius);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.badge-neutral { background: var(--fo-neutral-bg); color: var(--fo-neutral-text); border-color: var(--fo-neutral-border); }
+.badge-info { background: var(--fo-info-bg); color: var(--fo-info-text); border-color: var(--fo-info-border); }
+.badge-warning { background: var(--fo-warning-bg); color: var(--fo-warning-text); border-color: var(--fo-warning-border); }
+.badge-danger { background: var(--fo-danger-bg); color: var(--fo-danger-text); border-color: var(--fo-danger-border); }
+
+/* ---- Forms ---- */
+form {
+  margin: var(--fo-space-2) 0;
+}
+
+.field {
+  margin-bottom: var(--fo-space-3);
+  max-width: 32rem;
+}
+
+.field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--fo-space-1);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  width: 100%;
+  padding: var(--fo-space-2);
+  border: 1px solid var(--fo-border-strong);
+  border-radius: var(--fo-radius);
+  font: inherit;
+  background: var(--fo-bg);
+  color: var(--fo-text);
+}
+
+input[type="checkbox"] {
+  margin-right: var(--fo-space-1);
+}
+
+.field-validation-error,
+.validation-summary-errors {
+  color: var(--fo-danger-text);
+}
+
+.validation-summary-errors ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.validation-summary-valid {
+  display: none;
+}
+
+/* ---- Buttons ---- */
+button,
+.btn {
+  font: inherit;
+  padding: var(--fo-space-2) var(--fo-space-3);
+  border: 1px solid var(--fo-border-strong);
+  border-radius: var(--fo-radius);
+  background: var(--fo-bg-subtle);
+  color: var(--fo-text);
+  cursor: pointer;
+}
+
+button:hover,
+.btn:hover {
+  background: var(--fo-neutral-bg);
+}
+
+.btn-primary {
+  background: var(--fo-link);
+  border-color: var(--fo-link);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #093a70;
+}
+
+/* ---- Action groups (ticket detail workflow forms) ---- */
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fo-space-3);
+  align-items: flex-start;
+}
+
+.action-group form {
+  border: 1px solid var(--fo-border);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-3);
+  min-width: 14rem;
+}
+
+/* ---- Empty states ---- */
+.empty-state {
+  color: var(--fo-text-muted);
+  border: 1px dashed var(--fo-border);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-3);
+}
+
+/* ---- Responsive: tablet and narrower ---- */
+@media (max-width: 768px) {
+  .app-header__bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-nav {
+    margin-left: 0;
+  }
+
+  dl.detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  dl.detail-grid dt {
+    margin-top: var(--fo-space-2);
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

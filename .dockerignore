@@ -1,0 +1,38 @@
+# Phase 13 (CLAUDE.md §17): keep the build context to exactly what the Dockerfile needs — the
+# solution file and the four application projects' source. Everything else (tests, docs, VCS
+# metadata, local build output, editor state) never reaches the image, let alone a layer.
+
+.git
+.github
+
+# Local build output — always rebuilt inside the image; copying it in would risk stale binaries
+# and only bloats the build context.
+**/bin/
+**/obj/
+
+# Test projects are never part of the runtime image.
+tests/
+
+# Documentation and repository-management files — not needed to build or run the application.
+docs/
+*.md
+CLAUDE.md
+
+# Local development artifacts.
+docker-compose.yml
+.dockerignore
+Dockerfile
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Local-only configuration that must never be baked into an image (CLAUDE.md §17: "no
+# appsettings.Production.json with values, no .env in the image"). appsettings.Development.json
+# carries the local-only Postgres password (already reviewed/approved as dev-only) — it has no
+# reason to exist inside a Production-environment container, so it is excluded from the build
+# context entirely rather than merely unused at runtime.
+.env
+.env.*
+**/appsettings.Development.json

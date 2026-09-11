@@ -1,0 +1,256 @@
+@page "{id:int}"
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.Pages.Tickets.DetailsModel
+@{
+    ViewData["Title"] = $"{Model.Ticket.Reference} — {Model.Ticket.Title}";
+}
+<h1>@Model.Ticket.Reference — @Model.Ticket.Title</h1>
+
+<div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
+
+<h2>Details</h2>
+<dl class="detail-grid">
+    <dt>Status</dt>
+    <dd><span class="badge badge-neutral">@Model.Ticket.Status</span></dd>
+
+    <dt>Priority</dt>
+    <dd><span class="badge badge-neutral">@Model.Ticket.Priority</span></dd>
+
+    <dt>Work type</dt>
+    <dd>@Model.Ticket.WorkType</dd>
+
+    <dt>Team</dt>
+    <dd>@Model.Ticket.TeamName</dd>
+
+    <dt>Category</dt>
+    <dd>@Model.Ticket.CategoryName</dd>
+
+    <dt>Project</dt>
+    <dd>@(Model.Ticket.ProjectName ?? "None")</dd>
+
+    <dt>Requester</dt>
+    <dd>@Model.Ticket.RequesterDisplayName</dd>
+
+    <dt>Assignee</dt>
+    <dd>@(Model.Ticket.AssigneeDisplayName ?? "Unassigned")</dd>
+
+    <dt>SLA status</dt>
+    <dd>
+        <span class="badge badge-neutral">@Model.Ticket.Sla.Status</span>
+        @if (FlowOps.Web.SlaDisplay.Remaining(Model.Ticket.Sla) is { } remaining)
+        {
+            @($" — {remaining}")
+        }
+    </dd>
+
+    <dt>SLA due</dt>
+    <dd>
+        <time datetime="@Model.Ticket.Sla.DueAt.ToString("O")"
+              title="@Model.Ticket.Sla.DueAt.ToString("u")">
+            @Model.Ticket.Sla.DueAt.ToString("yyyy-MM-dd HH:mm")
+        </time>
+    </dd>
+
+    <dt>SLA target</dt>
+    <dd>@Model.Ticket.Sla.TargetMinutes minutes</dd>
+
+    <dt>Paused time</dt>
+    <dd>@Model.Ticket.Sla.PausedMinutes minutes</dd>
+
+    <dt>Created</dt>
+    <dd>
+        <time datetime="@Model.Ticket.CreatedAt.ToString("O")"
+              title="@Model.Ticket.CreatedAt.ToString("u")">
+            @Model.Ticket.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+        </time>
+    </dd>
+
+    <dt>Last updated</dt>
+    <dd>
+        <time datetime="@Model.Ticket.UpdatedAt.ToString("O")"
+              title="@Model.Ticket.UpdatedAt.ToString("u")">
+            @Model.Ticket.UpdatedAt.ToString("yyyy-MM-dd HH:mm")
+        </time>
+    </dd>
+
+    <dt>Due date</dt>
+    <dd>
+        @if (Model.Ticket.DueDate is { } dueDate)
+        {
+            <time datetime="@dueDate.ToString("O")" title="@dueDate.ToString("u")">
+                @dueDate.ToString("yyyy-MM-dd HH:mm")
+            </time>
+        }
+        else
+        {
+            @:Not set
+        }
+    </dd>
+</dl>
+
+<h2>Description</h2>
+<p>@Model.Ticket.Description</p>
+
+<h2>Actions</h2>
+@if (!Model.Actions.Any)
+{
+    <p class="empty-state">No workflow actions are available to you for this ticket right now.</p>
+}
+else
+{
+    @* Each form posts to its own named handler; antiforgery is on by default for Razor
+       Pages forms and is deliberately not disabled (CLAUDE.md §12). *@
+    <div class="action-group">
+        @if (Model.Actions.Assign)
+        {
+            <form method="post" asp-page-handler="Assign" asp-route-id="@Model.Ticket.Id">
+                <button type="submit">Assign to me</button>
+            </form>
+        }
+        @if (Model.Actions.StartWork)
+        {
+            <form method="post" asp-page-handler="StartWork" asp-route-id="@Model.Ticket.Id">
+                <button type="submit">Start work</button>
+            </form>
+        }
+        @if (Model.Actions.Unassign)
+        {
+            <form method="post" asp-page-handler="Unassign" asp-route-id="@Model.Ticket.Id">
+                <button type="submit">Unassign</button>
+            </form>
+        }
+        @if (Model.Actions.PutOnHold)
+        {
+            <form method="post" asp-page-handler="PutOnHold" asp-route-id="@Model.Ticket.Id">
+                <div class="field">
+                    <label asp-for="Input.PendingReason">Reason for putting on hold</label>
+                    <input asp-for="Input.PendingReason" aria-describedby="hold-error" />
+                    <span id="hold-error" class="field-validation-error" asp-validation-for="Input.PendingReason"></span>
+                </div>
+                <button type="submit">Put on hold</button>
+            </form>
+        }
+        @if (Model.Actions.Resume)
+        {
+            <form method="post" asp-page-handler="Resume" asp-route-id="@Model.Ticket.Id">
+                <button type="submit">Resume</button>
+            </form>
+        }
+        @if (Model.Actions.Resolve)
+        {
+            <form method="post" asp-page-handler="Resolve" asp-route-id="@Model.Ticket.Id">
+                <div class="field">
+                    <label asp-for="Input.ResolutionCode">Resolution</label>
+                    <select asp-for="Input.ResolutionCode" asp-items="Html.GetEnumSelectList<Resolution>()"></select>
+                </div>
+                <div class="field">
+                    <label asp-for="Input.ResolutionNotes">Resolution notes</label>
+                    <textarea asp-for="Input.ResolutionNotes" rows="3" aria-describedby="resolve-error"></textarea>
+                    <span id="resolve-error" class="field-validation-error" asp-validation-for="Input.ResolutionNotes"></span>
+                </div>
+                <button type="submit">Resolve</button>
+            </form>
+        }
+        @if (Model.Actions.Close)
+        {
+            <form method="post" asp-page-handler="Close" asp-route-id="@Model.Ticket.Id">
+                <button type="submit">Close</button>
+            </form>
+        }
+        @if (Model.Actions.Reopen)
+        {
+            <form method="post" asp-page-handler="Reopen" asp-route-id="@Model.Ticket.Id">
+                <div class="field">
+                    <label asp-for="Input.ReopenReason">Reason for reopening</label>
+                    <input asp-for="Input.ReopenReason" aria-describedby="reopen-error" />
+                    <span id="reopen-error" class="field-validation-error" asp-validation-for="Input.ReopenReason"></span>
+                </div>
+                <button type="submit">Reopen</button>
+            </form>
+        }
+    </div>
+}
+
+@if (Model.Actions.Comment)
+{
+    <h2>Add a comment</h2>
+    <form method="post" asp-page-handler="AddComment" asp-route-id="@Model.Ticket.Id">
+        <div class="field">
+            <label asp-for="Input.CommentBody">Comment</label>
+            <textarea asp-for="Input.CommentBody" rows="3" aria-describedby="comment-error"></textarea>
+            <span id="comment-error" class="field-validation-error" asp-validation-for="Input.CommentBody"></span>
+        </div>
+        <div class="field">
+            <input asp-for="Input.CommentIsInternal" type="checkbox" />
+            <label asp-for="Input.CommentIsInternal">Internal comment (not visible to Viewers)</label>
+        </div>
+        <button type="submit">Add comment</button>
+    </form>
+}
+
+@* Heading text kept as "History" (Phase 6) even though this is now the AUDIT-RULE-06
+   merged timeline: TicketEvent (audit) and TicketComment (human content) are stored and
+   queried separately but rendered together here, newest first. An internal comment never
+   reaches this page for a caller CanSeeInternalComments denies — it was excluded before
+   this list was built, not hidden here. *@
+<h2>History</h2>
+@if (Model.History.Count == 0)
+{
+    <p class="empty-state">No history has been recorded for this ticket yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table>
+            <caption>Audit history, most recent first</caption>
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">By</th>
+                    <th scope="col">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Model.History)
+                {
+                    <tr>
+                        <td>
+                            <time datetime="@entry.OccurredAt.ToString("O")"
+                                  title="@entry.OccurredAt.ToString("u")">
+                                @entry.OccurredAt.ToString("yyyy-MM-dd HH:mm")
+                            </time>
+                        </td>
+                        @if (entry.Kind == FlowOps.Application.Tickets.TicketTimelineEntryKind.Comment)
+                        {
+                            <th scope="row">@(entry.IsInternal == true ? "Internal comment" : "Comment")</th>
+                            <td>@entry.ActorDisplayName</td>
+                            <td>@entry.Body</td>
+                        }
+                        else
+                        {
+                            <th scope="row">@entry.EventType</th>
+                            <td>@entry.ActorDisplayName</td>
+                            <td>
+                                @if (entry.Field is not null)
+                                {
+                                    @($"{entry.Field}: {entry.OldValue ?? "none"} → {entry.NewValue ?? "none"}")
+                                }
+                                else if (entry.Note is not null)
+                                {
+                                    @entry.Note
+                                }
+                                else
+                                {
+                                    @:—
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<p><a asp-page="/Tickets/Index">Back to work queue</a></p>

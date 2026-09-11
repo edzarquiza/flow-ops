@@ -1,0 +1,109 @@
+@page
+@using FlowOps.Application.Tickets
+@model FlowOps.Web.Pages.Tickets.IndexModel
+@{
+    ViewData["Title"] = "Work queue";
+}
+<h1>Work queue</h1>
+
+@* Phase 10: the dashboard's KPI cards link here with a closed, named filter (never a
+   general search) — CLAUDE.md §22's "clickable through to the filtered work it
+   represents". Shown as text, with a link back to the unfiltered queue. *@
+@if (Model.Filter != TicketQueueFilter.None)
+{
+    <p>
+        Filtered to:
+        @(Model.Filter switch
+        {
+            TicketQueueFilter.OpenWork => "Open Work",
+            TicketQueueFilter.Overdue => "Overdue",
+            TicketQueueFilter.ResolvedRecently => "Resolved in the last 90 days",
+            _ => Model.Filter.ToString(),
+        })
+        — <a asp-page="/Tickets/Index">clear filter</a>
+    </p>
+}
+
+@* Navigation only — this queue's own rows deliberately carry no attention signals in
+   Phase 8; see docs/database.md for why that display is deferred to Phase 11. *@
+<p><a asp-page="/Tickets/AtRisk">At-risk work</a></p>
+
+@if (Model.CanCreateTicket)
+{
+    <p><a asp-page="/Tickets/Create">New ticket</a></p>
+}
+
+@if (Model.Queue.TotalCount == 0)
+{
+    <p class="empty-state">
+        @(Model.Filter == TicketQueueFilter.None
+            ? "No tickets are visible to you right now."
+            : "No tickets match this filter right now.")
+    </p>
+}
+else
+{
+    <div class="table-responsive">
+        <table>
+            <caption>
+                Showing page @Model.Queue.PageNumber of @Model.Queue.TotalPages
+                (@Model.Queue.TotalCount ticket@(Model.Queue.TotalCount == 1 ? "" : "s"))
+            </caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Assignee</th>
+                    <th scope="col">SLA</th>
+                    <th scope="col">Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ticket in Model.Queue.Items)
+                {
+                    <tr>
+                        <th scope="row">
+                            <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference</a>
+                        </th>
+                        <td>@ticket.Title</td>
+                        <td><span class="badge badge-neutral">@ticket.Priority</span></td>
+                        <td><span class="badge badge-neutral">@ticket.Status</span></td>
+                        <td>@ticket.TeamName</td>
+                        <td>@ticket.CategoryName</td>
+                        <td>@(ticket.AssigneeDisplayName ?? "Unassigned")</td>
+                        @* Status is always spelled out in text, never conveyed by colour
+                           alone (CLAUDE.md §22), with the absolute deadline in the title. *@
+                        <td title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                            <span class="badge badge-neutral">@ticket.Sla.Status</span>@(FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining ? $" — {remaining}" : "")
+                        </td>
+                        <td>
+                            <time datetime="@ticket.CreatedAt.ToString("O")"
+                                  title="@ticket.CreatedAt.ToString("u")">
+                                @ticket.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                            </time>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav aria-label="Work queue pagination">
+        @if (Model.Queue.HasPreviousPage)
+        {
+            <a asp-page="/Tickets/Index" asp-route-pageNumber="@(Model.Queue.PageNumber - 1)"
+               asp-route-filter="@Model.Filter" rel="prev">Previous page</a>
+        }
+        @if (Model.Queue.HasNextPage)
+        {
+            <a asp-page="/Tickets/Index" asp-route-pageNumber="@(Model.Queue.PageNumber + 1)"
+               asp-route-filter="@Model.Filter" rel="next">Next page</a>
+        }
+    </nav>
+}
+
+<p><a asp-page="/Index">Back to home</a></p>

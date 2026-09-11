@@ -1,0 +1,21 @@
+@page
+@model FlowOps.Web.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+<h1>Sign in</h1>
+<div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
+<form method="post">
+    @Html.AntiForgeryToken()
+    <div class="field">
+        <label asp-for="Input.Email">Email</label>
+        <input asp-for="Input.Email" autocomplete="username" aria-describedby="email-error" />
+        <span id="email-error" class="field-validation-error" asp-validation-for="Input.Email"></span>
+    </div>
+    <div class="field">
+        <label asp-for="Input.Password">Password</label>
+        <input asp-for="Input.Password" autocomplete="current-password" aria-describedby="password-error" />
+        <span id="password-error" class="field-validation-error" asp-validation-for="Input.Password"></span>
+    </div>
+    <button type="submit" class="btn-primary">Sign in</button>
+</form>

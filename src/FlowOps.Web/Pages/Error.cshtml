@@ -1,0 +1,9 @@
+@page
+@model FlowOps.Web.Pages.ErrorModel
+@{
+    ViewData["Title"] = "Something went wrong";
+}
+<h1>Something went wrong</h1>
+<p>An unexpected error occurred. Try again, and if it keeps happening, report the reference below.</p>
+<p>Reference: <code>@Model.RequestId</code></p>
+<p><a asp-page="/Index">Back to home</a></p>

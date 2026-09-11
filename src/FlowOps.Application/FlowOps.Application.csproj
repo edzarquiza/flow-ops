@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.Application</RootNamespace>
+    <AssemblyName>FlowOps.Application</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Layered architecture per ADR-0002: Application references Infrastructure directly
+      (injects FlowOpsDbContext) — no IRepository<T>/IUnitOfWork seam. No PackageReference of
+      its own yet: Phase 3A is structural only, no use cases implemented.
+    -->
+    <ProjectReference Include="..\FlowOps.Domain\FlowOps.Domain.csproj" />
+    <ProjectReference Include="..\FlowOps.Infrastructure\FlowOps.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned to match FlowOps.Infrastructure exactly — see the note there. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

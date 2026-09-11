@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.Web</RootNamespace>
+    <AssemblyName>FlowOps.Web</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Web depends only on Application, per CLAUDE.md §3.1 — it never references
+         Infrastructure directly in a ProjectReference; FlowOpsDbContext is reached transitively
+         through Application's own reference to Infrastructure (ADR-0002), and is now used in
+         Program.cs's composition root to register the DbContext and the /health/ready check. -->
+    <ProjectReference Include="..\FlowOps.Application\FlowOps.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned explicitly to match FlowOps.Infrastructure's version: something in the
+         restore graph otherwise resolves a lower transitive Microsoft.EntityFrameworkCore.*
+         version here, producing an MSB3277 assembly-version-conflict warning. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <!-- CLAUDE.md §13: "/health/ready (database connectivity) via AddHealthChecks" — this is
+         Microsoft's own first-party EF Core health check integration (AddDbContextCheck<T>),
+         not a third-party dependency. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
+    <!-- CLAUDE.md §12: "Data protection keys persisted to the database (PersistKeysToDbContext)."
+         Without this, every process restart invalidates every cookie and antiforgery token. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

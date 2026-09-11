@@ -1,0 +1,78 @@
+@page
+@model FlowOps.Web.Pages.Tickets.AtRiskModel
+@{
+    ViewData["Title"] = "At-risk work";
+}
+<h1>At-risk work</h1>
+
+@if (Model.Queue.TotalCount == 0)
+{
+    @* A useful empty state, not a blank panel (CLAUDE.md §22). *@
+    <p class="empty-state">No work is at risk right now.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table>
+            <caption>
+                Ranked most urgent first — showing page @Model.Queue.PageNumber of @Model.Queue.TotalPages
+                (@Model.Queue.TotalCount ticket@(Model.Queue.TotalCount == 1 ? "" : "s") needing attention)
+            </caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Assignee</th>
+                    <th scope="col">SLA</th>
+                    <th scope="col">Why it needs attention</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ticket in Model.Queue.Items)
+                {
+                    <tr>
+                        <th scope="row">
+                            <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference</a>
+                        </th>
+                        <td>@ticket.Title</td>
+                        <td><span class="badge badge-neutral">@ticket.Priority</span></td>
+                        <td><span class="badge badge-neutral">@ticket.Status</span></td>
+                        <td>@ticket.TeamName</td>
+                        <td>@(ticket.AssigneeDisplayName ?? "Unassigned")</td>
+                        <td title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                            <span class="badge badge-danger">@ticket.Sla.Status</span>@(FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining ? $" — {remaining}" : "")
+                        </td>
+                        <td>
+                            @* Each signal is spelled out in words — severity is never conveyed
+                               by colour alone (CLAUDE.md §22). *@
+                            <ul>
+                                @foreach (var signal in ticket.Signals)
+                                {
+                                    <li><span class="badge badge-danger">@signal.Severity:</span> @signal.Headline</li>
+                                }
+                            </ul>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav aria-label="At-risk queue pagination">
+        @if (Model.Queue.HasPreviousPage)
+        {
+            <a asp-page="/Tickets/AtRisk" asp-route-pageNumber="@(Model.Queue.PageNumber - 1)"
+               rel="prev">Previous page</a>
+        }
+        @if (Model.Queue.HasNextPage)
+        {
+            <a asp-page="/Tickets/AtRisk" asp-route-pageNumber="@(Model.Queue.PageNumber + 1)"
+               rel="next">Next page</a>
+        }
+    </nav>
+}
+
+<p><a asp-page="/Tickets/Index">Back to work queue</a></p>

@@ -1,0 +1,119 @@
+@page
+@model FlowOps.Web.Pages.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+<h1>FlowOps</h1>
+<p>Signed in as @Model.Email (@Model.Role).</p>
+
+@* Phase 11: the dashboard opens on the actionable, ranked at-risk list — not the KPI counters —
+   per CLAUDE.md §1/§22. This reuses AttentionQueryService.GetAtRiskAsync exactly as the At-Risk
+   page itself does (same ranking, same authorization scope); only the top few rows are shown. *@
+<h2>What needs attention</h2>
+@if (Model.AtRiskPreview.Count == 0)
+{
+    <p class="empty-state">No work is at risk right now.</p>
+}
+else
+{
+    <ul class="attention-list">
+        @foreach (var ticket in Model.AtRiskPreview)
+        {
+            var topSignal = ticket.Signals.OrderByDescending(s => s.Severity).First();
+            <li>
+                <div class="attention-list__title">
+                    <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference — @ticket.Title</a>
+                </div>
+                <div class="attention-list__reason">
+                    <span class="badge badge-danger">@topSignal.Severity:</span>
+                    @topSignal.Headline
+                    @if (ticket.Signals.Count > 1)
+                    {
+                        @($" (+{ticket.Signals.Count - 1} more)")
+                    }
+                    — @ticket.Sla.Status
+                    @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                    {
+                        @($" — {remaining}")
+                    }
+                </div>
+            </li>
+        }
+    </ul>
+    @if (Model.AtRiskTotalCount > Model.AtRiskPreview.Count)
+    {
+        <p>@(Model.AtRiskTotalCount - Model.AtRiskPreview.Count) more ticket@(Model.AtRiskTotalCount - Model.AtRiskPreview.Count == 1 ? "" : "s") need attention.</p>
+    }
+}
+<p><a asp-page="/Tickets/AtRisk">View all at-risk work</a></p>
+
+@* Exactly four KPIs (CLAUDE.md §22) — no additional vanity counter. Each links through to
+   the filtered work it represents, via the existing Work Queue's closed filter set
+   (FlowOps.Application.Tickets.TicketQueueFilter) rather than a search/filter framework.
+   Secondary to the at-risk list above, per the Phase 11 dashboard correction. *@
+<h2>Summary</h2>
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <h3><a asp-page="/Tickets/Index" asp-route-filter="OpenWork">Open Work</a></h3>
+        <p class="kpi-card__value">@Model.Summary.OpenWorkCount</p>
+    </div>
+    <div class="kpi-card">
+        <h3><a asp-page="/Tickets/Index" asp-route-filter="Overdue">Overdue</a></h3>
+        <p class="kpi-card__value">@Model.Summary.OverdueCount</p>
+    </div>
+    <div class="kpi-card">
+        <h3><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">SLA Compliance</a></h3>
+        @if (Model.Summary.SlaCompliance.Percentage is { } slaPercentage)
+        {
+            <p class="kpi-card__value">@($"{slaPercentage:F0}%")</p>
+            <p>@Model.Summary.SlaCompliance.MetCount of @Model.Summary.SlaCompliance.QualifyingCount, last 90 days</p>
+        }
+        else
+        {
+            <p>No data yet — no tickets resolved in the last 90 days.</p>
+        }
+    </div>
+    <div class="kpi-card">
+        <h3><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">Average Resolution Time</a></h3>
+        @if (Model.Summary.AverageResolutionTime.Average is { } averageDuration)
+        {
+            <p class="kpi-card__value">@FlowOps.Web.SlaDisplay.Format(averageDuration)</p>
+            <p>last 90 days, @Model.Summary.AverageResolutionTime.SampleCount ticket@(Model.Summary.AverageResolutionTime.SampleCount == 1 ? "" : "s")</p>
+        }
+        else
+        {
+            <p>No data yet — no tickets resolved in the last 90 days.</p>
+        }
+    </div>
+</div>
+
+<h2>Current workload</h2>
+@if (Model.Summary.Workload.Count == 0)
+{
+    <p class="empty-state">No open work in your scope right now.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table>
+            <caption>Open tickets by team and assignee</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Team</th>
+                    <th scope="col">Assignee</th>
+                    <th scope="col">Open tickets</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Model.Summary.Workload)
+                {
+                    <tr>
+                        <td>@row.TeamName</td>
+                        <td>@(row.AssigneeDisplayName ?? "Unassigned")</td>
+                        <td>@row.OpenTicketCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

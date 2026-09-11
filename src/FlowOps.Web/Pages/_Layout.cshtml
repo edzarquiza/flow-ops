@@ -1,0 +1,47 @@
+@{
+    var pageTitle = ViewData["Title"] as string;
+    var isAuthenticated = User.Identity?.IsAuthenticated == true;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(string.IsNullOrEmpty(pageTitle) ? "FlowOps" : $"{pageTitle} — FlowOps")</title>
+    <link rel="stylesheet" href="~/flowops.css" />
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    @* The primary nav and sign-out form render only for an authenticated request — Login and
+       AccessDenied are reachable anonymously and must not imply a signed-in session.
+       CLAUDE.md §2 rule 8 / §6.2: this is presentation only. Every link below leads to a page
+       that independently re-checks authorization server-side regardless of whether it is shown
+       here (e.g. Create Ticket 403s a Viewer exactly as it did before this nav existed). *@
+    @if (isAuthenticated)
+    {
+        <header class="app-header">
+            <div class="app-header__bar">
+                <a class="app-header__brand" asp-page="/Index">FlowOps</a>
+                <nav class="app-nav" aria-label="Primary">
+                    <a asp-page="/Index">Dashboard</a>
+                    <a asp-page="/Tickets/Index">Work Queue</a>
+                    <a asp-page="/Tickets/AtRisk">At-Risk</a>
+                    <a asp-page="/Tickets/Create">Create Ticket</a>
+                </nav>
+                <div class="app-header__account">
+                    @* Preserved exactly: existing tests source a genuine antiforgery token from
+                       "/" via this form, and Login/logout behavior must not change (CLAUDE.md §12). *@
+                    <form method="post" asp-page="/Account/Logout">
+                        <button type="submit">Sign out</button>
+                    </form>
+                </div>
+            </div>
+        </header>
+    }
+
+    <main id="main">
+        @RenderBody()
+    </main>
+</body>
+</html>
