@@ -1,8 +1,7 @@
 # Deployment
 
-This document covers **local Docker execution** (Phase 13). Render/Neon deployment (Phase 15) is
-not covered here yet — it will be added in that phase, alongside HTTPS/HSTS/forwarded-headers
-configuration, which remains deliberately deferred until then.
+This document covers **local Docker execution** (Phase 13) and **Render + Neon deployment**
+(Phase 15). CI/CD pipeline mechanics (`.github/workflows/`) are covered by Phase 14, not here.
 
 ## Prerequisites
 
@@ -132,3 +131,136 @@ docker compose up -d --build app
 
 Rebuilds the `app` image from the current source and restarts just that container; `postgres` and
 its data are untouched.
+
+---
+
+## Render + Neon (Phase 15)
+
+### Architecture
+
+```
+Browser (HTTPS)
+   -> Render's edge proxy (TLS terminates here)
+   -> FlowOps container, plain HTTP, X-Forwarded-Proto/X-Forwarded-For headers attached
+   -> Neon PostgreSQL
+```
+
+The container never sees a TLS handshake directly — Render terminates it. `UseForwardedHeaders()`
+(see `docs/adr/0013-forwarded-headers-trust.md`) makes `Request.IsHttps` correctly reflect the
+original client's HTTPS connection despite that, which is what lets `CookieSecurePolicy.
+SameAsRequest` (both the Identity cookie and the antiforgery cookie) mark cookies `Secure` for a
+real deployed request.
+
+### Dynamic port
+
+Render assigns the container a port at runtime via the `PORT` environment variable — it is not
+knowable ahead of time and is not the same as the local Docker Compose contract's fixed `8080`.
+`Program.cs` reads `PORT` and, only when it is present, overrides Kestrel's binding to it
+(`builder.WebHost.UseUrls($"http://+:{port}")`); when absent (local `dotnet run`, Docker Compose),
+behavior is unchanged. Verified directly against the built container image: binding a custom
+`PORT` value causes the app to listen on exactly that port and nowhere else.
+
+### HTTPS / HSTS
+
+The application itself does not terminate TLS or redirect to HTTPS — Render's edge proxy already
+only accepts HTTPS from real clients. `UseHsts()` is enabled for `ASPNETCORE_ENVIRONMENT=Production`
+only, registered after `UseForwardedHeaders()` so it sees the corrected scheme.
+
+### Neon connection configuration
+
+- Supply Neon's own connection string via `ConnectionStrings__FlowOps` — it already includes the
+  SSL parameters Neon requires; nothing in the application needs to add them.
+- CLAUDE.md §16: use Neon's **pooled** connection string, and keep `Maximum Pool Size=10` as part
+  of that connection string.
+- `EnableRetryOnFailure()` is enabled on the Npgsql provider (`Program.cs`) — safe given every
+  write path in this codebase already follows the single-`SaveChangesAsync`-per-operation
+  discipline CLAUDE.md §16 requires alongside it.
+
+### Render Pre-Deploy Command
+
+Render's Docker service model supports a **Pre-Deploy Command** — run, using the same built image,
+after the image builds but before the new instance starts, with a materially longer timeout than
+the running instance's own health-check window. Render's Pre-Deploy Command for this service must
+be set to:
+
+```
+dotnet FlowOps.Web.dll init-database
+```
+
+This builds the same application/DI container the normal startup path builds, applies pending EF
+migrations, runs the demo seeder if `FlowOps:Demo:Enabled` is true, logs success or failure, and
+exits — **it never starts Kestrel or binds any port.** See `docs/adr/0014-render-pre-deploy-database-initialization.md`
+for the full reasoning: the demo seed's dataset (CLAUDE.md §14's ~600 tickets / ~1,500 comments) is
+built through thousands of sequential `TicketService` calls — fast locally, but slow enough against
+Neon's real network latency to exceed a running instance's health-check timeout if it ran inline.
+Running it as a Pre-Deploy step instead means the new instance's own `/health` is reachable
+immediately once it starts, because the expensive work already happened beforehand.
+
+### Migration flag
+
+`FlowOps__Database__ApplyMigrationsOnStartup=true`, read by both the Pre-Deploy Command above and
+the normal startup path's own fallback call to the same logic (see ADR-0007, ADR-0014) — so the
+empty Neon database receives the full schema automatically on first deploy. Once Pre-Deploy has
+already applied it, the startup-path fallback call resolves as a fast no-op (nothing pending) —
+the flag does not need to be turned off between the two.
+
+### Demo seed flag
+
+`FlowOps__Demo__Enabled=true` for the **public portfolio demo deployment only** — never for a
+"normal production" deployment of this application, if one existed separately. When enabled,
+`FlowOps__Demo__PersonaPassword` **must** also be set (the app fails fast at startup otherwise,
+matching the existing missing-connection-string fail-fast pattern) — it is the one password shared
+by all seeded demo accounts, supplied only as an environment variable/secret, never committed.
+Seeding runs once, inside a single transaction, as part of the Pre-Deploy Command above (after
+migrations succeed); a failure fails the whole Pre-Deploy step — Render does not start a new
+instance on top of a failed Pre-Deploy Command — rather than leaving a half-seeded demo online. See
+CLAUDE.md §14 and `FlowOps.Application.Demo.DemoDataSeeder`.
+
+### Required environment variables (Render)
+
+| Variable | Secret? | Purpose |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | No | `Production` |
+| `PORT` | No | Supplied automatically by Render |
+| `ConnectionStrings__FlowOps` | **Yes** | Neon's own pooled, SSL-enabled connection string |
+| `FlowOps__Database__ApplyMigrationsOnStartup` | No | `true` (see "Migration flag" above) |
+| `FlowOps__Demo__Enabled` | No | `true` only for the public demo deployment |
+| `FlowOps__Demo__PersonaPassword` | **Yes** (even though it is shown on the login page once the app is running, it is supplied as a secret, never committed) | The shared password for every seeded demo account |
+
+No other value in this table is a secret; `ConnectionStrings__FlowOps` and
+`FlowOps__Demo__PersonaPassword` are the only two that are.
+
+### First deployment vs. subsequent deployments
+
+- **First deployment**: empty Neon database. The Pre-Deploy Command applies the full schema; if
+  `FlowOps__Demo__Enabled=true`, it then seeds once against that freshly-migrated, still-empty
+  database — all before the first instance ever starts.
+- **Subsequent deployments**: the Pre-Deploy Command's migration step is a no-op when nothing
+  changed (idempotent, per `__EFMigrationsHistory`); its demo-seed step is a no-op whenever any
+  ticket already exists — a redeploy never re-seeds or duplicates demo data.
+
+### Smoke-test procedure
+
+After a deploy, in order:
+
+1. `GET https://<render-url>/health` — expect `200` (liveness; proves the process started and is
+   listening on Render's assigned port).
+2. `GET https://<render-url>/health/ready` — expect `200` (proves Neon is actually reachable).
+3. `GET https://<render-url>/Account/Login` — expect a real login page; if `FlowOps__Demo__Enabled`,
+   confirm the demo-credentials panel renders.
+4. Inspect a `Set-Cookie` header from that response (or from an actual sign-in) — confirm `Secure`
+   is present, proving the forwarded-header trust configuration is actually working in the real
+   deployed environment, not merely configured in source.
+
+Per CLAUDE.md §18: **a deployment is not successful because the workflow is green — it is
+successful once `/health` genuinely returns healthy from the public URL**, and that response must
+actually be shown, not assumed.
+
+### Environment summary
+
+| Environment | `ASPNETCORE_ENVIRONMENT` | Database | Demo seed |
+|---|---|---|---|
+| Local (`dotnet run`) | Development | Docker Compose Postgres, `localhost:5433` | Never |
+| CI (Phase 14) | N/A (tests use ephemeral Testcontainers databases) | Ephemeral, per test run | Never |
+| Local Docker Compose (`app` service) | Production | Docker Compose Postgres, `postgres:5432` | Off by default; can be enabled locally to test the seeder itself |
+| Render + Neon (real/portfolio deployment) | Production | Neon | `true` only for the public portfolio demo instance |

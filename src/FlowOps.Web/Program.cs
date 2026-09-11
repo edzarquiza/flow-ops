@@ -1,10 +1,12 @@
 using System.Threading.RateLimiting;
+using FlowOps.Application.Demo;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Attention;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -16,13 +18,52 @@ using Microsoft.Extensions.Options;
 // (CLAUDE.md §19.2).
 var builder = WebApplication.CreateBuilder(args);
 
+// Phase 15 / CLAUDE.md §17: "Listens on ${PORT} (Render supplies it)". Render injects a dynamic
+// PORT environment variable at runtime that cannot be known ahead of time; only overriding the
+// binding when it is actually present leaves local `dotnet run` and the Docker Compose 8080
+// contract (the base image's own ASPNETCORE_HTTP_PORTS default) completely unaffected.
+var renderPort = builder.Configuration["PORT"];
+if (!string.IsNullOrEmpty(renderPort))
+{
+    builder.WebHost.UseUrls($"http://+:{renderPort}");
+}
+
 var connectionString = builder.Configuration.GetConnectionString("FlowOps")
     ?? throw new InvalidOperationException(
         "Missing ConnectionStrings:FlowOps configuration. The app must fail fast at startup on " +
         "missing configuration, not fail later at first request (CLAUDE.md §13).");
 
 builder.Services.AddDbContext<FlowOpsDbContext>(options =>
-    options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
+    options.UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure())
+        .UseSnakeCaseNamingConvention());
+
+// CLAUDE.md §18 / ADR-0013: Render terminates TLS at its edge proxy and forwards plain HTTP to
+// this container, so Kestrel must be told to trust the X-Forwarded-Proto/X-Forwarded-For headers
+// that proxy adds — otherwise Request.IsHttps is always false here, and CookieSecurePolicy.
+// SameAsRequest would silently stop marking any cookie Secure. See ADR-0013 for why clearing the
+// known-networks/proxies allowlist is the correct choice for this specific hosting topology, not
+// a blanket "trust everything."
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// CLAUDE.md §14: seeding runs at startup when FlowOps__Demo__Enabled=true (config path
+// "FlowOps:Demo:Enabled" — the same "FlowOps:" root FlowOps:Database:ApplyMigrationsOnStartup
+// already uses). Bound and validated here so a misconfigured demo deployment (enabled with no
+// persona password) fails fast at startup rather than seeding accounts nobody can log into.
+builder.Services
+    .AddOptions<DemoOptions>()
+    .Bind(builder.Configuration.GetSection("FlowOps:Demo"))
+    .Validate(
+        o => !o.Enabled || !string.IsNullOrWhiteSpace(o.PersonaPassword),
+        "FlowOps:Demo:PersonaPassword is required when FlowOps:Demo:Enabled is true.")
+    .ValidateOnStart();
+
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<DemoOptions>>().Value);
+builder.Services.AddScoped<DemoDataSeeder>();
 
 // CLAUDE.md §12: without this, every Render restart invalidates every cookie and antiforgery
 // token in Production. Scoped to Production only (an environment-composition choice, not
@@ -66,6 +107,17 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
     options.LoginPath = "/Account/Login";
     options.AccessDeniedPath = "/Account/AccessDenied";
+});
+
+// Phase 15 / ADR-0013: the antiforgery cookie's own SecurePolicy is a *separate* setting from the
+// application cookie's above — ASP.NET Core does not default it to SameAsRequest, so without this
+// it stays non-Secure even once UseForwardedHeaders correctly reports Request.IsHttps as true
+// (confirmed directly: a forwarded-HTTPS request's antiforgery Set-Cookie carried no Secure
+// attribute until this was added). Matches the application cookie's own policy for the same
+// forwarded-proxy reason.
+builder.Services.Configure<Microsoft.AspNetCore.Antiforgery.AntiforgeryOptions>(options =>
+{
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 
 // CLAUDE.md §12: "Rate limiting (built-in AddRateLimiter): login and password endpoints
@@ -184,18 +236,54 @@ builder.Services
 
 var app = builder.Build();
 
-// CLAUDE.md §7.3 / ADR-0007: flag-gated startup migration. Runs before any middleware —
-// including Data Protection, which persists its keys to this same FlowOpsDbContext in Production
-// (see the registration above) and would otherwise be the first thing to touch a table that does
-// not exist yet on a freshly created database. Disabled (absent = false) by default, so a plain
-// `dotnet run` against an already-migrated developer database is unaffected. A migration failure
-// is never caught here: it propagates and stops the host from starting, rather than letting the
-// process come up and serve requests against an unknown schema.
-if (builder.Configuration.GetValue<bool>("FlowOps:Database:ApplyMigrationsOnStartup"))
+// Phase 15 / ADR-0014: Render's Pre-Deploy Command runs `dotnet FlowOps.Web.dll init-database`
+// using this same built image, before the new web instance starts — see ADR-0014 for why. This
+// must be checked before any middleware is configured and before Kestrel could ever bind a port:
+// build the host, run the same migrate/seed sequence the normal path below also runs, then exit.
+// The normal (no-args) path immediately below is unaffected and remains the fallback for local
+// `dotnet run` and the Docker Compose `app` service, where there is no separate pre-deploy step.
+if (args.Contains("init-database"))
 {
-    using var migrationScope = app.Services.CreateScope();
-    var migrationDbContext = migrationScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
-    await migrationDbContext.Database.MigrateAsync();
+    var initLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    try
+    {
+        await InitializeDatabaseAsync(app.Services, app.Configuration, initLogger);
+        initLogger.LogInformation("Database initialization completed successfully.");
+        await app.DisposeAsync();
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        // Logged explicitly (rather than left to an unhandled-exception crash dump) so a Render
+        // Pre-Deploy Command failure is legible in its own log output; still a hard failure — the
+        // web instance must not start on top of a failed initialization.
+        initLogger.LogCritical(ex, "Database initialization failed.");
+        await app.DisposeAsync();
+        return 1;
+    }
+}
+
+// Phase 15 / ADR-0013: must run before anything that reads Request.Scheme/IsHttps — including the
+// security-headers middleware below (harmless either way there) and, much more importantly, every
+// cookie issued once authentication/antiforgery middleware runs. First middleware in the pipeline,
+// full stop.
+app.UseForwardedHeaders();
+
+// CLAUDE.md §7.3 / ADR-0007 / ADR-0014: the same migrate-then-seed sequence the standalone
+// `init-database` mode above runs explicitly, kept here as a fallback for environments with no
+// separate pre-deploy step (local `dotnet run`, the Docker Compose `app` service). On Render,
+// where Pre-Deploy already did this work, both checks below resolve as fast no-ops (nothing
+// pending to migrate, tickets already exist) rather than the multi-minute cost of a full demo
+// seed — this is what actually fixes the health-check timeout ADR-0014 documents. Exceptions are
+// never caught here either: a failure still stops the host from starting, exactly as before.
+await InitializeDatabaseAsync(app.Services, app.Configuration, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup"));
+
+// CLAUDE.md §12: HSTS in Production only — an environment-composition choice (CLAUDE.md §13), not
+// a business-code branch. Must run after UseForwardedHeaders so Request.IsHttps already reflects
+// the original client scheme by the time this checks it.
+if (app.Environment.IsProduction())
+{
+    app.UseHsts();
 }
 
 // CLAUDE.md §12: security response headers on every response, including error pages, health
@@ -243,6 +331,15 @@ if (builder.Configuration.GetValue<bool>("Testing:EnableDiagnosticThrowEndpoint"
         throw new InvalidOperationException("Deliberate exception for Phase 12 exception-handler verification.")));
 }
 
+// Phase 15: same test-only-opt-in shape as the endpoint above — lets Web.Tests prove
+// UseForwardedHeaders actually flips Request.IsHttps/Scheme, rather than asserting it indirectly
+// through a cookie's Secure flag and hoping nothing else explains the result.
+if (builder.Configuration.GetValue<bool>("Testing:EnableDiagnosticSchemeEndpoint"))
+{
+    app.Map("/Testing/Scheme", schemeApp => schemeApp.Run(context =>
+        context.Response.WriteAsync($"{context.Request.Scheme}|{context.Request.IsHttps}")));
+}
+
 app.UseRateLimiter();
 
 // Phase 11: serves wwwroot/flowops.css, the project's one locally-hosted stylesheet (CLAUDE.md
@@ -265,8 +362,41 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 
 app.Run();
+return 0;
 
 // Makes the implicit top-level Program class visible to WebApplicationFactory<Program> in
 // FlowOps.Web.Tests (CLAUDE.md §15) — a standard ASP.NET Core testing convention, not new
-// behavior.
-public partial class Program;
+// behavior. Also carries InitializeDatabaseAsync as a real, directly-testable static method
+// (rather than a top-level local function, which Web.Tests could not call directly) — see that
+// method's own doc comment.
+public partial class Program
+{
+    /// <summary>
+    /// CLAUDE.md §7.3 / ADR-0007 / ADR-0014: the one place the migrate-then-seed sequence is
+    /// implemented — called from both the standalone `init-database` mode and the normal startup
+    /// path above, so the two can never drift apart, and callable directly from tests without a
+    /// subprocess. Startup migration is controlled by FlowOps:Database:ApplyMigrationsOnStartup;
+    /// demo seeding by FlowOps:Demo:Enabled (validated at options-binding time, above, so
+    /// DemoOptions.Enabled is never true here without a persona password already having been
+    /// confirmed present). Neither failure is caught here — both callers decide what "failed"
+    /// means for them (crash the host vs. exit non-zero).
+    /// </summary>
+    public static async Task InitializeDatabaseAsync(IServiceProvider services, IConfiguration configuration, ILogger logger)
+    {
+        if (configuration.GetValue<bool>("FlowOps:Database:ApplyMigrationsOnStartup"))
+        {
+            using var migrationScope = services.CreateScope();
+            var migrationDbContext = migrationScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            await migrationDbContext.Database.MigrateAsync();
+        }
+
+        var demoOptions = services.GetRequiredService<DemoOptions>();
+        if (demoOptions.Enabled)
+        {
+            logger.LogInformation("FlowOps:Demo:Enabled is true — running demo data seeder.");
+            using var demoScope = services.CreateScope();
+            var demoSeeder = demoScope.ServiceProvider.GetRequiredService<DemoDataSeeder>();
+            await demoSeeder.SeedAsync();
+        }
+    }
+}

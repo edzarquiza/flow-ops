@@ -17,4 +17,8 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     public bool IsActive { get; set; } = true;
 
     public int? PrimaryTeamId { get; set; }
+
+    /// <summary>CLAUDE.md §14's demo-mode guard: true only for the accounts a demo seeding run
+    /// created. Enforced by <see cref="FlowOps.Application.Demo.DemoProtectionPolicy"/>.</summary>
+    public bool IsDemoProtected { get; set; }
 }

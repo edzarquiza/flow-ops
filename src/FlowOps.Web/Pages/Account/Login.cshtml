@@ -19,3 +19,38 @@
     </div>
     <button type="submit" class="btn-primary">Sign in</button>
 </form>
+
+@if (Model.DemoEnabled)
+{
+    @* CLAUDE.md §14: "credentials supplied via environment variables, displayed on the login
+       page, never in git." Model.DemoPersonaPassword is read from configuration at request time —
+       nothing here is a literal in source. *@
+    <section class="empty-state" aria-label="Public demo credentials">
+        <h2>Public demo credentials</h2>
+        <p>This is a portfolio demonstration running on synthetic data. Sign in as any persona below
+           using the shared demo password.</p>
+        <table>
+            <caption>Demo personas</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Persona</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Shows</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var persona in Model.DemoPersonas)
+                {
+                    <tr>
+                        <td>@persona.DisplayName</td>
+                        <td><code>@persona.Email</code></td>
+                        <td>@persona.Role</td>
+                        <td>@persona.Shows</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p>Password (all personas): <code>@Model.DemoPersonaPassword</code></p>
+    </section>
+}

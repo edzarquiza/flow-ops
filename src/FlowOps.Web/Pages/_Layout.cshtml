@@ -1,3 +1,5 @@
+@using FlowOps.Application.Demo
+@inject DemoOptions DemoOptions
 @{
     var pageTitle = ViewData["Title"] as string;
     var isAuthenticated = User.Identity?.IsAuthenticated == true;
@@ -12,6 +14,14 @@
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
+
+    @* CLAUDE.md §14: "A persistent banner identifies the site as a portfolio demonstration with
+       synthetic data." Shown site-wide, authenticated or not — unlike the nav below, this is not
+       gated on session state. *@
+    @if (DemoOptions.Enabled)
+    {
+        <div class="empty-state" role="status">Portfolio demo — all data is synthetic.</div>
+    }
 
     @* The primary nav and sign-out form render only for an authenticated request — Login and
        AccessDenied are reachable anonymously and must not imply a signed-in session.

@@ -17,6 +17,7 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
         builder.Property(u => u.DisplayName).IsRequired();
         builder.Property(u => u.JobTitle);
         builder.Property(u => u.IsActive).IsRequired().HasDefaultValue(true);
+        builder.Property(u => u.IsDemoProtected).IsRequired().HasDefaultValue(false);
 
         builder.HasOne<Team>()
             .WithMany()

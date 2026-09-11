@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FlowOps.Application.Demo;
 using FlowOps.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -15,16 +16,26 @@ namespace FlowOps.Web.Pages.Account;
 public sealed class LoginModel : PageModel
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly DemoOptions _demoOptions;
 
-    public LoginModel(SignInManager<ApplicationUser> signInManager)
+    public LoginModel(SignInManager<ApplicationUser> signInManager, DemoOptions demoOptions)
     {
         _signInManager = signInManager;
+        _demoOptions = demoOptions;
     }
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
     public string? ReturnUrl { get; set; }
+
+    /// <summary>CLAUDE.md §14: "credentials supplied via environment variables, displayed on the
+    /// login page, never in git." Empty whenever Demo:Enabled is false — the ordinary case.</summary>
+    public bool DemoEnabled => _demoOptions.Enabled;
+
+    public string DemoPersonaPassword => _demoOptions.PersonaPassword ?? string.Empty;
+
+    public IReadOnlyList<DemoPersona> DemoPersonas => FlowOps.Application.Demo.DemoPersonas.All;
 
     public void OnGet(string? returnUrl = null)
     {
