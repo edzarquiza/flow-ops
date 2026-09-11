@@ -176,33 +176,64 @@ only, registered after `UseForwardedHeaders()` so it sees the corrected scheme.
   write path in this codebase already follows the single-`SaveChangesAsync`-per-operation
   discipline CLAUDE.md §16 requires alongside it.
 
-### Render Pre-Deploy Command
+### Render startup script (`render-start.sh`) — Free tier has no Pre-Deploy Command
 
 Render's Docker service model supports a **Pre-Deploy Command** — run, using the same built image,
-after the image builds but before the new instance starts, with a materially longer timeout than
-the running instance's own health-check window. Render's Pre-Deploy Command for this service must
-be set to:
+after the image builds but before the new instance starts. **This service intentionally stays on
+Render's Free compute plan, and Pre-Deploy Command is not available on Free** (verified directly
+against the Render dashboard for this service, not assumed). Two attempts at an inline quoted
+Docker Command (`-c "dotnet FlowOps.Web.dll init-database && dotnet FlowOps.Web.dll"`, then
+`/bin/sh -c "..."`) both failed — Render's Docker Command field did not reliably preserve the
+quoted command as intended (see `docs/adr/0014-render-pre-deploy-database-initialization.md`'s
+amendment for the exact errors).
+
+Instead, this repository ships a real script, **`render-start.sh`** at the repository root, copied
+into the image at `/app/render-start.sh` (world-executable, `COPY --chmod=755` in the Dockerfile).
+**Render's Docker Command for this service must be set to:**
 
 ```
+/app/render-start.sh
+```
+
+The script:
+
+```sh
+#!/bin/sh
+set -e
 dotnet FlowOps.Web.dll init-database
+exec dotnet FlowOps.Web.dll
 ```
 
-This builds the same application/DI container the normal startup path builds, applies pending EF
-migrations, runs the demo seeder if `FlowOps:Demo:Enabled` is true, logs success or failure, and
-exits — **it never starts Kestrel or binds any port.** See `docs/adr/0014-render-pre-deploy-database-initialization.md`
-for the full reasoning: the demo seed's dataset (CLAUDE.md §14's ~600 tickets / ~1,500 comments) is
+`init-database` applies pending EF migrations and, if `FlowOps:Demo:Enabled` is true, runs the demo
+seeder — the same standalone command described below, unchanged. `set -e` means any non-zero exit
+from that command stops the script immediately: **initialization failure prevents the web server
+from starting**, at all, ever — the container simply exits, and Render does not replace the
+previous running instance with a broken new one. On success, `exec` replaces the shell process with
+`dotnet FlowOps.Web.dll` (not a child process — verified directly: `docker top` on a running
+container shows exactly one process, `dotnet FlowOps.Web.dll`, no lingering shell), so the web
+server receives signals (e.g. a Render restart's `SIGTERM`) directly rather than through an
+intermediary that never exits.
+
+The Dockerfile's `ENTRYPOINT ["dotnet", "FlowOps.Web.dll"]` is **unchanged** by any of this —
+`render-start.sh` is invoked only by explicitly overriding the entrypoint (Render's Docker Command
+field). Local `dotnet run`, `docker compose up`, and a plain `docker run <image>` with no override
+all continue to use the bare entrypoint exactly as before; nothing about local development changed.
+
+See `docs/adr/0014-render-pre-deploy-database-initialization.md` for the full reasoning behind
+`init-database` itself: the demo seed's dataset (CLAUDE.md §14's ~600 tickets / ~1,500 comments) is
 built through thousands of sequential `TicketService` calls — fast locally, but slow enough against
 Neon's real network latency to exceed a running instance's health-check timeout if it ran inline.
-Running it as a Pre-Deploy step instead means the new instance's own `/health` is reachable
-immediately once it starts, because the expensive work already happened beforehand.
+Running it before the web process starts (via this script, in the absence of Pre-Deploy Command)
+means the new instance's own `/health` is reachable immediately once it starts, because the
+expensive work already happened beforehand.
 
 ### Migration flag
 
-`FlowOps__Database__ApplyMigrationsOnStartup=true`, read by both the Pre-Deploy Command above and
-the normal startup path's own fallback call to the same logic (see ADR-0007, ADR-0014) — so the
-empty Neon database receives the full schema automatically on first deploy. Once Pre-Deploy has
-already applied it, the startup-path fallback call resolves as a fast no-op (nothing pending) —
-the flag does not need to be turned off between the two.
+`FlowOps__Database__ApplyMigrationsOnStartup=true`, read by both `render-start.sh`'s `init-database`
+step above and the normal startup path's own fallback call to the same logic (see ADR-0007,
+ADR-0014) — so the empty Neon database receives the full schema automatically on first deploy. Once
+the script's `init-database` step has already applied it, the startup-path fallback call resolves
+as a fast no-op (nothing pending) — the flag does not need to be turned off between the two.
 
 ### Demo seed flag
 
@@ -211,9 +242,9 @@ the flag does not need to be turned off between the two.
 `FlowOps__Demo__PersonaPassword` **must** also be set (the app fails fast at startup otherwise,
 matching the existing missing-connection-string fail-fast pattern) — it is the one password shared
 by all seeded demo accounts, supplied only as an environment variable/secret, never committed.
-Seeding runs once, inside a single transaction, as part of the Pre-Deploy Command above (after
-migrations succeed); a failure fails the whole Pre-Deploy step — Render does not start a new
-instance on top of a failed Pre-Deploy Command — rather than leaving a half-seeded demo online. See
+Seeding runs once, inside a single transaction, as part of `render-start.sh`'s `init-database` step
+above (after migrations succeed); a failure fails the whole script (`set -e`) — the web server never
+starts on top of a failed initialization — rather than leaving a half-seeded demo online. See
 CLAUDE.md §14 and `FlowOps.Application.Demo.DemoDataSeeder`.
 
 ### Required environment variables (Render)
@@ -232,12 +263,12 @@ No other value in this table is a secret; `ConnectionStrings__FlowOps` and
 
 ### First deployment vs. subsequent deployments
 
-- **First deployment**: empty Neon database. The Pre-Deploy Command applies the full schema; if
-  `FlowOps__Demo__Enabled=true`, it then seeds once against that freshly-migrated, still-empty
-  database — all before the first instance ever starts.
-- **Subsequent deployments**: the Pre-Deploy Command's migration step is a no-op when nothing
-  changed (idempotent, per `__EFMigrationsHistory`); its demo-seed step is a no-op whenever any
-  ticket already exists — a redeploy never re-seeds or duplicates demo data.
+- **First deployment**: empty Neon database. `render-start.sh`'s `init-database` step applies the
+  full schema; if `FlowOps__Demo__Enabled=true`, it then seeds once against that freshly-migrated,
+  still-empty database — all before the web server ever starts.
+- **Subsequent deployments**: the script's migration step is a no-op when nothing changed
+  (idempotent, per `__EFMigrationsHistory`); its demo-seed step is a no-op whenever any ticket
+  already exists — a redeploy never re-seeds or duplicates demo data.
 
 ### Smoke-test procedure
 

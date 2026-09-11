@@ -33,6 +33,14 @@ USER $APP_UID
 
 COPY --from=build /app/publish .
 
+# Render Free tier has no Pre-Deploy Command (docs/adr/0014-render-pre-deploy-database-initialization.md).
+# render-start.sh is set as that service's own Docker Command explicitly (never this image's
+# ENTRYPOINT below, and never Docker Compose's command) — see docs/deployment.md. --chmod=755
+# (not a separate RUN chmod) because COPY defaults new files to root ownership regardless of the
+# USER instruction above; the container later runs as the non-root $APP_UID, which still needs
+# execute permission on a root-owned file.
+COPY --chmod=755 render-start.sh /app/render-start.sh
+
 # .NET 8+ container base images default ASPNETCORE_HTTP_PORTS to 8080 already; EXPOSE only
 # documents this for `docker compose`'s port mapping, it does not itself change the binding.
 EXPOSE 8080
