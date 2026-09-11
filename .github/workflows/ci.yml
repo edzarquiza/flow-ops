@@ -1,0 +1,70 @@
+name: FlowOps CI
+
+# CLAUDE.md §18: restore -> build -> test -> vulnerability scan -> container build, on every push
+# and PR against main. No deployment here — that is deploy.yml, a later, separate addition.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Build, test, and validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # global-json-file, not a hardcoded dotnet-version input, so this workflow always matches
+      # whatever SDK the repository itself declares (global.json) rather than drifting from it.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore FlowOps.sln
+
+      # CLAUDE.md §18: "dotnet format --verify-no-changes" — the exact gate the contract names.
+      - name: Verify formatting
+        run: dotnet format FlowOps.sln --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build FlowOps.sln --no-restore
+
+      # FlowOps.Application.Tests and FlowOps.Web.Tests provision real PostgreSQL via
+      # Testcontainers (CLAUDE.md §15 — no in-memory/SQLite substitute). The ubuntu-latest runner
+      # has Docker preinstalled and running, which is all Testcontainers needs; no service
+      # container, wait-script, or test-code change is introduced here.
+      - name: Test
+        run: dotnet test FlowOps.sln --no-build
+
+      - name: Check for vulnerable packages
+        run: dotnet list package --vulnerable --include-transitive
+
+      # dotnet-ef is not part of the SDK and has no tool manifest in this repo, so it is installed
+      # here rather than assumed present. Pinned to match the EF Core package version used
+      # throughout the solution (src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj).
+      - name: Install EF Core CLI tool
+        run: dotnet tool install --global dotnet-ef --version 10.0.12
+
+      - name: Add .NET tools to PATH
+        run: echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # Confirmed to require no live database connection: this is a design-time comparison of the
+      # compiled model against the last migration's snapshot, not a query against a real server.
+      - name: Check for pending EF model changes
+        run: >
+          dotnet ef migrations has-pending-model-changes
+          --project src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj
+          --startup-project src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj
+
+      # Proves the existing production Dockerfile still builds on every commit (CLAUDE.md §18) —
+      # no separate CI-only Dockerfile, no push to any registry (that belongs to deploy.yml/Phase 15).
+      - name: Build container image
+        run: docker build -t flowops-web:ci .
