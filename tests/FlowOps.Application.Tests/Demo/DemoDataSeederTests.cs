@@ -60,6 +60,8 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
         Assert.Equal(28 + SmallVolume.TicketCount, await context.Tickets.CountAsync());
         Assert.True(await context.TicketComments.AnyAsync());
 
+        await AssertAllTicketProjectReferencesExistAsync(context);
+
         // The four named personas exist, are demo-protected, and are members of at least one team.
         foreach (var persona in DemoPersonas.All)
         {
@@ -124,6 +126,48 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
         Assert.Equal(0, await context.Teams.CountAsync());
         Assert.Equal(0, await context.Tickets.CountAsync());
         Assert.Equal(0, await context.Users.CountAsync());
+    }
+
+    [Fact]
+    // Reproduces the actual Render/Neon failure precondition directly, rather than relying on an
+    // empty database's identity sequence happening to start at 1: Postgres sequences are never
+    // rolled back, even by a failed/rolled-back transaction, so any earlier seed attempt (or any
+    // other prior write to "projects") permanently advances "projects_id_seq" past whatever a
+    // seeder might assume. This test forces that exact precondition deterministically — via a
+    // real ALTER of the real sequence, not a guess — before seeding even starts, so a
+    // positional-index-as-id regression would fail this test on every run, not by chance.
+    public async Task SeedAsync_WhenProjectsIdentitySequenceAlreadyAdvanced_StillProducesValidProjectReferences()
+    {
+        await using var context = CreateContext();
+
+        // Advance the real sequence well past the 8 projects the seeder is about to insert, so
+        // those 8 rows get ids 1001-1008, not 1-8 — deterministic, not dependent on any prior
+        // test or database state.
+        await context.Database.ExecuteSqlRawAsync("SELECT setval('projects_id_seq', 1000, true);");
+
+        using var userManager = CreateUserManager(context);
+        var seeder = new DemoDataSeeder(context, userManager, Options(), TimeProvider.System, NullLogger<DemoDataSeeder>.Instance);
+
+        await seeder.SeedAsync(SmallVolume);
+
+        var projectIds = await context.Projects.Select(p => p.Id).ToListAsync();
+        Assert.All(projectIds, id => Assert.True(id > 1000, $"expected an id past the advanced sequence, got {id}"));
+
+        await AssertAllTicketProjectReferencesExistAsync(context);
+    }
+
+    /// <summary>The exact invariant a fabricated (rather than persisted) project id would violate:
+    /// every ticket that has a project at all must reference one that genuinely exists.</summary>
+    private static async Task AssertAllTicketProjectReferencesExistAsync(FlowOpsDbContext context)
+    {
+        var projectIds = (await context.Projects.Select(p => p.Id).ToListAsync()).ToHashSet();
+        var ticketProjectIds = await context.Tickets
+            .Where(t => t.ProjectId != null)
+            .Select(t => t.ProjectId!.Value)
+            .ToListAsync();
+
+        Assert.NotEmpty(ticketProjectIds); // otherwise this assertion would be vacuous
+        Assert.All(ticketProjectIds, id => Assert.Contains(id, projectIds));
     }
 
     private static DemoOptions Options(string personaPassword = PersonaPassword) => new() { Enabled = true, PersonaPassword = personaPassword };

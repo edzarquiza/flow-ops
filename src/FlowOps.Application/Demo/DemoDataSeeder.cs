@@ -116,14 +116,14 @@ public sealed class DemoDataSeeder
 
             var teams = await CreateTeamsAsync(seedTime, cancellationToken);
             var categories = await CreateCategoriesAsync(teams, seedTime, cancellationToken);
-            await CreateProjectsAsync(seedTime, cancellationToken);
+            var projects = await CreateProjectsAsync(seedTime, cancellationToken);
             var users = await CreateUsersAsync(teams, cancellationToken);
 
             var clock = new SeederClock(seedTime);
             var ticketService = new TicketService(_dbContext, clock);
 
             await SeedSignalShowcaseTicketsAsync(ticketService, clock, teams, categories, users, seedTime, cancellationToken);
-            await SeedBulkTicketsAsync(ticketService, clock, teams, categories, users, seedTime, rng, volume, cancellationToken);
+            await SeedBulkTicketsAsync(ticketService, clock, teams, categories, projects, users, seedTime, rng, volume, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
             _logger.LogInformation("Demo seeding completed: {TicketCount} tickets targeted.", volume.TicketCount);
@@ -165,10 +165,12 @@ public sealed class DemoDataSeeder
         return byTeam;
     }
 
-    private async Task CreateProjectsAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<List<Project>> CreateProjectsAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        _dbContext.Projects.AddRange(ProjectNames.Select(name => new Project(0, name, seedTime)));
+        var projects = ProjectNames.Select(name => new Project(0, name, seedTime)).ToList();
+        _dbContext.Projects.AddRange(projects);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        return projects;
     }
 
     /// <summary>One seeded account plus the <see cref="CurrentUser"/> shape every
@@ -433,6 +435,7 @@ public sealed class DemoDataSeeder
         SeederClock clock,
         List<Team> teams,
         Dictionary<int, List<Category>> categories,
+        List<Project> projects,
         List<SeededUser> users,
         DateTimeOffset seedTime,
         Random rng,
@@ -460,9 +463,15 @@ public sealed class DemoDataSeeder
             var ageDays = Math.Pow(rng.NextDouble(), 2) * 90;
             var createdAt = seedTime.AddDays(-ageDays);
 
+            // PickOrNull(rng, 8) preserves the original one-in-eight odds of a project being set at
+            // all; when one is, it must be an actual persisted Project.Id (not a positional index
+            // into ProjectNames) — see the investigation behind this fix: an assumed 1..N id only
+            // ever coincidentally matched real rows on a freshly-migrated, never-before-seeded
+            // database, and breaks permanently the moment the projects identity sequence has
+            // already advanced past N for any reason (including an earlier, rolled-back attempt).
             var (ticketId, _) = await CreateTicketAtAsync(
                 ticketService, clock, requester, team, category,
-                GenerateTitle(category.Name, rng), priority, category.DefaultWorkType, PickOrNull(rng, 8) ? rng.Next(1, ProjectNames.Length + 1) : null,
+                GenerateTitle(category.Name, rng), priority, category.DefaultWorkType, PickOrNull(rng, 8) ? projects[rng.Next(projects.Count)].Id : null,
                 createdAt);
 
             var outcome = WeightedPick(OutcomeWeights.Select(o => o.Outcome).ToArray(), OutcomeWeights.Select(o => o.Weight).ToArray(), rng);
