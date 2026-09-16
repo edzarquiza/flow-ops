@@ -14,6 +14,16 @@ set -e
 # anything below executes.
 dotnet FlowOps.Web.dll init-database
 
+# Same "no Shell, no Pre-Deploy Command on this plan" constraint as above — this is the only
+# reliably reachable place to run a one-time account-recovery command on Render's free tier.
+# Deliberately opt-in and env-var-driven rather than ever hardcoding a password into this file:
+# a plaintext password committed to git — even "temporarily" — stays in history forever on a
+# public repo. Set RESET_PASSWORD_EMAIL and RESET_PASSWORD_VALUE in Render's Environment tab,
+# deploy once, confirm the log line, then delete both variables so this never runs again.
+if [ -n "$RESET_PASSWORD_EMAIL" ] && [ -n "$RESET_PASSWORD_VALUE" ]; then
+    dotnet FlowOps.Web.dll reset-password "$RESET_PASSWORD_EMAIL" "$RESET_PASSWORD_VALUE" || true
+fi
+
 # `exec` replaces this shell process with the web server rather than running it as a child —
 # without this, the web process would be a grandchild of the container's PID 1 (this script), and
 # would not directly receive signals (e.g. SIGTERM on a Render restart/redeploy), risking an
