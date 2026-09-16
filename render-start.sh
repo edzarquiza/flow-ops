@@ -24,6 +24,15 @@ if [ -n "$RESET_PASSWORD_EMAIL" ] && [ -n "$RESET_PASSWORD_VALUE" ]; then
     dotnet FlowOps.Web.dll reset-password "$RESET_PASSWORD_EMAIL" "$RESET_PASSWORD_VALUE" || true
 fi
 
+# Same mechanism, for the ADR-0024 bootstrap gap: a self-registered account starts Pending, and
+# an account with no platform-admin grant can't approve anyone (including itself). Set
+# BOOTSTRAP_ADMIN_EMAIL in Render's Environment tab to an already-registered account's email to
+# approve it and grant it platform-admin in one boot, then delete the variable.
+if [ -n "$BOOTSTRAP_ADMIN_EMAIL" ]; then
+    dotnet FlowOps.Web.dll approve-account "$BOOTSTRAP_ADMIN_EMAIL" || true
+    dotnet FlowOps.Web.dll grant-platform-admin "$BOOTSTRAP_ADMIN_EMAIL" || true
+fi
+
 # `exec` replaces this shell process with the web server rather than running it as a child —
 # without this, the web process would be a grandchild of the container's PID 1 (this script), and
 # would not directly receive signals (e.g. SIGTERM on a Render restart/redeploy), risking an
