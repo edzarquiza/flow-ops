@@ -351,6 +351,39 @@ if (args.Length >= 2 && (args[0] == "grant-platform-admin" || args[0] == "revoke
     return 0;
 }
 
+// There is deliberately no self-service "forgot password" flow (ASP.NET Core Identity stores
+// only a one-way PBKDF2 hash — the original password is never recoverable, by this command,
+// Render's dashboard, or anyone else). Recovery is therefore always a reset, at the same
+// deploy/shell trust tier as `grant-platform-admin` above — never an HTTP endpoint.
+if (args.Length >= 3 && args[0] == "reset-password")
+{
+    var email = args[1];
+    var newPassword = args[2];
+    var cliLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var user = await userManager.FindByEmailAsync(email);
+    if (user is null)
+    {
+        cliLogger.LogCritical("No user found with email {Email}.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    await userManager.RemovePasswordAsync(user);
+    var result = await userManager.AddPasswordAsync(user, newPassword);
+    if (!result.Succeeded)
+    {
+        cliLogger.LogCritical("Failed to reset password for {Email}: {Errors}", email, string.Join("; ", result.Errors.Select(e => e.Description)));
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    cliLogger.LogInformation("Password for {Email} has been reset.", email);
+    await app.DisposeAsync();
+    return 0;
+}
+
 // Phase 24A (ADR-0024): closes the bootstrap gap `grant-platform-admin` alone would otherwise
 // leave — the very first Platform Admin is themselves a self-registered account, which starts
 // Pending exactly like any other (ADR-0024's whole point is that platform authority never implies
