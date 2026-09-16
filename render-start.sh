@@ -26,11 +26,17 @@ fi
 
 # Same mechanism, for the ADR-0024 bootstrap gap: a self-registered account starts Pending, and
 # an account with no platform-admin grant can't approve anyone (including itself). Set
-# BOOTSTRAP_ADMIN_EMAIL in Render's Environment tab to an already-registered account's email to
-# approve it and grant it platform-admin in one boot, then delete the variable.
+# BOOTSTRAP_ADMIN_EMAIL in Render's Environment tab to an already-registered account's email —
+# every boot approves it, grants platform-admin, and strips the tenant-org membership
+# self-registration always creates (a Platform Admin is meant to be admin-only, never also an
+# ordinary org's Admin — see remove-organization-membership's own comment in Program.cs). All
+# three operations are idempotent (safe to re-run against an already-bootstrapped account), so
+# unlike RESET_PASSWORD_* above, this variable is meant to be left set permanently — it's not a
+# secret (just an email) and leaving it self-heals this account on every future deploy.
 if [ -n "$BOOTSTRAP_ADMIN_EMAIL" ]; then
     dotnet FlowOps.Web.dll approve-account "$BOOTSTRAP_ADMIN_EMAIL" || true
     dotnet FlowOps.Web.dll grant-platform-admin "$BOOTSTRAP_ADMIN_EMAIL" || true
+    dotnet FlowOps.Web.dll remove-organization-membership "$BOOTSTRAP_ADMIN_EMAIL" || true
 fi
 
 # `exec` replaces this shell process with the web server rather than running it as a child —

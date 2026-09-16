@@ -421,6 +421,42 @@ if (args.Length >= 2 && args[0] == "approve-account")
     return 0;
 }
 
+// A Platform Admin is meant to be a purely instance-wide identity (ADR-0023) — but self-
+// registration (the only account-creation path there is) always creates an organization and
+// makes the registrant its Admin (see AccountService.RegisterAsync), so a bootstrapped Platform
+// Admin inherits tenant-scoped membership as a side effect, and the sidebar shows Dashboard/Work
+// Queue/etc. for them exactly as it would for any ordinary org Admin — not the "admin-only"
+// account the operator actually wants. This strips that membership directly (bypassing
+// MembershipService/SoleAdminGuard deliberately: those exist to stop an org from ending up with
+// zero admins through its own UI, not to block a deploy-tier operator decision to make a specific
+// identity platform-only). The organization itself is left untouched and orphaned-admin-safe —
+// still visible and manageable from /Platform/Organizations if it needs cleanup.
+if (args.Length >= 2 && args[0] == "remove-organization-membership")
+{
+    var email = args[1];
+    var cliLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+    var user = await userManager.FindByEmailAsync(email);
+    if (user is null)
+    {
+        cliLogger.LogCritical("No user found with email {Email}.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    var memberships = await dbContext.OrganizationMemberships
+        .Where(m => m.UserId == user.Id)
+        .ToListAsync();
+    dbContext.OrganizationMemberships.RemoveRange(memberships);
+    await dbContext.SaveChangesAsync();
+
+    cliLogger.LogInformation("Removed {Count} organization membership(s) for {Email}.", memberships.Count, email);
+    await app.DisposeAsync();
+    return 0;
+}
+
 // Phase 15 / ADR-0013: must run before anything that reads Request.Scheme/IsHttps — including the
 // security-headers middleware below (harmless either way there) and, much more importantly, every
 // cookie issued once authentication/antiforgery middleware runs. First middleware in the pipeline,
