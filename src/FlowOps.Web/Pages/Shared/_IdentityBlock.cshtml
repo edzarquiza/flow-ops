@@ -1,0 +1,26 @@
+@model FlowOps.Web.AccountAreaViewModel
+@* Platform Administration cleanup: this was a bordered box holding only an email address — no
+   avatar, no chevron, nothing indicating it does anything, so it read as a disabled input field.
+   It is now a real link straight to Profile & Settings (the "direct link" option, not a dropdown
+   menu — Sign out stays exactly where it already is, as its own separate control in the sidebar
+   footer below this block). Still answers exactly one question, "who am I, and where do I manage
+   that" — organization and other account actions remain elsewhere (the org switcher, the footer's
+   own Sign out). Initials are derived from the email's local part (no display name is threaded
+   into this view model — see AccountAreaViewModel's own doc comment for why only email travels
+   here) the same way InitialsDisplay already abbreviates a real name.
+   Ticket Detail badge-fix pass: the role is plain text now, not a BadgeMarkup.Chip — chips are
+   reserved for workflow status, and a bordered/tinted "SERVICE DESK MANAGER" button here read as
+   a second, competing control next to the chevron this whole element already is. *@
+<a class="fo-account" asp-page="/Account/Settings" aria-label="Profile &amp; Settings — @Model.Email" aria-current="@(ViewContext.RouteData.Values["page"]?.ToString() == "/Account/Settings" ? "page" : null)">
+    <span class="fo-account__avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(Model.Email.Split('@')[0].Replace('.', ' '))</span>
+    <span class="fo-account__body">
+        <span class="fo-account__email">@Model.Email</span>
+        @if (Model.CurrentUser is not null)
+        {
+            <span class="fo-account__role">@FlowOps.Web.RoleDisplay.ToDisplayName(Model.CurrentUser.Role)</span>
+        }
+    </span>
+    <svg class="fo-account__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+        <path d="M4.5 2.5 8 6l-3.5 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+</a>

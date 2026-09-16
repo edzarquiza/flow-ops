@@ -1,0 +1,52 @@
+@model FlowOps.Web.RailViewModel
+@{
+    var currentIndex = FlowOps.Web.WorkflowRail.CurrentIndex(Model.Status);
+    var tone = FlowOps.Web.WorkflowRail.Tone(Model.Status, Model.Sla);
+    var fraction = FlowOps.Web.WorkflowRail.ElapsedFraction(Model.Sla);
+    var toneClass = tone switch
+    {
+        FlowOps.Web.RailTone.Breached => "rail-breached",
+        FlowOps.Web.RailTone.AtRisk => "rail-at-risk",
+        FlowOps.Web.RailTone.Paused => "rail-paused",
+        FlowOps.Web.RailTone.Resolved => "rail-resolved",
+        _ => "rail-healthy",
+    };
+    var sizeClass = Model.Expanded ? "rail lg" : "rail";
+    // The rail is decorative reinforcement, not the only signal (CLAUDE.md §22) — the caller
+    // already renders the status word as real text; this label exists so the rail is still
+    // meaningful to a screen reader even if a future caller ever omits that text.
+    var railLabel = $"Workflow stage: {FlowOps.Web.WorkflowRail.Label(currentIndex)}. SLA {Model.Sla.Status}.";
+}
+<div class="@sizeClass @toneClass" role="img" aria-label="@railLabel">
+    @for (var i = 0; i < FlowOps.Web.WorkflowRail.StopCount; i++)
+    {
+        if (i > 0)
+        {
+            <i class="@(i <= currentIndex ? "done" : "")" aria-hidden="true"></i>
+        }
+        if (i < currentIndex)
+        {
+            <b class="past" aria-hidden="true"></b>
+        }
+        else if (i == currentIndex)
+        {
+            @* Phase 24A (CSP stabilization): style-src 'self' blocks the style attribute, so the
+               SLA-consumed fraction is expressed as one of the pre-generated .rail-fill-0..100
+               classes (see flowops.css's own comment) rather than an inline custom property. *@
+            <b class="now @FlowOps.Web.CssWidthClass.ForRailFill(fraction ?? 1)" aria-hidden="true"></b>
+        }
+        else
+        {
+            <b class="next" aria-hidden="true"></b>
+        }
+    }
+</div>
+@if (Model.Expanded)
+{
+    <div class="rail-labels" aria-hidden="true">
+        @for (var i = 0; i < FlowOps.Web.WorkflowRail.StopCount; i++)
+        {
+            <div class="@(i == currentIndex ? "on" : "")">@FlowOps.Web.WorkflowRail.Label(i)</div>
+        }
+    </div>
+}

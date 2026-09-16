@@ -3,6 +3,7 @@ using FlowOps.Application.Tests.Persistence;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FlowOps.Application.Tests.Tickets;
@@ -273,6 +274,256 @@ public sealed class TicketQueryServiceTests
 
         Assert.NotNull(detail);
         Assert.Equal(world.TeamBName, detail.TeamName);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Search
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByReference_ReturnsOnlyThatTicket()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        await CreateSearchableTicketAsync(context, world, title: "Unrelated ticket one");
+        var targetId = await CreateSearchableTicketAsync(context, world, title: "Unrelated ticket two");
+        var query = new TicketQueryService(context, TimeProvider.System);
+        var reference = (await query.GetQueueAsync(world.Agent, 1)).Items.Single(i => i.Id == targetId).Reference;
+
+        var page = await query.GetQueueAsync(world.Agent, 1, search: reference);
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(targetId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByTitle_IsCaseInsensitiveAndPartial()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var vpnId = await CreateSearchableTicketAsync(context, world, title: "VPN client will not connect");
+        await CreateSearchableTicketAsync(context, world, title: "Printer jam on 3rd floor");
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var page = await query.GetQueueAsync(world.Agent, 1, search: "vpn");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(vpnId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByDescription_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var matchId = await CreateSearchableTicketAsync(
+            context, world, title: "Generic title one", description: "Something about the east stairwell printer.");
+        await CreateSearchableTicketAsync(context, world, title: "Generic title two", description: "Unrelated content.");
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var page = await query.GetQueueAsync(world.Agent, 1, search: "stairwell");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByAssignee_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var assigneeId = await TicketTestData.AddUserAsync(context, displayName: "Casey Nguyen");
+        await TicketTestData.AddTeamMembershipAsync(context, world.TeamId, assigneeId);
+        var matchId = await CreateSearchableTicketAsync(context, world, title: "Ticket for assignment");
+        await new TicketService(context, TimeProvider.System).AssignAsync(matchId, assigneeId, world.Admin);
+        await CreateSearchableTicketAsync(context, world, title: "Different ticket");
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var page = await query.GetQueueAsync(world.Agent, 1, search: "casey");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByRequester_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context, requesterDisplayName: "Jordan Ellis");
+        var matchId = await CreateSearchableTicketAsync(context, world, title: "Requester-searchable ticket");
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var page = await query.GetQueueAsync(world.Agent, 1, search: "jordan ellis");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchByTeamOrCategoryName_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var matchId = await CreateSearchableTicketAsync(context, world, title: "Some ticket");
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var teamNameFragment = world.TeamName[..8];
+        var byTeam = await query.GetQueueAsync(world.Agent, 1, search: teamNameFragment);
+        Assert.Contains(byTeam.Items, i => i.Id == matchId);
+
+        var categoryNameFragment = world.CategoryName[..8];
+        var byCategory = await query.GetQueueAsync(world.Agent, 1, search: categoryNameFragment);
+        Assert.Contains(byCategory.Items, i => i.Id == matchId);
+    }
+
+    [Fact] // An empty/whitespace search reproduces the exact pre-search page.
+    public async Task GetQueueAsync_EmptyOrWhitespaceSearch_BehavesExactlyLikeNoSearch()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedWorldAsync(context, ticketsInTeamA: 3, ticketsInTeamB: 0);
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var withoutSearch = await query.GetQueueAsync(world.AgentInTeamA, 1);
+        var withEmptySearch = await query.GetQueueAsync(world.AgentInTeamA, 1, search: "");
+        var withWhitespaceSearch = await query.GetQueueAsync(world.AgentInTeamA, 1, search: "   ");
+
+        Assert.Equal(withoutSearch.Items.Select(i => i.Id), withEmptySearch.Items.Select(i => i.Id));
+        Assert.Equal(withoutSearch.Items.Select(i => i.Id), withWhitespaceSearch.Items.Select(i => i.Id));
+        Assert.Equal(withoutSearch.TotalCount, withEmptySearch.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetQueueAsync_SearchWithNoMatches_ReturnsEmptyPageWithZeroTotal()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedWorldAsync(context, ticketsInTeamA: 3, ticketsInTeamB: 0);
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        var page = await query.GetQueueAsync(world.AgentInTeamA, 1, search: $"no-such-term-{Guid.NewGuid():N}");
+
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.TotalCount);
+        Assert.Equal(1, page.TotalPages);
+    }
+
+    [Fact] // Search must narrow through the existing paginated query, not replace it.
+    public async Task GetQueueAsync_SearchPreservesPagination()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        const int matching = TicketQueryService.PageSize + 5;
+        var matchingIds = new List<int>();
+        for (var i = 0; i < matching; i++)
+        {
+            matchingIds.Add(await CreateSearchableTicketAsync(context, world, title: $"Findable ticket {i}"));
+        }
+
+        await CreateSearchableTicketAsync(context, world, title: "Should never appear");
+
+        var query = new TicketQueryService(context, TimeProvider.System);
+        var firstPage = await query.GetQueueAsync(world.Agent, 1, search: "findable");
+        var secondPage = await query.GetQueueAsync(world.Agent, 2, search: "findable");
+
+        Assert.Equal(TicketQueryService.PageSize, firstPage.Items.Count);
+        Assert.Equal(5, secondPage.Items.Count);
+        Assert.Equal(matching, firstPage.TotalCount);
+
+        var combined = firstPage.Items.Concat(secondPage.Items).Select(i => i.Id).ToList();
+        Assert.Equal(matching, combined.Distinct().Count());
+        Assert.All(combined, id => Assert.Contains(id, matchingIds));
+    }
+
+    [Fact] // AUTH-RULE-05: search narrows the caller's own scope, it never widens it.
+    public async Task GetQueueAsync_SearchNeverExposesTicketsOutsideAuthorizationScope()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var otherTeamId = await TicketTestData.AddTeamAsync(context);
+        var otherCategoryId = await TicketTestData.AddCategoryAsync(context, otherTeamId);
+        var otherRequesterId = await TicketTestData.AddUserAsync(context);
+        await TicketTestData.AddTeamMembershipAsync(context, otherTeamId, otherRequesterId);
+        var otherRequester = TicketTestData.User(otherRequesterId, UserRole.Agent, otherTeamId);
+        var uniqueTitle = $"Secret ticket {Guid.NewGuid():N}";
+        var hiddenId = await CreateSearchableTicketAsync(context, otherTeamId, otherCategoryId, otherRequester, uniqueTitle);
+
+        var query = new TicketQueryService(context, TimeProvider.System);
+        var page = await query.GetQueueAsync(world.Agent, 1, search: uniqueTitle);
+
+        Assert.Empty(page.Items);
+        // Sanity: the ticket genuinely exists and is only invisible because of authorization scope.
+        var visibleToOwner = await query.GetQueueAsync(otherRequester, 1, search: uniqueTitle);
+        Assert.Contains(visibleToOwner.Items, i => i.Id == hiddenId);
+    }
+
+    [Fact] // Multi-tenant: search never crosses the organization boundary.
+    public async Task GetQueueAsync_SearchNeverExposesTicketsFromAnotherOrganization()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedSearchWorldAsync(context);
+        var (otherOrganizationId, otherTeamId) = await TicketTestData.AddSecondOrganizationTeamAsync(context);
+        var otherCategoryId = await TicketTestData.AddCategoryAsync(context, otherTeamId);
+        var otherRequesterId = await TicketTestData.AddUserAsync(context);
+        await TicketTestData.AddTeamMembershipAsync(context, otherTeamId, otherRequesterId);
+        var otherRequester = TicketTestData.UserInOrganization(otherOrganizationId, otherRequesterId, UserRole.Agent, otherTeamId);
+        var otherAdmin = TicketTestData.UserInOrganization(otherOrganizationId, await TicketTestData.AddUserAsync(context), UserRole.Admin);
+        var uniqueTitle = $"Cross-org ticket {Guid.NewGuid():N}";
+        var hiddenId = await CreateSearchableTicketAsync(context, otherTeamId, otherCategoryId, otherRequester, uniqueTitle);
+
+        var query = new TicketQueryService(context, TimeProvider.System);
+
+        // Even this organization's own Admin — unscoped within their organization — cannot
+        // discover the other organization's ticket through search (Phase 16 org boundary).
+        var admin = TicketTestData.User(await TicketTestData.AddUserAsync(context), UserRole.Admin);
+        var page = await query.GetQueueAsync(admin, 1, search: uniqueTitle);
+
+        Assert.Empty(page.Items);
+        var visibleInOwnOrg = await query.GetQueueAsync(otherAdmin, 1, search: uniqueTitle);
+        Assert.Contains(visibleInOwnOrg.Items, i => i.Id == hiddenId);
+    }
+
+    // ---------- search seeding ----------
+
+    private sealed record SearchWorld(int TeamId, string TeamName, int CategoryId, string CategoryName, CurrentUser Agent, CurrentUser Admin);
+
+    private static async Task<SearchWorld> SeedSearchWorldAsync(FlowOpsDbContext context, string requesterDisplayName = "Phase 5 Test User")
+    {
+        var teamId = await TicketTestData.AddTeamAsync(context);
+        var categoryId = await TicketTestData.AddCategoryAsync(context, teamId);
+        var agentId = await TicketTestData.AddUserAsync(context, requesterDisplayName);
+        await TicketTestData.AddTeamMembershipAsync(context, teamId, agentId);
+        var adminId = await TicketTestData.AddUserAsync(context);
+
+        var teamName = await context.Teams.Where(t => t.Id == teamId).Select(t => t.Name).SingleAsync();
+        var categoryName = await context.Categories.Where(c => c.Id == categoryId).Select(c => c.Name).SingleAsync();
+
+        return new SearchWorld(
+            teamId,
+            teamName,
+            categoryId,
+            categoryName,
+            TicketTestData.User(agentId, UserRole.Agent, teamId),
+            TicketTestData.User(adminId, UserRole.Admin));
+    }
+
+    private static Task<int> CreateSearchableTicketAsync(
+        FlowOpsDbContext context,
+        SearchWorld world,
+        string title,
+        string description = "A routine description with no special search terms.") =>
+        CreateSearchableTicketAsync(context, world.TeamId, world.CategoryId, world.Agent, title, description);
+
+    private static async Task<int> CreateSearchableTicketAsync(
+        FlowOpsDbContext context,
+        int teamId,
+        int categoryId,
+        CurrentUser requester,
+        string title,
+        string description = "A routine description with no special search terms.")
+    {
+        var (id, _) = await new TicketService(context, TimeProvider.System).CreateAsync(
+            new CreateTicketRequest(title, description, WorkType.Incident, Priority.Medium, teamId, categoryId, null),
+            requester);
+        return id;
     }
 
     /// <summary>Every ticket id the caller can see, across all pages of their queue.</summary>

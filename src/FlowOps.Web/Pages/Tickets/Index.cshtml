@@ -1,109 +1,136 @@
 @page
 @using FlowOps.Application.Tickets
+@using FlowOps.Domain.Tickets
 @model FlowOps.Web.Pages.Tickets.IndexModel
 @{
     ViewData["Title"] = "Work queue";
 }
-<h1>Work queue</h1>
 
-@* Phase 10: the dashboard's KPI cards link here with a closed, named filter (never a
-   general search) — CLAUDE.md §22's "clickable through to the filtered work it
-   represents". Shown as text, with a link back to the unfiltered queue. *@
-@if (Model.Filter != TicketQueueFilter.None)
-{
-    <p>
-        Filtered to:
-        @(Model.Filter switch
+@{
+    var workQueuePreserveFields = new Dictionary<string, string?>
+    {
+        ["filter"] = Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString(),
+    };
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Work queue</h1>
+                <div class="page-header__metric">
+                    <span class="page-header__metric-value">@Model.Queue.TotalCount</span>
+                    <span class="page-header__metric-label">ticket@(Model.Queue.TotalCount == 1 ? "" : "s")</span>
+                </div>
+            </div>
+            <p class="page-context">Your operational workspace.</p>
+        </div>
+        @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search tickets...", Model.Search, workQueuePreserveFields))
+    </div>
+    <div class="page-actions">
+        @if (Model.CanCreateTicket)
         {
-            TicketQueueFilter.OpenWork => "Open Work",
-            TicketQueueFilter.Overdue => "Overdue",
-            TicketQueueFilter.ResolvedRecently => "Resolved in the last 90 days",
-            _ => Model.Filter.ToString(),
-        })
-        — <a asp-page="/Tickets/Index">clear filter</a>
-    </p>
-}
+            <a class="btn-primary" asp-page="/Tickets/Create">New ticket</a>
+        }
+        <a class="btn" asp-page="/Tickets/AtRisk">At-risk work</a>
+    </div>
 
-@* Navigation only — this queue's own rows deliberately carry no attention signals in
-   Phase 8; see docs/database.md for why that display is deferred to Phase 11. *@
-<p><a asp-page="/Tickets/AtRisk">At-risk work</a></p>
-
-@if (Model.CanCreateTicket)
-{
-    <p><a asp-page="/Tickets/Create">New ticket</a></p>
-}
+    @* Phase 10: the dashboard's KPI cards link here with a closed, named filter (never a
+       general search) — CLAUDE.md §22's "clickable through to the filtered work it
+       represents". Shown as text, with a link back to the unfiltered queue. *@
+    @if (Model.Filter != TicketQueueFilter.None)
+    {
+        <p class="page-filter-note">
+            Filtered to:
+            @(Model.Filter switch
+            {
+                TicketQueueFilter.OpenWork => "Open Work",
+                TicketQueueFilter.Overdue => "Overdue",
+                TicketQueueFilter.ResolvedRecently => "Resolved in the last 90 days",
+                _ => Model.Filter.ToString(),
+            })
+            — <a class="text-link" asp-page="/Tickets/Index">clear filter</a>
+        </p>
+    }
+</div>
 
 @if (Model.Queue.TotalCount == 0)
 {
-    <p class="empty-state">
-        @(Model.Filter == TicketQueueFilter.None
-            ? "No tickets are visible to you right now."
-            : "No tickets match this filter right now.")
-    </p>
+    @if (!string.IsNullOrWhiteSpace(Model.Search))
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No tickets found</p>
+            <p>No tickets matched "@Model.Search".</p>
+            <p><a class="back-link" asp-page="/Tickets/Index" asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())">Clear search</a></p>
+        </div>
+    }
+    else
+    {
+        <p class="empty-state">
+            @(Model.Filter == TicketQueueFilter.None
+                ? "No tickets are visible to you right now."
+                : "No tickets match this filter right now.")
+        </p>
+    }
 }
 else
 {
-    <div class="table-responsive">
-        <table>
-            <caption>
-                Showing page @Model.Queue.PageNumber of @Model.Queue.TotalPages
-                (@Model.Queue.TotalCount ticket@(Model.Queue.TotalCount == 1 ? "" : "s"))
-            </caption>
-            <thead>
-                <tr>
-                    <th scope="col">Reference</th>
-                    <th scope="col">Title</th>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Team</th>
-                    <th scope="col">Category</th>
-                    <th scope="col">Assignee</th>
-                    <th scope="col">SLA</th>
-                    <th scope="col">Created</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var ticket in Model.Queue.Items)
-                {
-                    <tr>
-                        <th scope="row">
-                            <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference</a>
-                        </th>
-                        <td>@ticket.Title</td>
-                        <td><span class="badge badge-neutral">@ticket.Priority</span></td>
-                        <td><span class="badge badge-neutral">@ticket.Status</span></td>
-                        <td>@ticket.TeamName</td>
-                        <td>@ticket.CategoryName</td>
-                        <td>@(ticket.AssigneeDisplayName ?? "Unassigned")</td>
-                        @* Status is always spelled out in text, never conveyed by colour
-                           alone (CLAUDE.md §22), with the absolute deadline in the title. *@
-                        <td title="SLA due @ticket.Sla.DueAt.ToString("u")">
-                            <span class="badge badge-neutral">@ticket.Sla.Status</span>@(FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining ? $" — {remaining}" : "")
-                        </td>
-                        <td>
-                            <time datetime="@ticket.CreatedAt.ToString("O")"
-                                  title="@ticket.CreatedAt.ToString("u")">
-                                @ticket.CreatedAt.ToString("yyyy-MM-dd HH:mm")
-                            </time>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    var workQueueRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "filter", Model.Filter.ToString() }, { "search", Model.Search } };
+    await Html.RenderPartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Tickets/Index",
+            Model.Queue,
+            workQueueRouteValues,
+            "Work queue pagination",
+            FlowOps.Web.PaginationPlacement.Top));
+
+    @* Phase 11: composed rows, not a nine-column grid — see .q-row's own doc comment in
+       flowops.css. Category was dropped (constant within a single-team queue, no information per
+       row); it stays available as a future filter rather than a repeated column. Each row is a
+       single <a>, so keyboard navigation and middle-click both still work; the rail is decorative
+       reinforcement here (status is already a word in .q-meta), so it's aria-hidden. *@
+    <div class="q-list">
+        @foreach (var ticket in Model.Queue.Items)
+        {
+            var slaText = ticket.Sla.Status.ToString();
+            var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
+            var severityClass = ticket.Priority.ToString().ToLowerInvariant();
+            <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                <div class="q-main">
+                    <div class="q-title">@ticket.Title</div>
+                    <div class="q-meta">
+                        <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span class="status-badge status-badge--compact">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span class="mono" title="@ticket.CreatedAt.ToString("u")">@FlowOps.Web.SlaDisplay.Format(DateTimeOffset.UtcNow - ticket.CreatedAt) ago</span>
+                    </div>
+                </div>
+                <div class="q-sev-col">
+                    <div class="severity severity--compact severity--@severityClass">
+                        <i class="severity__bar" aria-hidden="true"></i>
+                        <span class="severity__label">@ticket.Priority</span>
+                    </div>
+                </div>
+                <div class="q-rail-col" aria-hidden="true">
+                    @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                </div>
+                <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                    <span class="q-sla__state">@ticket.Sla.Status</span>
+                    @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                    {
+                        <span class="q-sla__time">@remaining</span>
+                    }
+                </div>
+            </a>
+        }
     </div>
 
-    <nav aria-label="Work queue pagination">
-        @if (Model.Queue.HasPreviousPage)
-        {
-            <a asp-page="/Tickets/Index" asp-route-pageNumber="@(Model.Queue.PageNumber - 1)"
-               asp-route-filter="@Model.Filter" rel="prev">Previous page</a>
-        }
-        @if (Model.Queue.HasNextPage)
-        {
-            <a asp-page="/Tickets/Index" asp-route-pageNumber="@(Model.Queue.PageNumber + 1)"
-               asp-route-filter="@Model.Filter" rel="next">Next page</a>
-        }
-    </nav>
+    @await Html.PartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Tickets/Index",
+            Model.Queue,
+            workQueueRouteValues,
+            "Work queue pagination"))
 }
-
-<p><a asp-page="/Index">Back to home</a></p>

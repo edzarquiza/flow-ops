@@ -1,0 +1,29 @@
+@model FlowOps.Web.SearchBoxViewModel
+@* The one shared FlowOps search control (see SearchBoxViewModel's own doc comment). A plain GET
+   form — no JavaScript: a native <input type="search"> submits on Enter, and the icon doubles as
+   an explicit, keyboard-reachable submit button for anyone who doesn't. Hidden fields carry
+   forward any other active query-string state (e.g. a Work Queue filter) so a new search never
+   silently clears it. *@
+<form method="get" class="search-box" role="search">
+    @if (Model.PreserveFields is not null)
+    {
+        foreach (var field in Model.PreserveFields)
+        {
+            if (!string.IsNullOrEmpty(field.Value))
+            {
+                <input type="hidden" name="@field.Key" value="@field.Value" />
+            }
+        }
+    }
+    <label for="search-box-input" class="sr-only">@Model.Placeholder</label>
+    <button type="submit" class="search-box__icon" aria-label="Search">@Html.Raw(Icons.Search)</button>
+    <input
+        id="search-box-input"
+        class="search-box__input"
+        type="search"
+        name="search"
+        value="@Model.Value"
+        placeholder="@Model.Placeholder"
+        maxlength="@FlowOps.Application.SearchTermNormalizer.MaxLength"
+        autocomplete="off" />
+</form>

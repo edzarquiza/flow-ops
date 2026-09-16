@@ -40,6 +40,9 @@ public static class TestUsers
             EmailConfirmed = true,
             DisplayName = email,
             IsActive = true,
+            // Phase 24A (ADR-0024): these fixtures exist to sign in immediately, not to exercise
+            // the approval gate — pre-approved exactly like DemoDataSeeder's personas.
+            RegistrationApprovedAt = DateTimeOffset.UtcNow,
         };
 
         var createResult = await userManager.CreateAsync(user, Password);

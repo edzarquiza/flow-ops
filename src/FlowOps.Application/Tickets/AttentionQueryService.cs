@@ -39,15 +39,26 @@ public sealed class AttentionQueryService
     /// departure from the SQL-side paging the work queue uses, accepted at CLAUDE.md §16's scale and
     /// recorded in docs/database.md.
     /// </remarks>
+    /// <param name="search">
+    /// An optional free-text term matched against reference, title, description, requester,
+    /// assignee, team, and category. Applied strictly after <see cref="AttentionPolicy.Rank"/> has
+    /// already decided both eligibility (which candidates truly have signals) and order — search
+    /// only narrows that already-ranked, already-eligible list, so it can never admit a ticket
+    /// AttentionPolicy would not have flagged, nor change the relative order of what remains.
+    /// <see langword="null"/>/whitespace is treated as no search.
+    /// </param>
     public async Task<PagedResult<AttentionListItem>> GetAtRiskAsync(
         CurrentUser user,
         int pageNumber,
+        string? search = null,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
         {
             pageNumber = 1;
         }
+
+        var normalizedSearch = SearchTermNormalizer.Normalize(search);
 
         // One clock reading for the whole request: the prefilter's SQL parameters and the policy's
         // evaluation must agree, or a ticket could pass the filter and then fail the policy purely
@@ -77,18 +88,84 @@ public sealed class AttentionQueryService
                     SlaPolicy.ResolveConfiguration(slaConfigurations, ticket.WorkType, ticket.Priority).RiskThresholdPercent)))
             .ToList();
 
-        // Rank drops signal-less candidates, so this is both the ordering and the final filter.
+        // Rank drops signal-less candidates, so this is both the ordering and the final filter —
+        // AttentionPolicy's decision, untouched by search.
         var ranked = AttentionPolicy.Rank(evaluated);
 
-        var page = ranked
+        var searched = normalizedSearch is null
+            ? ranked
+            : await FilterBySearchAsync(ranked, normalizedSearch, cancellationToken);
+
+        var page = searched
             .Skip((pageNumber - 1) * PageSize)
             .Take(PageSize)
             .ToList();
 
         var items = await MapAsync(page, slaConfigurations, now, cancellationToken);
 
-        return new PagedResult<AttentionListItem>(items, pageNumber, PageSize, ranked.Count);
+        return new PagedResult<AttentionListItem>(items, pageNumber, PageSize, searched.Count);
     }
+
+    /// <summary>
+    /// Narrows an already-ranked, already-eligible result set to rows matching <paramref name="search"/>
+    /// — in-memory (the candidate set is already fully materialised by this point, per
+    /// <see cref="GetAtRiskAsync"/>'s own doc comment on ATTN-RULE-06's small-scale assumption), so
+    /// this needs no SQL of its own beyond the two small id→name lookups team/category/requester
+    /// display names require (assignee names are fetched again, identically, by
+    /// <see cref="MapAsync"/> — an accepted, bounded-by-page-size second lookup, not a per-row one).
+    /// <see cref="Ticket.Reference"/>/<see cref="Ticket.Title"/>/<see cref="Ticket.Description"/>
+    /// are already loaded on every candidate and need no lookup at all.
+    /// </summary>
+    private async Task<IReadOnlyList<TicketAttentionResult>> FilterBySearchAsync(
+        IReadOnlyList<TicketAttentionResult> ranked,
+        string search,
+        CancellationToken cancellationToken)
+    {
+        if (ranked.Count == 0)
+        {
+            return ranked;
+        }
+
+        var teamIds = ranked.Select(r => r.Ticket.TeamId).Distinct().ToArray();
+        var categoryIds = ranked.Select(r => r.Ticket.CategoryId).Distinct().ToArray();
+        var userIds = ranked
+            .Select(r => r.Ticket.RequesterId)
+            .Concat(ranked.Where(r => r.Ticket.AssigneeId.HasValue).Select(r => r.Ticket.AssigneeId!.Value))
+            .Distinct()
+            .ToArray();
+
+        var teamNames = await _dbContext.Teams
+            .AsNoTracking()
+            .Where(t => teamIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, cancellationToken);
+
+        var categoryNames = await _dbContext.Categories
+            .AsNoTracking()
+            .Where(c => categoryIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name, cancellationToken);
+
+        var userNames = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, cancellationToken);
+
+        return ranked
+            .Where(r =>
+            {
+                var ticket = r.Ticket;
+                return Matches(ticket.Reference, search)
+                    || Matches(ticket.Title, search)
+                    || Matches(ticket.Description, search)
+                    || Matches(userNames.GetValueOrDefault(ticket.RequesterId), search)
+                    || (ticket.AssigneeId is { } assigneeId && Matches(userNames.GetValueOrDefault(assigneeId), search))
+                    || Matches(teamNames.GetValueOrDefault(ticket.TeamId), search)
+                    || Matches(categoryNames.GetValueOrDefault(ticket.CategoryId), search);
+            })
+            .ToList();
+    }
+
+    private static bool Matches(string? value, string search) =>
+        value is not null && value.Contains(search, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The candidate prefilter (ATTN-RULE-06). Every branch below is at least as wide as the signal
@@ -128,7 +205,7 @@ public sealed class AttentionQueryService
         var stalledInProgressCutoff = now.AddDays(-_options.StalledInProgressDays);
         var churnThreshold = _options.ChurnAssignmentChangeThreshold;
 
-        return ApplyViewScope(_dbContext.Tickets, user)
+        return ApplyViewScope(_dbContext, _dbContext.Tickets, user)
             // Terminal tickets never carry a signal, so they never become candidates.
             .Where(t => t.Status != Status.Resolved && t.Status != Status.Closed)
             .Where(t =>
@@ -232,14 +309,20 @@ public sealed class AttentionQueryService
     /// produced from tickets <see cref="TicketAccessPolicy.CanView"/> would admit, because tickets
     /// outside the caller's scope are never fetched in the first place.
     /// </summary>
-    private static IQueryable<Ticket> ApplyViewScope(IQueryable<Ticket> tickets, CurrentUser user)
+    private static IQueryable<Ticket> ApplyViewScope(FlowOpsDbContext dbContext, IQueryable<Ticket> tickets, CurrentUser user)
     {
+        // Phase 16: see TicketQueryService.ApplyViewScope — the same org-first, then-role-scoping
+        // shape, kept in this second copy per the class doc's own note that this duplication is
+        // deliberate (ATTN-RULE-06's superset-of-CanView requirement is tested independently here).
+        var orgScoped = tickets.Where(t =>
+            dbContext.Teams.Any(team => team.Id == t.TeamId && team.OrganizationId == user.OrganizationId));
+
         if (user.Role == UserRole.Admin)
         {
-            return tickets;
+            return orgScoped;
         }
 
         var memberTeamIds = user.MemberTeamIds.ToArray();
-        return tickets.Where(t => memberTeamIds.Contains(t.TeamId));
+        return orgScoped.Where(t => memberTeamIds.Contains(t.TeamId));
     }
 }

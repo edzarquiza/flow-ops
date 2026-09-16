@@ -1,0 +1,160 @@
+@page "{id:int}"
+@model FlowOps.Web.Pages.Platform.Organizations.DetailsModel
+@{
+    ViewData["Title"] = Model.Organization?.Name ?? "Organization";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>@Model.Organization!.Name</h1>
+            </div>
+            <p class="page-context">
+                <span class="fo-status-dot @(Model.Organization.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                @(Model.Organization.IsActive ? "Active" : "Inactive") — created <time datetime="@Model.Organization.CreatedAt.ToString("O")">@Model.Organization.CreatedAt.ToString("yyyy-MM-dd")</time>
+            </p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Overview")); }
+    @{
+        var orgStats = new List<FlowOps.Web.StatStripItem>
+        {
+            new("Members", Model.Organization.MemberCount.ToString()),
+            new("Teams", Model.Organization.TeamCount.ToString()),
+            new("Projects", Model.Organization.ProjectCount.ToString()),
+            new("Tickets", Model.Organization.TicketCount.ToString()),
+        };
+        await Html.RenderPartialAsync("_StatStrip", orgStats);
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Rename")); }
+    <form method="post" asp-page-handler="Rename" class="project-actions__rename">
+        @Html.AntiForgeryToken()
+        <label class="sr-only" for="rename-name">Organization name</label>
+        <input type="text" id="rename-name" name="name" value="@Model.Organization.Name" maxlength="200" required />
+        <button type="submit" class="btn" aria-label="Save new name for @Model.Organization.Name">Save name</button>
+    </form>
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Pending invitations")); }
+    @if (Model.PendingInvitations.Count == 0)
+    {
+        <p class="empty-state">No pending invitations for this organization.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Pending invitations for @Model.Organization.Name</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Email</th>
+                        <th scope="col">Role</th>
+                        <th scope="col">Invited by</th>
+                        <th scope="col">Expires</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invitation in Model.PendingInvitations)
+                    {
+                        <tr>
+                            <td>@invitation.Email</td>
+                            <td>@invitation.Role</td>
+                            <td>@invitation.InvitedByDisplayName</td>
+                            <td><time datetime="@invitation.ExpiresAt.ToString("O")" title="@invitation.ExpiresAt.ToString("O")">@invitation.ExpiresAt.ToString("yyyy-MM-dd")</time></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Recent activity")); }
+    @if (Model.RecentActivity.Count == 0)
+    {
+        <p class="empty-state">No platform-administration activity recorded for this organization.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Platform-administration activity for @Model.Organization.Name</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Event</th>
+                        <th scope="col">Actor</th>
+                        <th scope="col">When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var activity in Model.RecentActivity)
+                    {
+                        <tr>
+                            <td>@activity.EventType</td>
+                            <td>@activity.ActorDisplayName</td>
+                            <td><time datetime="@activity.OccurredAt.ToString("O")" title="@activity.OccurredAt.ToString("O")">@activity.OccurredAt.ToString("yyyy-MM-dd HH:mm")</time></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Lifecycle")); }
+    @if (Model.Organization.IsActive)
+    {
+        <p class="prose">
+            Deactivating this organization makes it inaccessible for ordinary tenant operation —
+            its members can no longer sign in to it, create tickets, or mutate data. No membership,
+            team, category, project, ticket, comment, or event is deleted or altered. This can be
+            reversed at any time.
+        </p>
+        <div class="confirm">
+            <input type="checkbox" id="confirm-deactivate-org" class="confirm-toggle" />
+            <label for="confirm-deactivate-org" class="btn-caution confirm-trigger">Deactivate organization</label>
+            <div class="confirm-panel">
+                <p class="confirm-panel__question">Deactivate @Model.Organization.Name?</p>
+                <p class="confirm-panel__detail">
+                    Its members will immediately lose the ability to sign in, create tickets, or mutate
+                    data. No membership, team, category, project, ticket, comment, or event is deleted
+                    or altered. This can be reversed at any time.
+                </p>
+                <div class="confirm-panel__actions">
+                    <form method="post" asp-page-handler="Deactivate">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn-caution">Yes, deactivate</button>
+                    </form>
+                    <label for="confirm-deactivate-org" class="btn">Cancel</label>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="prose">
+            This organization is inactive. Reactivating it restores normal operation immediately —
+            no data is reconstructed, since none was ever removed.
+        </p>
+        <form method="post" asp-page-handler="Reactivate">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-primary">Reactivate organization</button>
+        </form>
+    }
+</div>
+
+<p><a class="back-link" asp-page="/Platform/Organizations/Index">&larr; Back to organizations</a></p>

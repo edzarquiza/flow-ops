@@ -1,0 +1,75 @@
+@model FlowOps.Web.PaginationViewModel
+@{
+    var start = Model.TotalCount == 0 ? 0 : ((Model.PageNumber - 1) * Model.PageSize) + 1;
+    var end = Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount);
+    var pages = FlowOps.Web.PaginationDisplay.PageNumbers(Model.PageNumber, Model.TotalPages);
+    var isTop = Model.Placement == FlowOps.Web.PaginationPlacement.Top;
+
+    Dictionary<string, string> RouteFor(int pageNumber)
+    {
+        var dict = new Dictionary<string, string> { ["pageNumber"] = pageNumber.ToString() };
+        if (Model.RouteValues is not null)
+        {
+            foreach (var kv in Model.RouteValues)
+            {
+                if (kv.Value is not null)
+                {
+                    dict[kv.Key] = kv.Value.ToString()!;
+                }
+            }
+        }
+
+        return dict;
+    }
+}
+@* A top render exists only to put the page-number links within reach before scrolling past a
+   long page — the "Showing X-Y of Z" count still appears exactly once, at the bottom, where it
+   always has, so nothing here doubles a fact this page already tells you twice. A top render is
+   skipped entirely when there's only one page — nothing to reach early. *@
+@if (!isTop || Model.TotalPages > 1)
+{
+    <div class="pagination-bar @(isTop ? "pagination-bar--top" : "")">
+        @if (!isTop)
+        {
+            <p class="pagination-count">Showing @start&ndash;@end of @Model.TotalCount</p>
+        }
+        @if (Model.TotalPages > 1)
+        {
+            <nav class="pagination" aria-label="@Model.AriaLabel (@(isTop ? "top" : "bottom"))">
+                @if (Model.PageNumber > 1)
+                {
+                    <a class="page-link" asp-page="@Model.Page" asp-all-route-data="RouteFor(Model.PageNumber - 1)" rel="prev">&lsaquo; Previous</a>
+                }
+                else
+                {
+                    <span class="page-link is-disabled" aria-disabled="true">&lsaquo; Previous</span>
+                }
+
+                @foreach (var p in pages)
+                {
+                    if (p is null)
+                    {
+                        <span class="page-ellipsis" aria-hidden="true">&hellip;</span>
+                    }
+                    else if (p == Model.PageNumber)
+                    {
+                        <span class="page-link is-current" aria-current="page">@p</span>
+                    }
+                    else
+                    {
+                        <a class="page-link" asp-page="@Model.Page" asp-all-route-data="RouteFor(p.Value)">@p</a>
+                    }
+                }
+
+                @if (Model.PageNumber < Model.TotalPages)
+                {
+                    <a class="page-link" asp-page="@Model.Page" asp-all-route-data="RouteFor(Model.PageNumber + 1)" rel="next">Next &rsaquo;</a>
+                }
+                else
+                {
+                    <span class="page-link is-disabled" aria-disabled="true">Next &rsaquo;</span>
+                }
+            </nav>
+        }
+    </div>
+}

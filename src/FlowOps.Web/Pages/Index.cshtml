@@ -1,119 +1,525 @@
 @page
+@using FlowOps.Application.Tickets
+@using FlowOps.Domain.Tickets
+@using FlowOps.Web
 @model FlowOps.Web.Pages.IndexModel
 @{
     ViewData["Title"] = "Dashboard";
-}
-<h1>FlowOps</h1>
-<p>Signed in as @Model.Email (@Model.Role).</p>
-
-@* Phase 11: the dashboard opens on the actionable, ranked at-risk list — not the KPI counters —
-   per CLAUDE.md §1/§22. This reuses AttentionQueryService.GetAtRiskAsync exactly as the At-Risk
-   page itself does (same ranking, same authorization scope); only the top few rows are shown. *@
-<h2>What needs attention</h2>
-@if (Model.AtRiskPreview.Count == 0)
-{
-    <p class="empty-state">No work is at risk right now.</p>
-}
-else
-{
-    <ul class="attention-list">
-        @foreach (var ticket in Model.AtRiskPreview)
-        {
-            var topSignal = ticket.Signals.OrderByDescending(s => s.Severity).First();
-            <li>
-                <div class="attention-list__title">
-                    <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference — @ticket.Title</a>
-                </div>
-                <div class="attention-list__reason">
-                    <span class="badge badge-danger">@topSignal.Severity:</span>
-                    @topSignal.Headline
-                    @if (ticket.Signals.Count > 1)
-                    {
-                        @($" (+{ticket.Signals.Count - 1} more)")
-                    }
-                    — @ticket.Sla.Status
-                    @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
-                    {
-                        @($" — {remaining}")
-                    }
-                </div>
-            </li>
-        }
-    </ul>
-    @if (Model.AtRiskTotalCount > Model.AtRiskPreview.Count)
+    var filterDescription = new List<string> { $"last {Model.Filter.RangeDays} days" };
+    if (Model.Filter.TeamId is { } filterTeamId)
     {
-        <p>@(Model.AtRiskTotalCount - Model.AtRiskPreview.Count) more ticket@(Model.AtRiskTotalCount - Model.AtRiskPreview.Count == 1 ? "" : "s") need attention.</p>
+        var teamName = Model.TeamOptions.FirstOrDefault(t => t.TeamId == filterTeamId)?.TeamName;
+        if (teamName is not null)
+        {
+            filterDescription.Add(teamName);
+        }
+    }
+    if (Model.Filter.WorkType is { } filterWorkType)
+    {
+        filterDescription.Add(WorkTypeDisplay.ToDisplayName(filterWorkType));
     }
 }
-<p><a asp-page="/Tickets/AtRisk">View all at-risk work</a></p>
 
-@* Exactly four KPIs (CLAUDE.md §22) — no additional vanity counter. Each links through to
-   the filtered work it represents, via the existing Work Queue's closed filter set
-   (FlowOps.Application.Tickets.TicketQueueFilter) rather than a search/filter framework.
-   Secondary to the at-risk list above, per the Phase 11 dashboard correction. *@
-<h2>Summary</h2>
-<div class="kpi-grid">
-    <div class="kpi-card">
-        <h3><a asp-page="/Tickets/Index" asp-route-filter="OpenWork">Open Work</a></h3>
-        <p class="kpi-card__value">@Model.Summary.OpenWorkCount</p>
-    </div>
-    <div class="kpi-card">
-        <h3><a asp-page="/Tickets/Index" asp-route-filter="Overdue">Overdue</a></h3>
-        <p class="kpi-card__value">@Model.Summary.OverdueCount</p>
-    </div>
-    <div class="kpi-card">
-        <h3><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">SLA Compliance</a></h3>
-        @if (Model.Summary.SlaCompliance.Percentage is { } slaPercentage)
-        {
-            <p class="kpi-card__value">@($"{slaPercentage:F0}%")</p>
-            <p>@Model.Summary.SlaCompliance.MetCount of @Model.Summary.SlaCompliance.QualifyingCount, last 90 days</p>
-        }
-        else
-        {
-            <p>No data yet — no tickets resolved in the last 90 days.</p>
-        }
-    </div>
-    <div class="kpi-card">
-        <h3><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">Average Resolution Time</a></h3>
-        @if (Model.Summary.AverageResolutionTime.Average is { } averageDuration)
-        {
-            <p class="kpi-card__value">@FlowOps.Web.SlaDisplay.Format(averageDuration)</p>
-            <p>last 90 days, @Model.Summary.AverageResolutionTime.SampleCount ticket@(Model.Summary.AverageResolutionTime.SampleCount == 1 ? "" : "s")</p>
-        }
-        else
-        {
-            <p>No data yet — no tickets resolved in the last 90 days.</p>
-        }
+@* Phase 9+/11 Step 3: the same .page-header component every other page uses. No meta box: unlike
+   a ticket count or member count, there is no single number that summarizes "the dashboard" the
+   way those pages' totals do. *@
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Operations dashboard</h1>
+        <p class="page-context">@Model.OrganizationName — filtered to @string.Join(", ", filterDescription).</p>
     </div>
 </div>
 
-<h2>Current workload</h2>
-@if (Model.Summary.Workload.Count == 0)
+@* ADR-0020: first-run workspace setup — only non-null for an Admin of a real, incomplete
+   organization (IndexModel.OnGetAsync). Visually refined (no behavior/state change): one surface,
+   two zones (intro+progress / checklist), reusing existing FlowOps vocabulary throughout —
+   Icons.StatusResolved/StatusOpen for done/not-done (the same status marks used everywhere else,
+   not a second iconography), .fo-label for the eyebrow, .hbar-track/.hbar-fill's own thin-bar
+   language for progress. Exactly one action gets .btn-primary — the first incomplete step —
+   keeping the dashboard's one-primary-button rule intact. Every action is a plain link to an
+   existing page, so this works fully with JavaScript disabled. *@
+@if (Model.SetupStatus is { } setup)
 {
-    <p class="empty-state">No open work in your scope right now.</p>
-}
-else
-{
-    <div class="table-responsive">
-        <table>
-            <caption>Open tickets by team and assignee</caption>
-            <thead>
-                <tr>
-                    <th scope="col">Team</th>
-                    <th scope="col">Assignee</th>
-                    <th scope="col">Open tickets</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in Model.Summary.Workload)
+    var incompleteSteps = new List<string>();
+    if (!setup.HasTeam) { incompleteSteps.Add("team"); }
+    if (!setup.HasMultipleActiveMembers) { incompleteSteps.Add("invite"); }
+    if (!setup.HasTicket) { incompleteSteps.Add("ticket"); }
+    var firstIncompleteStep = incompleteSteps.Count > 0 ? incompleteSteps[0] : null;
+
+    // "Organization created" is always done (IndexModel only renders this section for a real,
+    // already-existing organization) — the +1 accounts for it without a fifth stored flag.
+    var doneCount = 1 + (setup.HasTeam ? 1 : 0) + (setup.HasMultipleActiveMembers ? 1 : 0) + (setup.HasTicket ? 1 : 0);
+    const int totalSteps = 4;
+    var progressPercent = doneCount * 100 / totalSteps;
+
+    <section class="setup" aria-labelledby="setup-heading">
+        <div class="setup__intro">
+            <div class="fo-label">Workspace setup</div>
+            <h2 id="setup-heading" class="setup__title">Welcome to @Model.OrganizationName</h2>
+            <p class="setup__sub">Your workspace is ready. Complete a few steps to get your team up and running.</p>
+            <p class="setup__progress-label">@doneCount of @totalSteps complete</p>
+            <div class="setup__progress-track" role="img" aria-label="@doneCount of @totalSteps setup steps complete">
+                <div class="setup__progress-fill @FlowOps.Web.CssWidthClass.For(progressPercent)"></div>
+            </div>
+            <p class="setup__footnote">You can skip setup and come back later.</p>
+        </div>
+
+        <ul class="setup__list">
+            <li class="setup__item is-done">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(Icons.StatusResolved)</span>
+                <div class="setup__content">
+                    <span class="setup__label">Organization created</span>
+                </div>
+                <span class="setup__action setup__state">Done</span>
+            </li>
+            <li class="setup__item @(setup.HasTeam ? "is-done" : "")">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasTeam ? Icons.StatusResolved : Icons.StatusOpen)</span>
+                <div class="setup__content">
+                    <span class="setup__label">Set up your first team</span>
+                    @if (!setup.HasTeam)
+                    {
+                        <span class="setup__desc">Create the team that will handle your organization's work.</span>
+                    }
+                </div>
+                @if (setup.HasTeam)
                 {
-                    <tr>
-                        <td>@row.TeamName</td>
-                        <td>@(row.AssigneeDisplayName ?? "Unassigned")</td>
-                        <td>@row.OpenTicketCount</td>
-                    </tr>
+                    <span class="setup__action setup__state">Done</span>
                 }
-            </tbody>
-        </table>
-    </div>
+                else
+                {
+                    <a class="btn setup__btn setup__action @(firstIncompleteStep == "team" ? "btn-primary" : "")" asp-page="/Admin/Index">Set up</a>
+                }
+            </li>
+            <li class="setup__item @(setup.HasMultipleActiveMembers ? "is-done" : "")">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasMultipleActiveMembers ? Icons.StatusResolved : Icons.StatusOpen)</span>
+                <div class="setup__content">
+                    <span class="setup__label">Invite your team</span>
+                    @if (!setup.HasMultipleActiveMembers)
+                    {
+                        <span class="setup__desc">Bring teammates into the workspace and assign their roles.</span>
+                    }
+                </div>
+                @if (setup.HasMultipleActiveMembers)
+                {
+                    <span class="setup__action setup__state">Done</span>
+                }
+                else
+                {
+                    <a class="btn setup__btn setup__action @(firstIncompleteStep == "invite" ? "btn-primary" : "")" asp-page="/Organization/Members">Invite</a>
+                }
+            </li>
+            <li class="setup__item @(setup.HasTicket ? "is-done" : "")">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasTicket ? Icons.StatusResolved : Icons.StatusOpen)</span>
+                <div class="setup__content">
+                    <span class="setup__label">Create your first ticket</span>
+                    @if (!setup.HasTicket)
+                    {
+                        <span class="setup__desc">Start tracking an operational request or task.</span>
+                    }
+                </div>
+                @if (setup.HasTicket)
+                {
+                    <span class="setup__action setup__state">Done</span>
+                }
+                else
+                {
+                    <a class="btn setup__btn setup__action @(firstIncompleteStep == "ticket" ? "btn-primary" : "")" asp-page="/Tickets/Create">Create</a>
+                }
+            </li>
+        </ul>
+    </section>
 }
+
+@* Phase 20: filter bar — one GET form, plain selects, always works with JavaScript disabled via
+   the Apply button. Auto-submit-on-change is progressive enhancement, wired externally
+   (wwwroot/js/dashboard-filters.js) rather than an inline onchange — CSP's script-src 'self' has
+   no 'unsafe-inline' and blocks inline event-handler attributes, so an onchange="..." attribute
+   here would never actually run. *@
+<form method="get" class="filter-bar" aria-label="Dashboard filters" data-autosubmit>
+    <div class="filter-bar__field">
+        <label for="range">Date range</label>
+        <select id="range" name="range">
+            @foreach (var days in DashboardFilter.AllowedRangeDays)
+            {
+                <option value="@days" selected="@(days == Model.Filter.RangeDays)">Last @days days</option>
+            }
+        </select>
+    </div>
+    @if (Model.TeamOptions.Count > 0)
+    {
+        <div class="filter-bar__field">
+            <label for="team">Team</label>
+            <select id="team" name="team">
+                <option value="" selected="@(Model.Filter.TeamId is null)">All teams</option>
+                @foreach (var team in Model.TeamOptions)
+                {
+                    <option value="@team.TeamId" selected="@(team.TeamId == Model.Filter.TeamId)">@team.TeamName</option>
+                }
+            </select>
+        </div>
+    }
+    <div class="filter-bar__field">
+        <label for="type">Work type</label>
+        <select id="type" name="type">
+            <option value="" selected="@(Model.Filter.WorkType is null)">All types</option>
+            @foreach (var workType in Enum.GetValues<WorkType>())
+            {
+                <option value="@workType" selected="@(workType == Model.Filter.WorkType)">@WorkTypeDisplay.ToDisplayName(workType)</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__actions">
+        <button type="submit" class="btn">Apply</button>
+        <a class="btn" asp-page="/Index">Reset</a>
+    </div>
+</form>
+<script src="~/js/dashboard-filters.js" asp-append-version="true"></script>
+
+@* Phase 11/20B: the dashboard opens on the actionable, ranked at-risk list — not the KPI
+   counters — per CLAUDE.md §1/§22. This reuses AttentionQueryService.GetAtRiskAsync exactly as
+   the At-Risk page itself does (same ranking, same authorization scope); only the top few rows
+   are shown. Attention sits one surface tier higher than the analytics below it (.panel--focus) —
+   it is the page's actual operational focus, not one analytical concept among several. Rows reuse
+   the exact .q-row component Work Queue/At-Risk use — one shared row mechanism, not a
+   dashboard-specific composition. *@
+<div class="panel panel--focus">
+    <h2>What needs attention</h2>
+    @if (Model.AtRiskPreview.Count == 0)
+    {
+        <p class="empty-state">No work is at risk right now.</p>
+    }
+    else
+    {
+        <div class="q-list">
+            @foreach (var ticket in Model.AtRiskPreview)
+            {
+                var slaText = ticket.Sla.Status.ToString();
+                var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
+                var topSignal = ticket.Signals.OrderByDescending(s => s.Severity).First();
+                var topSevClass = topSignal.Severity.ToString().ToLowerInvariant() switch
+                {
+                    "critical" => "crit",
+                    "high" => "high",
+                    "medium" => "med",
+                    _ => "low",
+                };
+                <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                    <div class="q-main">
+                        <div class="q-title">@ticket.Title</div>
+                        <div class="q-meta">
+                            <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span>@topSignal.Headline</span>
+                            @if (ticket.Signals.Count > 1)
+                            {
+                                <span class="why-secondary">(+@(ticket.Signals.Count - 1) more)</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="q-sev-col">
+                        <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
+                    </div>
+                    <div class="q-rail-col" aria-hidden="true">
+                        @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                    </div>
+                    <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                        <span class="q-sla__state">@ticket.Sla.Status</span>
+                        @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                        {
+                            <span class="q-sla__time">@remaining</span>
+                        }
+                    </div>
+                </a>
+            }
+        </div>
+    }
+    <p class="page-actions">
+        <a class="btn" asp-page="/Tickets/AtRisk">View all @Model.AtRiskTotalCount at-risk item@(Model.AtRiskTotalCount == 1 ? "" : "s")</a>
+    </p>
+</div>
+
+<div class="dashboard-grid">
+    @* Exactly four KPIs (CLAUDE.md §22) — no additional vanity counter. Each links through to
+       the filtered work it represents, via the existing Work Queue's closed filter set
+       (FlowOps.Application.Tickets.TicketQueueFilter) rather than a search/filter framework. A
+       stat strip, not four cards (docs/ui/design-system.md §1: "not everything is a card"). *@
+    <div class="panel">
+        @* Component-consolidation cleanup: values here are filtered links into Work Queue (and
+           Overdue's tone is conditional on live data) — genuinely richer than a plain figure, so
+           this keeps its own markup rather than the shared _StatStrip partial (which only takes a
+           plain label/value/caption). Icons removed regardless — no icon accompanies a number
+           anywhere in the app, full stop. *@
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Summary")); }
+        <div class="stat-strip">
+            <div class="stat">
+                <div class="fo-label">Open Work</div>
+                <div class="stat__value"><a asp-page="/Tickets/Index" asp-route-filter="OpenWork">@Model.Summary.OpenWorkCount</a></div>
+            </div>
+            <div class="stat">
+                <div class="fo-label">Overdue</div>
+                <div class="stat__value @(Model.Summary.OverdueCount > 0 ? "stat__value--danger" : "")">
+                    <a asp-page="/Tickets/Index" asp-route-filter="Overdue">@Model.Summary.OverdueCount</a>
+                </div>
+            </div>
+            <div class="stat">
+                <div class="fo-label"><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">SLA Compliance</a></div>
+                @if (Model.Summary.SlaCompliance.Percentage is { } slaPercentage)
+                {
+                    <div class="stat__value">@($"{slaPercentage:F0}%")</div>
+                    <div class="stat__delta">@Model.Summary.SlaCompliance.MetCount of @Model.Summary.SlaCompliance.QualifyingCount, last 90 days</div>
+                }
+                else
+                {
+                    <div class="stat__delta">No data yet — no tickets resolved in the last 90 days.</div>
+                }
+            </div>
+            <div class="stat">
+                <div class="fo-label"><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">Average Resolution Time</a></div>
+                @if (Model.Summary.AverageResolutionTime.Average is { } averageDuration)
+                {
+                    <div class="stat__value">@FlowOps.Web.SlaDisplay.Format(averageDuration)</div>
+                    <div class="stat__delta">last 90 days, @Model.Summary.AverageResolutionTime.SampleCount ticket@(Model.Summary.AverageResolutionTime.SampleCount == 1 ? "" : "s")</div>
+                }
+                else
+                {
+                    <div class="stat__delta">No data yet — no tickets resolved in the last 90 days.</div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-row-trend">
+        @* Phase 20 §3: server-aggregated ticket volume trend — the hero of this panel — a plain
+           inline SVG polyline, no charting library, no JavaScript required. The <details> table
+           below carries the identical data for screen readers, keyboard users, and anyone who
+           simply prefers numbers over a line. *@
+        <div class="panel">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Ticket volume over time")); }
+            @{ var totalCreated = Model.VolumeTrend.Sum(p => p.Count); }
+            @if (totalCreated == 0)
+            {
+                <p class="empty-state">No tickets were created in this period.</p>
+            }
+            else
+            {
+                var trendMax = Model.VolumeTrend.Max(p => p.Count);
+                var lastPoint = DashboardCharts.LastPoint(Model.VolumeTrend);
+                <p class="panel__metric"><span class="mono">@totalCreated</span> ticket@(totalCreated == 1 ? "" : "s") created in the selected period — peak of <span class="mono">@trendMax</span>.</p>
+                <div class="trend-chart" role="img" aria-label="@($"Ticket volume from {Model.VolumeTrend[0].PeriodStart:yyyy-MM-dd} to {Model.VolumeTrend[^1].PeriodStart:yyyy-MM-dd}, peaking at {trendMax} tickets, most recent value {Model.VolumeTrend[^1].Count}")">
+                    <svg viewBox="0 0 @(DashboardCharts.TrendWidth) @(DashboardCharts.TrendHeight)" preserveAspectRatio="none" aria-hidden="true">
+                        <line class="trend-gridline" x1="0" y1="@(DashboardCharts.MidlineY.ToString("F1"))" x2="@(DashboardCharts.TrendWidth)" y2="@(DashboardCharts.MidlineY.ToString("F1"))" />
+                        <line class="trend-baseline" x1="0" y1="@(DashboardCharts.BaselineY.ToString("F1"))" x2="@(DashboardCharts.TrendWidth)" y2="@(DashboardCharts.BaselineY.ToString("F1"))" />
+                        <polyline points="@DashboardCharts.PolylinePoints(Model.VolumeTrend)" />
+                        <circle class="trend-marker" cx="@(lastPoint.X.ToString("F1"))" cy="@(lastPoint.Y.ToString("F1"))" r="3.5" />
+                    </svg>
+                    <div class="trend-axis">
+                        <span>@Model.VolumeTrend[0].PeriodStart.ToString("MMM d")</span>
+                        <span>@Model.VolumeTrend[^1].PeriodStart.ToString("MMM d")</span>
+                    </div>
+                </div>
+            }
+            <details class="chart-fallback">
+                <summary>View data table</summary>
+                <div class="table-responsive">
+                    <table>
+                        <caption>Tickets created per period</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Period starting</th>
+                                <th scope="col">Tickets created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var point in Model.VolumeTrend)
+                            {
+                                <tr>
+                                    <th scope="row"><time datetime="@point.PeriodStart.ToString("yyyy-MM-dd")">@point.PeriodStart.ToString("yyyy-MM-dd")</time></th>
+                                    <td class="mono">@point.Count</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </div>
+
+        @* Phase 20 §4: current status distribution among tickets created in the selected period,
+           in workflow order — never sorted by count, so the shape of the pipeline itself is
+           legible. *@
+        <div class="panel">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Tickets by status")); }
+            @{ var statusTotal = Model.StatusBreakdown.Sum(s => s.Count); }
+            @if (statusTotal == 0)
+            {
+                <p class="empty-state">No tickets were created in this period.</p>
+            }
+            else
+            {
+                var statusMax = Model.StatusBreakdown.Max(s => s.Count);
+                <p class="panel__metric"><span class="mono">@statusTotal</span> ticket@(statusTotal == 1 ? "" : "s") in this period.</p>
+                <div class="hbar-list" role="img" aria-label="Ticket counts by status">
+                    @foreach (var row in Model.StatusBreakdown)
+                    {
+                        <div class="hbar-row">
+                            <div class="hbar-row__label">@WorkflowRail.Label(row.Status)</div>
+                            <div class="hbar-track"><div class="hbar-fill tone-neutral @DashboardCharts.WidthClass(row.Count, statusMax)"></div></div>
+                            <div class="hbar-row__value">@row.Count</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="dashboard-row-half">
+        @* Phase 20 §5: current open-ticket count per team — a present-tense snapshot (not scoped
+           by the selected date range; see AnalyticsQueryService.GetTeamWorkloadBreakdownAsync's
+           own doc comment) — restricted to the caller's own role scope, so an Agent or Viewer
+           never sees another team. A single visible team is a valid, intentional outcome of that
+           scope, not a bug to visually compensate for. *@
+        <div class="panel">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Workload by team")); }
+            @if (Model.TeamWorkload.Count == 0)
+            {
+                <p class="empty-state">No open work in your scope right now.</p>
+            }
+            else
+            {
+                var teamMax = Model.TeamWorkload.Max(t => t.OpenTicketCount);
+                var teamTotal = Model.TeamWorkload.Sum(t => t.OpenTicketCount);
+                <p class="panel__metric"><span class="mono">@teamTotal</span> open ticket@(teamTotal == 1 ? "" : "s") across @(Model.TeamWorkload.Count == 1 ? "your team" : $"{Model.TeamWorkload.Count} teams").</p>
+                <div class="hbar-list" role="img" aria-label="Open ticket counts by team">
+                    @foreach (var row in Model.TeamWorkload)
+                    {
+                        <div class="hbar-row">
+                            <div class="hbar-row__label">@row.TeamName</div>
+                            <div class="hbar-track"><div class="hbar-fill tone-teal @DashboardCharts.WidthClass(row.OpenTicketCount, teamMax)"></div></div>
+                            <div class="hbar-row__value">@row.OpenTicketCount</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @* Phase 20 §6: every ticket created in the period, classified by the existing
+           SlaPolicy.GetStatus — the same five states the ticket detail page itself shows, never a
+           second SLA calculation. Met/Within (good), Paused (neutral), AtRisk/Breached (needs
+           attention) get distinct tones, not a uniform palette, without collapsing the five
+           states into three. The population note keeps this panel's numbers from ever being
+           mistaken for the SLA Compliance KPI above — the two are deliberately different
+           populations (Step 4/11), never a second SLA definition. *@
+        <div class="panel">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("SLA performance")); }
+            @if (Model.SlaBreakdown.Total == 0)
+            {
+                <p class="empty-state">No tickets were created in this period.</p>
+            }
+            else
+            {
+                var slaMax = new[] { Model.SlaBreakdown.MetCount, Model.SlaBreakdown.WithinCount, Model.SlaBreakdown.PausedCount, Model.SlaBreakdown.AtRiskCount, Model.SlaBreakdown.BreachedCount }.Max();
+                <p class="panel__metric">
+                    Current status of all <span class="mono">@Model.SlaBreakdown.Total</span> ticket@(Model.SlaBreakdown.Total == 1 ? "" : "s") created in this period, open or closed —
+                    a different population from the SLA Compliance KPI above, which tracks only tickets resolved in a fixed 90-day window.
+                </p>
+                <div class="hbar-list" role="img" aria-label="Ticket counts by SLA status">
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Met</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-ok @DashboardCharts.WidthClass(Model.SlaBreakdown.MetCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.MetCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Within SLA</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-info @DashboardCharts.WidthClass(Model.SlaBreakdown.WithinCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.WithinCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Paused</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-muted @DashboardCharts.WidthClass(Model.SlaBreakdown.PausedCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.PausedCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">At risk</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-warn @DashboardCharts.WidthClass(Model.SlaBreakdown.AtRiskCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.AtRiskCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Breached</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-danger @DashboardCharts.WidthClass(Model.SlaBreakdown.BreachedCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.BreachedCount</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Phase 20C §12: mean resolution time (ResolvedAt - SlaStartedAt, identical to the KPI
+       strip's own Average Resolution Time definition) by the four work types (ADR-0003) among
+       tickets resolved in the selected period. A work type with zero resolved tickets renders as
+       a distinct "no data" row — never a bar at 0% width, which read as an identical full-width
+       gray track for every row regardless of whether it held real data or none at all (the exact
+       defect this refinement pass exists to fix: absence of data must look different from a
+       small/zero value, not merely evaluate to one at the pixel level). *@
+    <div class="panel">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Average resolution time")); }
+        @{ var resolvedTotal = Model.ResolutionByWorkType.Sum(r => r.SampleCount); }
+        @if (resolvedTotal == 0)
+        {
+            <p class="empty-state">No tickets were resolved in this period.</p>
+        }
+        else
+        {
+            var resolutionMaxMinutes = Model.ResolutionByWorkType.Where(r => r.Average is not null).Select(r => r.Average!.Value.TotalMinutes).DefaultIfEmpty(0).Max();
+            <p class="panel__metric">By work type · <span class="mono">@resolvedTotal</span> resolved ticket@(resolvedTotal == 1 ? "" : "s").</p>
+            <div class="hbar-list" role="img" aria-label="Average resolution time by work type">
+                @foreach (var row in Model.ResolutionByWorkType)
+                {
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">@WorkTypeDisplay.ToDisplayName(row.WorkType)</div>
+                        @if (row.Average is { } average)
+                        {
+                            <div class="hbar-track"><div class="hbar-fill tone-neutral @DashboardCharts.WidthClass((int)average.TotalMinutes, (int)resolutionMaxMinutes)"></div></div>
+                            <div class="hbar-row__value">@FlowOps.Web.SlaDisplay.Format(average)</div>
+                        }
+                        else
+                        {
+                            <div class="hbar-row__no-data">No resolved tickets in period</div>
+                            <div class="hbar-row__value">—</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="panel">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Current workload")); }
+        @if (Model.Summary.Workload.Count == 0)
+        {
+            <p class="empty-state">No open work in your scope right now.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table>
+                    <caption>Open tickets by team and assignee</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Team</th>
+                            <th scope="col">Assignee</th>
+                            <th scope="col">Open tickets</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in Model.Summary.Workload)
+                        {
+                            <tr>
+                                <td>@row.TeamName</td>
+                                <td>@(row.AssigneeDisplayName ?? "Unassigned")</td>
+                                <td class="mono">@row.OpenTicketCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

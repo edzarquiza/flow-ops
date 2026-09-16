@@ -29,9 +29,14 @@ public sealed class IndexModel : PageModel
     /// view can show the active filter and a "clear filter" link.</summary>
     public TicketQueueFilter Filter { get; private set; }
 
+    /// <summary>The active search term, echoed back so the view can show it in the search box and
+    /// carry it into pagination links and the "clear filter" link.</summary>
+    public string? Search { get; private set; }
+
     public async Task<IActionResult> OnGetAsync(
         int pageNumber = 1,
         TicketQueueFilter filter = TicketQueueFilter.None,
+        string? search = null,
         CancellationToken cancellationToken = default)
     {
         var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
@@ -44,7 +49,8 @@ public sealed class IndexModel : PageModel
         // decision is enforced in TicketService (CLAUDE.md §2 rule 8).
         CanCreateTicket = Domain.Tickets.TicketAccessPolicy.CanCreate(user);
         Filter = filter;
-        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, cancellationToken);
+        Search = search;
+        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, cancellationToken);
         return Page();
     }
 }

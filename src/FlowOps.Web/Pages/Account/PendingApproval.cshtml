@@ -1,0 +1,72 @@
+@page
+@model FlowOps.Web.Pages.Account.PendingApprovalModel
+@{
+    ViewData["Title"] = "Account pending approval";
+    var initialState = Model.Status switch
+    {
+        FlowOps.Domain.Accounts.AccountStatus.Active => "approved",
+        FlowOps.Domain.Accounts.AccountStatus.Rejected => "rejected",
+        _ => "pending",
+    };
+}
+<div class="login-shell" data-approval-status-url="@Url.Page("/Account/PendingApproval", "Status")">
+    <div class="login-brand">
+        @Html.Raw(FlowOps.Web.Icons.FlowMarkLarge)
+        <div class="login-wordmark">FlowOps</div>
+        <p class="login-tagline">Operations in flow.</p>
+    </div>
+
+    <div class="login-card">
+        <div data-approval-state="pending" hidden="@(initialState != "pending")">
+            <h1>Account awaiting approval</h1>
+            <p>Your account has been created successfully. A FlowOps platform administrator needs
+               to approve your account before you can sign in.</p>
+            <p>This page will update automatically — you don't need to refresh.</p>
+
+            <div class="approval-status">
+                <span class="fo-status-dot approval-status__dot fo-status-dot--warn" aria-hidden="true"></span>
+                <div>
+                    <div class="approval-status__title">Waiting for approval</div>
+                    <p class="approval-status__detail">Your account is currently being reviewed. You can safely leave this page open.</p>
+                </div>
+            </div>
+
+            <p><a class="text-link" asp-page="/Account/Login">Return to sign in</a></p>
+        </div>
+
+        <div data-approval-state="approved" hidden="@(initialState != "approved")">
+            <h1>Account approved</h1>
+            <p>Your account has been approved by a FlowOps administrator. You can now sign in.</p>
+
+            <div class="approval-status">
+                <span class="fo-status-dot approval-status__dot fo-status-dot--ok" aria-hidden="true"></span>
+                <div>
+                    <div class="approval-status__title">Approved</div>
+                </div>
+            </div>
+
+            <p><a class="btn-primary" asp-page="/Account/Login">Continue to sign in &rarr;</a></p>
+        </div>
+
+        <div data-approval-state="rejected" hidden="@(initialState != "rejected")">
+            <h1>Account not approved</h1>
+            <p>Unfortunately, your FlowOps account was not approved by a platform administrator.
+               Your account cannot be used to access FlowOps at this time.</p>
+
+            <div class="approval-status">
+                <span class="fo-status-dot approval-status__dot fo-status-dot--danger" aria-hidden="true"></span>
+                <div>
+                    <div class="approval-status__title">Not approved</div>
+                </div>
+            </div>
+
+            <p><a class="text-link" asp-page="/Account/Login">Return to sign in</a></p>
+        </div>
+
+        @* Accessible status announcements (spec §31): explicit text, not color/icon alone — the
+           polling script updates this region's text whenever the visible state above changes. *@
+        <p id="approval-live-region" class="sr-only" role="status" aria-live="polite"></p>
+    </div>
+</div>
+
+<script src="~/js/pending-approval.js" asp-append-version="true"></script>

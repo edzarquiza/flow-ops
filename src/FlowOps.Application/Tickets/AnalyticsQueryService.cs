@@ -1,3 +1,4 @@
+using FlowOps.Domain.Sla;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -6,28 +7,27 @@ namespace FlowOps.Application.Tickets;
 
 /// <summary>
 /// The Analytics module's public surface (CLAUDE.md §3.3: "Dashboard KPIs, workload, trends,
-/// aging"). Computes exactly the four capped dashboard KPIs (§22: "KPIs are limited to Open Work,
-/// Overdue, SLA Compliance, Average Resolution Time") plus a current workload distribution —
-/// nothing else. No historical trend, no weighted workload score (ATTN-RULE-07 stays optional and
-/// unbuilt), no attention-signal history (none is persisted to aggregate).
+/// aging"). Phase 10 built exactly the four capped dashboard KPIs (§22) plus the current workload
+/// distribution; Phase 20 (ADR-0019) adds the dashboard's further operational sections — ticket
+/// volume trend, status breakdown, team workload, SLA breakdown, and resolution time by work
+/// type — as additional methods on this same class, never a second analytics abstraction.
 /// </summary>
 /// <remarks>
 /// Every query aggregates in SQL — <c>Count</c>/<c>Average</c>/<c>GroupBy</c> translated by EF
-/// Core, never <c>AsEnumerable()</c> before aggregating. Five independent queries run
-/// sequentially against the one scoped <see cref="FlowOpsDbContext"/> (CLAUDE.md §16's ≤6 ceiling,
-/// with headroom); a literal reading of "executed concurrently" would need
-/// <c>IDbContextFactory</c>, a persistence pattern this project does not otherwise use, and
-/// introducing it for a first dashboard was judged disproportionate (Phase 10 decision).
+/// Core, never <c>AsEnumerable()</c> before aggregating — with the one deliberate exception of
+/// <see cref="GetSlaBreakdownAsync"/>, which materialises each in-scope ticket's raw SLA columns
+/// (bounded by the same organization/role/filter scope as everything else here, never "all
+/// tickets ever") and classifies them with <see cref="SlaPolicy.GetStatus"/> in memory — the
+/// single existing SLA-status authority, never re-derived independently (ADR-0019).
 /// </remarks>
 public sealed class AnalyticsQueryService
 {
     /// <summary>
-    /// The fixed reporting window for the two historical KPIs (Phase 10 decision — CLAUDE.md
-    /// itself specifies no window; this project fills that gap with 90 days, matching
-    /// <c>docs/database.md</c>'s own "resolution-trend and SLA-compliance reporting over a date
-    /// range" rationale for <c>ix_tickets_resolved_at</c>). Shared with
-    /// <see cref="TicketQueryService"/>'s <see cref="TicketQueueFilter.ResolvedRecently"/> filter
-    /// so a KPI and the ticket list it links to always describe the exact same population.
+    /// The fixed reporting window for the two original Phase 10 KPIs (SLA Compliance, Average
+    /// Resolution Time) — unaffected by the Phase 20 dashboard filter's <see cref="DashboardFilter.RangeDays"/>,
+    /// which governs only the newer, explicitly time-windowed sections below. Changing an
+    /// already-documented KPI's own window when an unrelated filter changes would be exactly the
+    /// "invent a conflicting KPI definition" Phase 20 was told not to do.
     /// </summary>
     public const int ReportingWindowDays = 90;
 
@@ -45,12 +45,16 @@ public sealed class AnalyticsQueryService
     /// caller's <see cref="AnalyticsScope"/> (AUTH-RULE-02 "Team analytics" row) — never the
     /// ordinary ticket-view scope, so an Agent's numbers can never disclose their team's data.
     /// </summary>
-    public async Task<DashboardSummary> GetDashboardSummaryAsync(CurrentUser user, CancellationToken cancellationToken = default)
+    /// <param name="filter">Phase 20: when supplied, <see cref="DashboardFilter.TeamId"/>/
+    /// <see cref="DashboardFilter.WorkType"/> narrow all four KPIs and the workload table
+    /// consistently with the rest of the dashboard. <see cref="DashboardFilter.RangeDays"/> is
+    /// deliberately NOT applied here — see <see cref="ReportingWindowDays"/>.</param>
+    public async Task<DashboardSummary> GetDashboardSummaryAsync(CurrentUser user, DashboardFilter? filter = null, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
         var windowStart = now.AddDays(-ReportingWindowDays);
 
-        var scoped = ApplyAnalyticsScope(_dbContext.Tickets.AsNoTracking(), user);
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false);
 
         // Query 1: Open Work.
         var openWorkCount = await scoped.CountAsync(
@@ -124,14 +128,281 @@ public sealed class AnalyticsQueryService
     }
 
     /// <summary>
+    /// Phase 20 §3: ticket count per period. Grouped server-side by calendar day
+    /// (<c>t.CreatedAt.Date</c> — a plain EF Core translation, not a provider-specific function;
+    /// Application stays free of an Npgsql-specific package reference per ADR-0002's layering)
+    /// — never by loading tickets and grouping in C#. The aggregate query returns at most one row
+    /// per day in the selected range (≤180), so bucketing those day-rows into weeks for the
+    /// longer ranges is a cheap in-memory pass over already-aggregated counts, not raw tickets.
+    /// Population: tickets whose <c>CreatedAt</c> falls in the selected range (Step 7's "is demand
+    /// increasing/decreasing/stable" is a question about when work arrives). Granularity: daily
+    /// for a 30-day range, weekly otherwise (Step 3's own suggestion) — every period in the range
+    /// is present, including zero-count ones, so the line is never discontinuous.
+    /// </summary>
+    public async Task<IReadOnlyList<DashboardTrendPoint>> GetTicketVolumeTrendAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var start = now.AddDays(-filter.RangeDays);
+        var weekly = filter.RangeDays > 30;
+
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.CreatedAt >= start && t.CreatedAt <= now);
+
+        var rows = await scoped
+            .GroupBy(t => t.CreatedAt.Date)
+            .Select(g => new { Day = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var countsByDay = rows.ToDictionary(r => DateOnly.FromDateTime(r.Day), r => r.Count);
+
+        var firstDay = DateOnly.FromDateTime(start.UtcDateTime.Date);
+        var lastDay = DateOnly.FromDateTime(now.UtcDateTime.Date);
+
+        if (!weekly)
+        {
+            var dailyPoints = new List<DashboardTrendPoint>();
+            for (var day = firstDay; day <= lastDay; day = day.AddDays(1))
+            {
+                dailyPoints.Add(new DashboardTrendPoint(day, countsByDay.GetValueOrDefault(day)));
+            }
+
+            return dailyPoints;
+        }
+
+        // Weekly buckets start on the same weekday as the range's own first day, so the final
+        // (possibly partial) bucket lands at the end rather than requiring calendar-week alignment.
+        var weeklyPoints = new List<DashboardTrendPoint>();
+        for (var weekStart = firstDay; weekStart <= lastDay; weekStart = weekStart.AddDays(7))
+        {
+            var weekEnd = weekStart.AddDays(6) < lastDay ? weekStart.AddDays(6) : lastDay;
+            var count = 0;
+            for (var day = weekStart; day <= weekEnd; day = day.AddDays(1))
+            {
+                count += countsByDay.GetValueOrDefault(day);
+            }
+
+            weeklyPoints.Add(new DashboardTrendPoint(weekStart, count));
+        }
+
+        return weeklyPoints;
+    }
+
+    /// <summary>Phase 20 §4: current status of every ticket created within the selected range.
+    /// Every <see cref="Status"/> appears, in the workflow's own declaration order, including zero
+    /// counts — never sorted by count, since the point is to show where in the workflow work
+    /// currently sits, not to rank statuses.</summary>
+    public async Task<IReadOnlyList<DashboardStatusCount>> GetStatusBreakdownAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var start = now.AddDays(-filter.RangeDays);
+
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.CreatedAt >= start && t.CreatedAt <= now);
+
+        var rows = await scoped
+            .GroupBy(t => t.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return Enum.GetValues<Status>()
+            .Select(status => new DashboardStatusCount(status, rows.FirstOrDefault(r => r.Status == status)?.Count ?? 0))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Phase 20 §5: current open-ticket count per team — a present-tense snapshot, deliberately
+    /// NOT scoped by <see cref="DashboardFilter.RangeDays"/> (a ticket created 200 days ago and
+    /// still open today is still part of "who is carrying the work right now"); team/work-type
+    /// filters still apply. Teams with zero current open tickets in scope are simply absent —
+    /// unlike <see cref="GetStatusBreakdownAsync"/>'s closed status set, the set of teams is not
+    /// closed/small enough to always enumerate, and Step 16/Step 6 both require that a team
+    /// outside the caller's own scope never appear even with a zero count.
+    /// </summary>
+    public async Task<IReadOnlyList<DashboardTeamWorkload>> GetTeamWorkloadBreakdownAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.Status != Status.Resolved && t.Status != Status.Closed);
+
+        return await scoped
+            .GroupBy(t => t.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .Join(_dbContext.Teams, g => g.TeamId, team => team.Id, (g, team) => new { team.Id, team.Name, g.Count })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Id)
+            .Select(x => new DashboardTeamWorkload(x.Id, x.Name, x.Count))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Phase 20 §6: every ticket created within the selected range, classified by
+    /// <see cref="SlaPolicy.GetStatus"/> — the single existing SLA-status authority, never
+    /// re-derived. Two queries (raw facts, then the tiny SLA configuration table — the same shape
+    /// <see cref="TicketQueryService"/>/<see cref="AttentionQueryService"/> already use), then one
+    /// in-memory classification pass over the already-scoped, already-filtered result set — not
+    /// "all tickets ever."
+    /// </summary>
+    public async Task<DashboardSlaBreakdown> GetSlaBreakdownAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var start = now.AddDays(-filter.RangeDays);
+
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.CreatedAt >= start && t.CreatedAt <= now);
+
+        var facts = await scoped
+            .Select(t => new
+            {
+                t.WorkType,
+                t.Priority,
+                t.Status,
+                t.SlaMet,
+                t.SlaStartedAt,
+                t.SlaDueAt,
+                t.SlaPausedMinutes,
+                t.SlaTargetMinutes,
+            })
+            .ToListAsync(cancellationToken);
+
+        var configurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(cancellationToken);
+
+        int met = 0, within = 0, paused = 0, atRisk = 0, breached = 0;
+        foreach (var fact in facts)
+        {
+            var configuration = SlaPolicy.ResolveConfiguration(configurations, fact.WorkType, fact.Priority);
+            var status = SlaPolicy.GetStatus(
+                fact.Status, fact.SlaMet, now, fact.SlaStartedAt, fact.SlaDueAt,
+                fact.SlaPausedMinutes, fact.SlaTargetMinutes, configuration.RiskThresholdPercent);
+
+            switch (status)
+            {
+                case SlaStatus.Met: met++; break;
+                case SlaStatus.Within: within++; break;
+                case SlaStatus.Paused: paused++; break;
+                case SlaStatus.AtRisk: atRisk++; break;
+                case SlaStatus.Breached: breached++; break;
+            }
+        }
+
+        return new DashboardSlaBreakdown(met, within, paused, atRisk, breached);
+    }
+
+    /// <summary>Phase 20 §7: mean <c>ResolvedAt − SlaStartedAt</c> (identical definition to the
+    /// existing <see cref="ResolutionTimeSummary"/> KPI) for tickets resolved within the selected
+    /// range, grouped by <see cref="WorkType"/>. All four work types appear, including one with no
+    /// qualifying tickets. Population is by <c>ResolvedAt</c>, not <c>CreatedAt</c> — a ticket
+    /// created long before the window but resolved inside it still counts — so
+    /// <see cref="ApplyDashboardScope"/> is called with <c>includeDateRange: false</c> and this
+    /// method applies its own date predicate against the column that actually matters here.</summary>
+    public async Task<IReadOnlyList<DashboardWorkTypeResolution>> GetResolutionTimeByWorkTypeAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var start = now.AddDays(-filter.RangeDays);
+
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.ResolvedAt != null && t.ResolvedAt >= start && t.ResolvedAt <= now);
+
+        var rows = await scoped
+            .GroupBy(t => t.WorkType)
+            .Select(g => new
+            {
+                WorkType = g.Key,
+                AverageMinutes = g.Average(t => (double?)(t.ResolvedAt!.Value - t.SlaStartedAt).TotalMinutes),
+                Count = g.Count(),
+            })
+            .ToListAsync(cancellationToken);
+
+        return Enum.GetValues<WorkType>()
+            .Select(workType =>
+            {
+                var row = rows.FirstOrDefault(r => r.WorkType == workType);
+                return new DashboardWorkTypeResolution(
+                    workType,
+                    row?.AverageMinutes is { } minutes ? TimeSpan.FromMinutes(minutes) : null,
+                    row?.Count ?? 0);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Phase 20 §17: the dashboard filter bar's own team dropdown — only teams the caller's
+    /// <see cref="AnalyticsScope"/> already admits, so the list itself can never disclose a team
+    /// outside their authorization (Step 16/§16's anti-leak requirement extends to filter options,
+    /// not just results).
+    /// </summary>
+    public async Task<IReadOnlyList<DashboardFilterTeamOption>> GetFilterTeamOptionsAsync(CurrentUser user, CancellationToken cancellationToken = default)
+    {
+        var scope = TicketAccessPolicy.GetAnalyticsScope(user);
+
+        var teamsQuery = _dbContext.Teams.AsNoTracking().Where(t => t.OrganizationId == user.OrganizationId);
+        if (scope.Kind is AnalyticsScopeKind.ManagedTeams or AnalyticsScopeKind.MemberTeams)
+        {
+            var teamIds = scope.TeamIds.ToArray();
+            teamsQuery = teamsQuery.Where(t => teamIds.Contains(t.Id));
+        }
+        else if (scope.Kind == AnalyticsScopeKind.OwnAssignedTicketsOnly)
+        {
+            // An Agent's analytics scope is "own assigned tickets" — no team-wide filter makes
+            // sense to offer, since selecting one could never narrow anything further.
+            return [];
+        }
+
+        return await teamsQuery
+            .OrderBy(t => t.Name)
+            .Select(t => new DashboardFilterTeamOption(t.Id, t.Name))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ADR-0020: first-run workspace setup state — three bounded existence checks scoped to
+    /// <paramref name="user"/>'s own organization, never a loaded collection counted in memory.
+    /// Entirely derived from current data; nothing here is persisted, so this reflects the
+    /// organization's true current state on every call, including immediately after switching
+    /// organizations. Callers should skip calling this at all for a non-Admin or the demo
+    /// organization (see Index.cshtml.cs) rather than pay for three queries nobody will see.
+    /// </summary>
+    public async Task<WorkspaceSetupStatus> GetWorkspaceSetupStatusAsync(CurrentUser user, CancellationToken cancellationToken = default)
+    {
+        var hasTeam = await _dbContext.Teams
+            .AsNoTracking()
+            .AnyAsync(t => t.OrganizationId == user.OrganizationId, cancellationToken);
+
+        // Ticket has no OrganizationId column of its own (it inherits organization transitively
+        // through Team, like Category) — the same join-based boundary ApplyAnalyticsScope/
+        // TicketQueryService.ApplyViewScope already use, not a second definition of it.
+        var hasTicket = await _dbContext.Tickets
+            .AsNoTracking()
+            .Join(_dbContext.Teams, t => t.TeamId, team => team.Id, (t, team) => team.OrganizationId)
+            .AnyAsync(organizationId => organizationId == user.OrganizationId, cancellationToken);
+
+        // "Active" matches the same definition the Members page itself shows (ApplicationUser.IsActive)
+        // — capped with Take(2) before CountAsync, so the database only ever has to find at most two
+        // matching rows regardless of how large the organization is; the caller only needs to know
+        // whether the count exceeds one, never the true count.
+        var activeMemberCount = await _dbContext.OrganizationMemberships
+            .AsNoTracking()
+            .Where(m => m.OrganizationId == user.OrganizationId)
+            .Join(_dbContext.Users, m => m.UserId, u => u.Id, (m, u) => u.IsActive)
+            .Where(isActive => isActive)
+            .Take(2)
+            .CountAsync(cancellationToken);
+
+        return new WorkspaceSetupStatus(hasTeam, activeMemberCount > 1, hasTicket);
+    }
+
+    /// <summary>
     /// AUTH-RULE-02 "Team analytics" row, translated to SQL. Deliberately not
     /// <see cref="TicketQueryService"/>'s <c>ApplyViewScope</c> — see
     /// <see cref="TicketAccessPolicy.GetAnalyticsScope"/> for why Agent needs a narrower shape
     /// here than ordinary ticket viewing.
     /// </summary>
-    private static IQueryable<Ticket> ApplyAnalyticsScope(IQueryable<Ticket> tickets, CurrentUser user)
+    private static IQueryable<Ticket> ApplyAnalyticsScope(FlowOpsDbContext dbContext, IQueryable<Ticket> tickets, CurrentUser user)
     {
         var scope = TicketAccessPolicy.GetAnalyticsScope(user);
+
+        // Phase 16: applied unconditionally, before the role-based scope below — including for
+        // AllTeams (Admin), which otherwise sees every organization's tickets in its analytics.
+        var orgScoped = tickets.Where(t =>
+            dbContext.Teams.Any(team => team.Id == t.TeamId && team.OrganizationId == user.OrganizationId));
 
         // Materialised to an array before the lambda (same convention as
         // TicketQueryService.ApplyViewScope) so the provider translates it to a single SQL array
@@ -140,11 +411,50 @@ public sealed class AnalyticsQueryService
 
         return scope.Kind switch
         {
-            AnalyticsScopeKind.AllTeams => tickets,
+            AnalyticsScopeKind.AllTeams => orgScoped,
             AnalyticsScopeKind.ManagedTeams or AnalyticsScopeKind.MemberTeams =>
-                tickets.Where(t => teamIds.Contains(t.TeamId)),
-            AnalyticsScopeKind.OwnAssignedTicketsOnly => tickets.Where(t => t.AssigneeId == scope.AssigneeId),
+                orgScoped.Where(t => teamIds.Contains(t.TeamId)),
+            AnalyticsScopeKind.OwnAssignedTicketsOnly => orgScoped.Where(t => t.AssigneeId == scope.AssigneeId),
             _ => throw new ArgumentOutOfRangeException(nameof(user)),
         };
+    }
+
+    /// <summary>
+    /// Phase 20 (ADR-0019): applies the dashboard's own filter bar — team, work type, and
+    /// (optionally) the created-date range — strictly ON TOP of <see cref="ApplyAnalyticsScope"/>,
+    /// never in place of it. A <see cref="DashboardFilter.TeamId"/> the caller cannot actually see
+    /// (wrong organization, or a real team outside their role scope) intersects with an
+    /// already-narrowed query and simply yields zero rows — never a leak, never a distinguishable
+    /// error (Step 6/16).
+    /// </summary>
+    /// <param name="includeDateRange">No default on purpose: every call site below has its own
+    /// specific date-column semantics (CreatedAt, ResolvedAt, or none at all for a present-tense
+    /// snapshot) — see each public method's own doc comment — so silently defaulting this one way
+    /// would eventually apply the wrong filter to a method that meant something else.</param>
+    private IQueryable<Ticket> ApplyDashboardScope(IQueryable<Ticket> tickets, DashboardFilter? filter, bool includeDateRange)
+    {
+        if (filter is null)
+        {
+            return tickets;
+        }
+
+        if (filter.TeamId is { } teamId)
+        {
+            tickets = tickets.Where(t => t.TeamId == teamId);
+        }
+
+        if (filter.WorkType is { } workType)
+        {
+            tickets = tickets.Where(t => t.WorkType == workType);
+        }
+
+        if (includeDateRange)
+        {
+            var now = _timeProvider.GetUtcNow();
+            var start = now.AddDays(-filter.RangeDays);
+            tickets = tickets.Where(t => t.CreatedAt >= start && t.CreatedAt <= now);
+        }
+
+        return tickets;
     }
 }

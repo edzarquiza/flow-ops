@@ -25,6 +25,7 @@ database also reinforces a domain rule, that reinforcement is catalogued separat
 | `ATTN-RULE-*` | Attention ("at-risk") engine | CLAUDE.md §9 |
 | `AUDIT-RULE-*` | Audit history | CLAUDE.md §10 |
 | `PERSIST-RULE-*` | Database constraints that *reinforce* a domain rule above | CLAUDE.md §7.4 |
+| `ORG-RULE-*` | Multi-tenancy & organizations | CLAUDE.md §6.3 |
 
 IDs are permanent once assigned. If a rule is removed, its ID is retired, not reused. If a rule is
 split or clarified, it gains a new ID rather than silently changing meaning under the old one.
@@ -97,6 +98,7 @@ split or clarified, it gains a new ID rather than silently changing meaning unde
 | `AUTH-RULE-08` | Role assignment is Admin-only and is audited. | UserService |
 | `AUTH-RULE-09` | While demo mode is enabled, seeded persona accounts cannot have their credentials or role changed by anyone, including an Admin. | UserService (demo mode guard) |
 | `AUTH-RULE-10` | The AUTH-RULE-02 "Team analytics" row (Phase 10) is a deliberately narrower scope than "View tickets", not the same one: `TicketAccessPolicy.GetAnalyticsScope` resolves Admin → every ticket, Manager → `ManagedTeamIds`, Viewer → `MemberTeamIds`, and — the row's whole reason for existing — Agent → only tickets currently assigned to them, never their team's tickets generally. `AnalyticsQueryService` applies this scope to every aggregate query, so a KPI or workload count can never disclose data the capability matrix does not grant the caller. | TicketAccessPolicy |
+| `AUTH-RULE-11` | Phase 20 (ADR-0019): the dashboard's filter bar (date range, team, work type) is never an authorization mechanism. `AnalyticsQueryService.ApplyDashboardScope` is applied strictly *after* AUTH-RULE-10's organization/role scope, never before or instead of it — a `TeamId` naming a team outside the caller's own scope (wrong organization, or a real team their role cannot see) intersects with an already-narrowed query and yields zero rows, indistinguishable from "no such team." The filter bar's own team dropdown is populated only from the caller's own accessible teams, so the control cannot be used to enumerate other teams either. | AnalyticsQueryService |
 
 **`AUTH-RULE-02` capability matrix** (Admin / Manager / Agent / Viewer):
 
@@ -218,14 +220,43 @@ independent enforcement layer, per CLAUDE.md §7.4 ("Application code is not the
 | `TICKET-ENUM` | 4 | `TICKET-ENUM-01`–`04` |
 | `TICKET-INV` | 10 | `TICKET-INV-01`–`10` |
 | `TICKET-WF` | 13 | `TICKET-WF-01`–`13` |
-| `AUTH-RULE` | 10 | `AUTH-RULE-01`–`10` |
+| `AUTH-RULE` | 11 | `AUTH-RULE-01`–`11` |
 | `SLA-RULE` | 12 | `SLA-RULE-01`–`12` |
 | `ATTN-RULE` | 7 | `ATTN-RULE-01`–`07` |
 | `AUDIT-RULE` | 6 | `AUDIT-RULE-01`–`06` |
 | `PERSIST-RULE` | 6 | `PERSIST-RULE-01`–`06` |
-| **Total** | **73** | — |
+| `ORG-RULE` | 14 | `ORG-RULE-01`–`14` |
+| **Total** | **88** | — |
 
 Every rule above has a stable ID and a stated, non-UI, non-database-only owner where the rule is a
 genuine domain rule (`PERSIST-RULE` entries are the deliberate exception, explicitly scoped to
 database reinforcement). This satisfies the Phase 1 gate: *"Every rule has an id and a stated
 owner."*
+
+---
+
+## 10. Multi-tenancy & organizations (`ORG-RULE`)
+
+Phase 16 introduced `Organization`/`OrganizationMembership` as a new, outer authorization boundary
+(ADR-0015); Phase 18 added invitations and member management on top of it (ADR-0017); Phase 19
+replaced the original deterministic current-organization pick with explicit, persisted context
+(ADR-0018). All are authoritative in CLAUDE.md — `ORG-RULE-01`–`06` and `ORG-RULE-14` in §6.3,
+`ORG-RULE-07`–`13` in §6.4 — and their canonical text lives there; this table exists so every
+`ORG-RULE-*` id is catalogued alongside every other rule prefix, per the ID scheme above.
+
+| ID | Rule | Owner |
+|---|---|---|
+| `ORG-RULE-01` | An Organization is the outer authorization boundary: every Team, Project, and (transitively, via Team) Ticket belongs to exactly one Organization. | `Organization`, `Team`, `Project` (Domain) |
+| `ORG-RULE-02` | A user's role is a fact about their `OrganizationMembership`, not about the user — the same user may hold a different `UserRole` in each Organization they belong to. | `OrganizationMembership` (Domain) |
+| `ORG-RULE-03` | The organization boundary is applied before, and independently of, every existing team/role scoping rule (`AUTH-RULE-*`) — including Admin's unconditional team-scope bypass, which stops at the organization boundary. | `TicketQueryService`, `AttentionQueryService`, `AnalyticsQueryService`, `TicketService.MutateAsync` |
+| `ORG-RULE-04` | The caller's current organization is never trusted from a client-supplied value — it is re-derived from `OrganizationMembership` rows on every request, the same way `CurrentUser.Role`/team membership already are. Preserved until a future phase deliberately introduces an organization switcher. | `CurrentUserAccessor` |
+| `ORG-RULE-05` | An Organization's administrator is represented purely as an `OrganizationMembership` with `Role = Admin` — no separate ownership field exists. | `OrganizationMembership` (Domain) |
+| `ORG-RULE-06` | Every organization-scoped read and write must enforce the boundary: queries capable of exposing organization-owned data filter by organization; ticket mutation enforces it at ticket load time; a cross-organization resource id is refused indistinguishably from a nonexistent one; ticket creation rejects a Team/Category/Project outside the caller's organization. | `TicketQueryService`, `AttentionQueryService`, `AnalyticsQueryService`, `TicketService` |
+| `ORG-RULE-07` | An invitation is organization-scoped: it belongs to exactly one Organization. | `Invitation` (Domain) |
+| `ORG-RULE-08` | An invitation token is single-use; concurrent acceptance of the same token resolves via the `xmin` optimistic-concurrency token (ADR-0011), never a second concurrency mechanism. | `Invitation` (Domain), `InvitationService` (Application) |
+| `ORG-RULE-09` | An invitation is bound to its invited email; acceptance requires the accepting account's normalized email to match exactly, and a new account created via acceptance always uses the invitation's own email. | `Invitation` (Domain), `InvitationService` (Application) |
+| `ORG-RULE-10` | Invitations expire after a fixed lifetime, checked server-side on every acceptance attempt; expired rows are never deleted. | `Invitation` (Domain) |
+| `ORG-RULE-11` | Only Admin/Manager may invite or manage members; Manager is least-privilege (Agent/Viewer only — never Admin, never another Manager). Every check resolves the organization server-side, never from a client-supplied id. | `OrganizationAccessPolicy` (Domain) |
+| `ORG-RULE-12` | No action (account deletion, membership role change, member removal) may leave an organization with zero Admins. | `SoleAdminGuard` (Application) |
+| `ORG-RULE-13` | Removing a member deletes only the `OrganizationMembership` row — the user's identity, other-organization memberships, and historical ticket/comment/event records are untouched. | `MembershipService` (Application) |
+| `ORG-RULE-14` | Organization context is explicit, persisted, and re-validated on every use; a selected value is never itself an authorization grant. Switching is allowed only among the caller's own real memberships, fails identically for an inaccessible or nonexistent id, accepts no client-supplied return path, and is cleared on logout. | `CurrentUserAccessor` (Application) |

@@ -20,13 +20,17 @@ public sealed class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(c => c.Name).IsRequired();
         builder.Property(c => c.DefaultWorkType).HasConversion<string>().IsRequired();
         builder.Property(c => c.CreatedAt).IsRequired();
+        builder.Property(c => c.IsActive).IsRequired().HasDefaultValue(true);
 
         builder.HasOne<Team>()
             .WithMany()
             .HasForeignKey(c => c.TeamId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // PERSIST-RULE-05.
-        builder.HasIndex(c => new { c.TeamId, c.Name }).IsUnique();
+        // PERSIST-RULE-05. Phase 22 (ADR-0022): filtered to active rows only, so deactivating a
+        // category frees its name for reuse on the same team without touching that row.
+        builder.HasIndex(c => new { c.TeamId, c.Name })
+            .IsUnique()
+            .HasFilter("is_active = true");
     }
 }

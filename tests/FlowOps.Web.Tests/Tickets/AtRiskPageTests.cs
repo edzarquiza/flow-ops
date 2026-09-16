@@ -32,11 +32,13 @@ public sealed class AtRiskPageTests : IClassFixture<FlowOpsWebApplicationFactory
 
         Assert.Contains("At-risk work", html, StringComparison.Ordinal);
         Assert.Contains("Payroll system is offline", html, StringComparison.Ordinal);
-        Assert.Contains("Ranked most urgent first", html, StringComparison.Ordinal);
+        // Phase 11: this now lives in the page's subtitle sentence rather than a standalone
+        // table caption, so it is no longer sentence-initial.
+        Assert.Contains("ranked most urgent first", html, StringComparison.OrdinalIgnoreCase);
 
-        // Signals are rendered as words — severity is never conveyed by colour alone (§22).
-        Assert.Contains("Why it needs attention", html, StringComparison.Ordinal);
-        Assert.Contains("Critical:", html, StringComparison.Ordinal);
+        // Signals are rendered as words, in the row's metadata line and the ranked severity mark —
+        // severity is never conveyed by colour alone (§22).
+        Assert.Contains("Critical", html, StringComparison.Ordinal);
         Assert.Contains("unassigned", html, StringComparison.OrdinalIgnoreCase);
 
         // And the row links through to the ticket it is about.

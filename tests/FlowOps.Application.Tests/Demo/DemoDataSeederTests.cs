@@ -51,10 +51,17 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
 
         await seeder.SeedAsync(SmallVolume);
 
+        Assert.Equal(1, await context.Organizations.CountAsync()); // Phase 16: exactly one demo org
         Assert.Equal(5, await context.Teams.CountAsync());
         Assert.Equal(8, await context.Projects.CountAsync());
         Assert.Equal(10, await context.Categories.CountAsync()); // 2 per team
         Assert.Equal(25, await context.Users.CountAsync());
+        Assert.Equal(25, await context.OrganizationMemberships.CountAsync()); // one per user
+
+        var organizationId = await context.Organizations.Select(o => o.Id).SingleAsync();
+        Assert.True(await context.Teams.AllAsync(t => t.OrganizationId == organizationId));
+        Assert.True(await context.Projects.AllAsync(p => p.OrganizationId == organizationId));
+        Assert.True(await context.OrganizationMemberships.AllAsync(m => m.OrganizationId == organizationId));
 
         // Signal-showcase tickets (28, fixed) plus the requested bulk volume.
         Assert.Equal(28 + SmallVolume.TicketCount, await context.Tickets.CountAsync());
@@ -123,6 +130,7 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => seeder.SeedAsync(SmallVolume));
 
+        Assert.Equal(0, await context.Organizations.CountAsync());
         Assert.Equal(0, await context.Teams.CountAsync());
         Assert.Equal(0, await context.Tickets.CountAsync());
         Assert.Equal(0, await context.Users.CountAsync());

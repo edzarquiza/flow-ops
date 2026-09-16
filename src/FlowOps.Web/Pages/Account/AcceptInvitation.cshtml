@@ -1,0 +1,92 @@
+@page
+@model FlowOps.Web.Pages.Account.AcceptInvitationModel
+@{
+    ViewData["Title"] = "Accept invitation";
+    var isAuthenticated = User.Identity?.IsAuthenticated == true;
+}
+<div class="login-shell">
+    <div class="login-brand">
+        @Html.Raw(FlowOps.Web.Icons.FlowMarkLarge)
+        <div class="login-wordmark">FlowOps</div>
+    </div>
+
+    <div class="login-card">
+        @if (Model.Details.State != FlowOps.Application.Organizations.InvitationState.Valid)
+        {
+            <h1>Invitation not available</h1>
+            <p class="ticket-subtitle">This invitation is no longer valid. It may have expired, already been used, or the link may be incorrect.</p>
+            <p><a class="text-link" asp-page="/Account/Login">Go to sign in</a></p>
+        }
+        else
+        {
+            <h1>You're invited to join</h1>
+            <h2 class="mt-0">@Model.Details.OrganizationName</h2>
+
+            <div class="field-grid">
+                <div class="field">
+                    <div class="fo-label">Invited email</div>
+                    <p>@Model.Details.InvitedEmail</p>
+                </div>
+                <div class="field">
+                    <div class="fo-label">Role</div>
+                    <p>@FlowOps.Web.RoleDisplay.ToDisplayName(Model.Details.Role!.Value)</p>
+                </div>
+            </div>
+
+            <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+
+            @if (isAuthenticated)
+            {
+                if (Model.SignedInAsWrongAccount)
+                {
+                    <p class="ticket-subtitle">
+                        You're signed in as <strong>@User.Identity!.Name</strong>, but this invitation was sent to
+                        <strong>@Model.Details.InvitedEmail</strong>. Sign out and use the invited account, or a new
+                        one with that email, to accept it.
+                    </p>
+                    <form method="post" asp-page="/Account/Logout">
+                        <button type="submit" class="btn">Sign out</button>
+                    </form>
+                }
+                else
+                {
+                    <form method="post" asp-page-handler="Accept" asp-route-token="@Model.Token">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn-primary login-submit">Accept invitation</button>
+                    </form>
+                }
+            }
+            else if (Model.InvitedEmailAlreadyHasAccount)
+            {
+                <p class="ticket-subtitle">An account already exists for this email.</p>
+                <a class="btn-primary login-submit"
+                   asp-page="/Account/Login" asp-route-returnUrl="@Url.Page("/Account/AcceptInvitation", new { token = Model.Token })">
+                    Sign in to accept
+                </a>
+            }
+            else
+            {
+                <p class="ticket-subtitle">Create your account to join @Model.Details.OrganizationName.</p>
+                <form method="post" asp-page-handler="CreateAccount" asp-route-token="@Model.Token">
+                    @Html.AntiForgeryToken()
+                    <div class="field">
+                        <label asp-for="NewAccount.FullName">Full name</label>
+                        <input asp-for="NewAccount.FullName" autocomplete="name" aria-describedby="fullname-error" />
+                        <span id="fullname-error" class="field-validation-error" asp-validation-for="NewAccount.FullName"></span>
+                    </div>
+                    <div class="field">
+                        <label asp-for="NewAccount.Password">Password</label>
+                        <input asp-for="NewAccount.Password" autocomplete="new-password" aria-describedby="password-error" />
+                        <span id="password-error" class="field-validation-error" asp-validation-for="NewAccount.Password"></span>
+                    </div>
+                    <div class="field">
+                        <label asp-for="NewAccount.ConfirmPassword">Confirm password</label>
+                        <input asp-for="NewAccount.ConfirmPassword" autocomplete="new-password" aria-describedby="confirm-password-error" />
+                        <span id="confirm-password-error" class="field-validation-error" asp-validation-for="NewAccount.ConfirmPassword"></span>
+                    </div>
+                    <button type="submit" class="btn-primary login-submit">Create account and join</button>
+                </form>
+            }
+        }
+    </div>
+</div>

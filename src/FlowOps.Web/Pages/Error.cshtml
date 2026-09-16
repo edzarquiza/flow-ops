@@ -3,7 +3,29 @@
 @{
     ViewData["Title"] = "Something went wrong";
 }
-<h1>Something went wrong</h1>
-<p>An unexpected error occurred. Try again, and if it keeps happening, report the reference below.</p>
-<p>Reference: <code>@Model.RequestId</code></p>
-<p><a asp-page="/Index">Back to home</a></p>
+@* Phase 24A (UI/UX stabilization): previously a bare heading, one sentence, and an uncopyable
+   <code> reference — the one thing a caller actually needs to relay to support. Reachable before
+   authentication ever runs (an exception can happen anywhere in the pipeline), so, unlike Access
+   Denied, this may render with no sidebar shell around it; the page-header/zone pattern still
+   reads fine standalone. Still carries no exception detail whatsoever (ErrorModel's own doc
+   comment) — only the trace id already correlated to the server-side log entry. *@
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Something went wrong</h1>
+        <p class="page-context">An unexpected error occurred. Try again, and if it keeps happening, share the reference below.</p>
+    </div>
+</div>
+<div class="zone">
+    <div class="field">
+        <label for="error-reference">Reference:</label>
+        <div class="copy-field">
+            <input id="error-reference" type="text" readonly value="@Model.RequestId" class="mono" />
+            <button type="button" class="btn" data-copy-target="error-reference" data-copy-feedback="error-reference-feedback">Copy</button>
+        </div>
+        <span id="error-reference-feedback" class="copy-feedback" role="status"></span>
+    </div>
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/Index">Back to dashboard</a>
+    </p>
+</div>
+<script src="~/js/copy-button.js" asp-append-version="true"></script>

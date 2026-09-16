@@ -1,0 +1,113 @@
+@page
+@model FlowOps.Web.Pages.Admin.Projects.IndexModel
+@{
+    ViewData["Title"] = "Projects";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Projects</h1>
+                <span class="page-header__count">@Model.Projects.Count(p => p.IsActive) active</span>
+            </div>
+            <p class="page-context">The projects an organization member can attach to a ticket. Deactivating a project removes it from Create Ticket without touching any ticket that already references it.</p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("All projects")); }
+    @if (Model.Projects.Count == 0)
+    {
+        <p class="empty-state">No projects yet — create your first one below.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Projects in this organization</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Created</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var project in Model.Projects)
+                    {
+                        <tr>
+                            <td>@project.Name</td>
+                            <td>
+                                <span class="fo-status-dot @(project.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                                @(project.IsActive ? "Active" : "Inactive")
+                            </td>
+                            <td class="cell-muted"><time datetime="@project.CreatedAt.ToString("O")" title="@project.CreatedAt.ToString("O")">@project.CreatedAt.ToString("yyyy-MM-dd")</time></td>
+                            <td>
+                                @if (project.IsActive)
+                                {
+                                    <div class="project-actions">
+                                        <form method="post" asp-page-handler="Rename" class="project-actions__rename">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="projectId" value="@project.ProjectId" />
+                                            <label class="sr-only" for="rename-@project.ProjectId">Rename @project.Name</label>
+                                            <input id="rename-@project.ProjectId" type="text" name="name" value="@project.Name" maxlength="100" />
+                                            <button type="submit" class="btn" aria-label="Save new name for @project.Name">Save</button>
+                                        </form>
+                                        <div class="confirm">
+                                            <input type="checkbox" id="confirm-deactivate-proj-@project.ProjectId" class="confirm-toggle" />
+                                            <label for="confirm-deactivate-proj-@project.ProjectId" class="btn-caution confirm-trigger" aria-label="Deactivate @project.Name">Deactivate</label>
+                                            <div class="confirm-panel">
+                                                <p class="confirm-panel__question">Deactivate @project.Name?</p>
+                                                <p class="confirm-panel__detail">
+                                                    It is removed from Create Ticket without touching any ticket that
+                                                    already references it. This can be reversed at any time.
+                                                </p>
+                                                <div class="confirm-panel__actions">
+                                                    <form method="post" asp-page-handler="Deactivate">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="projectId" value="@project.ProjectId" />
+                                                        <button type="submit" class="btn-caution">Yes, deactivate</button>
+                                                    </form>
+                                                    <label for="confirm-deactivate-proj-@project.ProjectId" class="btn">Cancel</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="cell-muted">&mdash;</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Create a project")); }
+    <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+    <form method="post" asp-page-handler="Create" class="field-grid">
+        @Html.AntiForgeryToken()
+        <div class="field">
+            <label asp-for="CreateInput.Name">Project name<span class="field-required" aria-hidden="true">*</span></label>
+            <input asp-for="CreateInput.Name" aria-describedby="project-name-error" />
+            <span id="project-name-error" class="field-validation-error" asp-validation-for="CreateInput.Name"></span>
+        </div>
+        <div class="field field--align-bottom">
+            <button type="submit" class="btn-primary">Create project</button>
+        </div>
+    </form>
+</div>
+
+<p><a class="back-link" asp-page="/Admin/Index">&larr; Back to admin</a></p>

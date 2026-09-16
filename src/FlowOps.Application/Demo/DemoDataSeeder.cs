@@ -1,6 +1,7 @@
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Catalog;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
@@ -27,6 +28,11 @@ namespace FlowOps.Application.Demo;
 /// </remarks>
 public sealed class DemoDataSeeder
 {
+    // Phase 16: the single organization the existing demo dataset becomes a real tenant of. Not
+    // configurable — this seeder still seeds exactly one organization, per CLAUDE.md §14's scope;
+    // multi-organization demo data is not part of the foundation this phase builds.
+    public const string OrganizationName = "Demo Organization";
+
     // CLAUDE.md §14's exact volume. Kept as instance state (not a hardcoded literal inside the
     // method) so a test can construct this seeder with a smaller volume without duplicating the
     // whole class — the production default is what Program.cs actually uses.
@@ -114,10 +120,11 @@ public sealed class DemoDataSeeder
             var seedTime = _realTimeProvider.GetUtcNow();
             var rng = new Random(20260101); // fixed seed — CLAUDE.md §14: "Deterministic".
 
-            var teams = await CreateTeamsAsync(seedTime, cancellationToken);
+            var organization = await CreateOrganizationAsync(seedTime, cancellationToken);
+            var teams = await CreateTeamsAsync(organization.Id, seedTime, cancellationToken);
             var categories = await CreateCategoriesAsync(teams, seedTime, cancellationToken);
-            var projects = await CreateProjectsAsync(seedTime, cancellationToken);
-            var users = await CreateUsersAsync(teams, cancellationToken);
+            var projects = await CreateProjectsAsync(organization.Id, seedTime, cancellationToken);
+            var users = await CreateUsersAsync(organization.Id, teams, cancellationToken);
 
             var clock = new SeederClock(seedTime);
             var ticketService = new TicketService(_dbContext, clock);
@@ -132,9 +139,17 @@ public sealed class DemoDataSeeder
 
     // ---- Reference data -----------------------------------------------------------------------
 
-    private async Task<List<Team>> CreateTeamsAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<Organization> CreateOrganizationAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        var teams = TeamDefinitions.Select(t => new Team(0, t.Name, seedTime)).ToList();
+        var organization = new Organization(0, OrganizationName, seedTime);
+        _dbContext.Organizations.Add(organization);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return organization;
+    }
+
+    private async Task<List<Team>> CreateTeamsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
+    {
+        var teams = TeamDefinitions.Select(t => new Team(0, organizationId, t.Name, seedTime)).ToList();
         _dbContext.Teams.AddRange(teams);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return teams;
@@ -165,9 +180,9 @@ public sealed class DemoDataSeeder
         return byTeam;
     }
 
-    private async Task<List<Project>> CreateProjectsAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<List<Project>> CreateProjectsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        var projects = ProjectNames.Select(name => new Project(0, name, seedTime)).ToList();
+        var projects = ProjectNames.Select(name => new Project(0, organizationId, name, seedTime)).ToList();
         _dbContext.Projects.AddRange(projects);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return projects;
@@ -177,9 +192,15 @@ public sealed class DemoDataSeeder
     /// <see cref="TicketService"/> call needs — resolved once, reused for every ticket.</summary>
     private sealed record SeededUser(Guid Id, UserRole Role, int TeamId, CurrentUser AsCurrentUser);
 
-    private async Task<List<SeededUser>> CreateUsersAsync(List<Team> teams, CancellationToken cancellationToken)
+    private async Task<List<SeededUser>> CreateUsersAsync(int organizationId, List<Team> teams, CancellationToken cancellationToken)
     {
         var seeded = new List<SeededUser>();
+
+        // Phase 16: every seeded account gets exactly one OrganizationMembership, the authoritative
+        // source CurrentUserAccessor now reads role from — added alongside the Identity role
+        // assignment CreateUserAsync already performs (kept only as a mirror for the coarse gate).
+        void AddMembership(Guid userId, UserRole role) =>
+            _dbContext.OrganizationMemberships.Add(new OrganizationMembership(0, organizationId, userId, role, DateTimeOffset.UtcNow));
 
         // The four named, log-in-able personas (CLAUDE.md §14) — fixed teams matching their
         // showcased role, and marked IsDemoProtected so DemoProtectionPolicy guards them.
@@ -195,11 +216,12 @@ public sealed class DemoDataSeeder
             var isManager = persona.Role == UserRole.Manager;
             var team = personaTeams.GetValueOrDefault(persona.Email);
             var user = await CreateUserAsync(persona.DisplayName, persona.Email, persona.Role, isDemoProtected: true, cancellationToken);
+            AddMembership(user.Id, persona.Role);
 
             if (team is not null)
             {
                 _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isManager, DateTimeOffset.UtcNow));
-                seeded.Add(new SeededUser(user.Id, persona.Role, team.Id, new CurrentUser(user.Id, persona.Role, new HashSet<int> { team.Id }, isManager ? new HashSet<int> { team.Id } : new HashSet<int>())));
+                seeded.Add(new SeededUser(user.Id, persona.Role, team.Id, new CurrentUser(user.Id, organizationId, persona.Role, new HashSet<int> { team.Id }, isManager ? new HashSet<int> { team.Id } : new HashSet<int>())));
             }
             else
             {
@@ -212,7 +234,7 @@ public sealed class DemoDataSeeder
                     _dbContext.TeamMembers.Add(new TeamMember(t.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
                 }
 
-                seeded.Add(new SeededUser(user.Id, persona.Role, teams[0].Id, new CurrentUser(user.Id, persona.Role, allTeamIds, new HashSet<int>())));
+                seeded.Add(new SeededUser(user.Id, persona.Role, teams[0].Id, new CurrentUser(user.Id, organizationId, persona.Role, allTeamIds, new HashSet<int>())));
             }
         }
 
@@ -229,8 +251,9 @@ public sealed class DemoDataSeeder
             var team = teams[teamIndex];
             var name = NextName();
             var user = await CreateUserAsync(name, $"manager.{teamIndex}@demo.flowops.dev", UserRole.Manager, isDemoProtected: false, cancellationToken);
+            AddMembership(user.Id, UserRole.Manager);
             _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: true, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Manager, team.Id, new CurrentUser(user.Id, UserRole.Manager, new HashSet<int> { team.Id }, new HashSet<int> { team.Id })));
+            seeded.Add(new SeededUser(user.Id, UserRole.Manager, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Manager, new HashSet<int> { team.Id }, new HashSet<int> { team.Id })));
         }
 
         // Remaining headcount up to 25, distributed round-robin across teams as Agents, with two
@@ -241,8 +264,9 @@ public sealed class DemoDataSeeder
             var team = teams[i % teams.Count];
             var name = NextName();
             var user = await CreateUserAsync(name, $"agent.{i}@demo.flowops.dev", UserRole.Agent, isDemoProtected: false, cancellationToken);
+            AddMembership(user.Id, UserRole.Agent);
             _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Agent, team.Id, new CurrentUser(user.Id, UserRole.Agent, new HashSet<int> { team.Id }, new HashSet<int>())));
+            seeded.Add(new SeededUser(user.Id, UserRole.Agent, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Agent, new HashSet<int> { team.Id }, new HashSet<int>())));
         }
 
         for (var i = 0; i < 2; i++)
@@ -250,8 +274,9 @@ public sealed class DemoDataSeeder
             var team = teams[i % teams.Count];
             var name = NextName();
             var user = await CreateUserAsync(name, $"viewer.{i}@demo.flowops.dev", UserRole.Viewer, isDemoProtected: false, cancellationToken);
+            AddMembership(user.Id, UserRole.Viewer);
             _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Viewer, team.Id, new CurrentUser(user.Id, UserRole.Viewer, new HashSet<int> { team.Id }, new HashSet<int>())));
+            seeded.Add(new SeededUser(user.Id, UserRole.Viewer, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Viewer, new HashSet<int> { team.Id }, new HashSet<int>())));
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -268,6 +293,9 @@ public sealed class DemoDataSeeder
             DisplayName = displayName,
             IsActive = true,
             IsDemoProtected = isDemoProtected,
+            // ADR-0024: demo personas are pre-approved — a portfolio visitor must be able to sign
+            // in with the published demo credentials immediately, never land in a Pending state.
+            RegistrationApprovedAt = _realTimeProvider.GetUtcNow(),
         };
 
         var createResult = await _userManager.CreateAsync(user, _options.PersonaPassword!);

@@ -123,6 +123,8 @@ public sealed class TicketPagesTests : IClassFixture<FlowOpsWebApplicationFactor
 
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("VPN client will not connect", html, StringComparison.Ordinal);
-        Assert.Contains(TestReferenceData.CategoryName, html, StringComparison.Ordinal);
+        // Phase 11: the queue row dropped the Category column (constant within a single-team
+        // queue, no information per row) — Team is the equivalent membership-scope signal now.
+        Assert.Contains(TestReferenceData.TeamName, html, StringComparison.Ordinal);
     }
 }

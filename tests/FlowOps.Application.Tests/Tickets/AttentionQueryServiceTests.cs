@@ -336,9 +336,14 @@ public sealed partial class AttentionQueryServiceTests
         var breachedId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
 
         var admin = TicketTestData.User(await TicketTestData.AddUserAsync(context), UserRole.Admin);
-        var page = await NewService(context).GetAtRiskAsync(admin, 1);
 
-        Assert.Contains(page.Items, i => i.Id == breachedId);
+        // Admin is unscoped, so it also ranks every at-risk ticket every other test in this shared
+        // Postgres container has ever seeded (same pattern/rationale as
+        // TicketQueryServiceTests.AllVisibleIdsAsync) — walk every page rather than assume this
+        // ticket lands on page 1.
+        var visibleIds = await AllAtRiskIdsAsync(NewService(context), admin);
+
+        Assert.Contains(breachedId, visibleIds);
     }
 
     /// <summary>
@@ -365,7 +370,12 @@ public sealed partial class AttentionQueryServiceTests
 
         Assert.True(page.Items.Count >= 12, "the scenario must produce enough at-risk tickets to expose an N+1");
 
-        var executed = SelectStatementPattern().Matches(sql.ToString()).Count;
+        // Counts round trips (one "Executed DbCommand" log line per statement actually sent to
+        // Postgres), not "SELECT" keyword occurrences: Phase 16's organization-boundary check
+        // (BuildCandidateQuery.ApplyViewScope) adds a legitimate EXISTS(...) subquery — its own
+        // nested SELECT — inside the SAME single round trip, which a keyword count would wrongly
+        // flag as an extra query.
+        var executed = CommandExecutedPattern().Matches(sql.ToString()).Count;
 
         // SLA configuration, candidates (+ their events, same statement), team names, assignee
         // names. Four is the ceiling; the point is that it does not scale with candidate count.
@@ -391,6 +401,193 @@ public sealed partial class AttentionQueryServiceTests
         Assert.Empty(page.Items);
         Assert.Equal(0, page.TotalCount);
         Assert.Equal(1, page.TotalPages);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Search
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetAtRiskAsync_SearchFiltersEligibleAtRiskWork()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var matchId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: "VPN gateway is down");
+        await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: "Unrelated breached ticket");
+
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: "vpn");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+    }
+
+    [Fact] // Search narrows an already-eligible set; it can never make an ineligible ticket appear.
+    public async Task GetAtRiskAsync_SearchDoesNotBypassAttentionPolicyEligibility()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+
+        // Healthy (no signal) but its title matches the search term.
+        var healthyId = await CreateTicketAsync(context, world, Now.AddMinutes(-5), Priority.Medium, title: "VPN client healthy ticket");
+        await AssignAsync(context, world, healthyId, Now.AddMinutes(-5));
+
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: "vpn");
+
+        Assert.Empty(page.Items);
+    }
+
+    [Fact] // ATTN-RULE-04: search must not disturb the severity ranking of what remains.
+    public async Task GetAtRiskAsync_SearchPreservesRankedOrder()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedEverySignalAsync(context);
+
+        // Give every seeded ticket a common, searchable marker so the search matches broadly
+        // across many different severities.
+        await context.Tickets.Where(t => t.TeamId == world.TeamId).ExecuteUpdateAsync(
+            setters => setters.SetProperty(t => t.Title, t => t.Title + " marker-xyz"));
+
+        var expectedOrder = await ExpectedRankingAsync(context, world);
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: "marker-xyz");
+
+        Assert.True(page.Items.Count > 1, "the scenario must exercise more than one ranked row");
+        Assert.Equal(expectedOrder.Take(page.Items.Count), page.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task GetAtRiskAsync_SearchByRequester_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var requesterId = await TicketTestData.AddUserAsync(context, "Jordan Ellis");
+        await TicketTestData.AddTeamMembershipAsync(context, world.TeamId, requesterId);
+        var requester = TicketTestData.User(requesterId, UserRole.Agent, world.TeamId);
+
+        var (matchId, _) = await ServiceAt(context, Now.AddDays(-5)).CreateAsync(
+            new CreateTicketRequest("Breached ticket", "A routine description.", WorkType.Incident, Priority.Medium, world.TeamId, world.CategoryId, null),
+            requester);
+
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: "jordan ellis");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+    }
+
+    [Fact]
+    public async Task GetAtRiskAsync_SearchByAssignee_Matches()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var assigneeId = await TicketTestData.AddUserAsync(context, "Casey Nguyen");
+        await TicketTestData.AddTeamMembershipAsync(context, world.TeamId, assigneeId);
+
+        var matchId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: "Breached ticket one");
+        await AssignAsync(context, world, matchId, Now.AddDays(-5));
+        await ReassignAsync(context, world, matchId, assigneeId, Now.AddDays(-4));
+        var otherId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: "Breached ticket two");
+
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: "casey");
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(matchId, item.Id);
+        Assert.DoesNotContain(page.Items, i => i.Id == otherId);
+    }
+
+    [Fact] // An empty/whitespace search reproduces the exact pre-search ranked page.
+    public async Task GetAtRiskAsync_EmptyOrWhitespaceSearch_BehavesExactlyLikeNoSearch()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedEverySignalAsync(context);
+        var service = NewService(context);
+
+        var withoutSearch = await service.GetAtRiskAsync(world.Agent, 1);
+        var withEmptySearch = await service.GetAtRiskAsync(world.Agent, 1, search: "");
+        var withWhitespaceSearch = await service.GetAtRiskAsync(world.Agent, 1, search: "   ");
+
+        Assert.Equal(withoutSearch.Items.Select(i => i.Id), withEmptySearch.Items.Select(i => i.Id));
+        Assert.Equal(withoutSearch.Items.Select(i => i.Id), withWhitespaceSearch.Items.Select(i => i.Id));
+        Assert.Equal(withoutSearch.TotalCount, withEmptySearch.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetAtRiskAsync_SearchWithNoMatches_ReturnsEmptyPageWithZeroTotal()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
+
+        var page = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: $"no-such-term-{Guid.NewGuid():N}");
+
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.TotalCount);
+        Assert.Equal(1, page.TotalPages);
+    }
+
+    [Fact]
+    public async Task GetAtRiskAsync_SearchPreservesPagination()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        const int matching = AttentionQueryService.PageSize + 5;
+        var matchingIds = new List<int>();
+        for (var i = 0; i < matching; i++)
+        {
+            matchingIds.Add(await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: $"Findable breach {i}"));
+        }
+
+        await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: "Should never appear");
+
+        var service = NewService(context);
+        var firstPage = await service.GetAtRiskAsync(world.Agent, 1, search: "findable");
+        var secondPage = await service.GetAtRiskAsync(world.Agent, 2, search: "findable");
+
+        Assert.Equal(AttentionQueryService.PageSize, firstPage.Items.Count);
+        Assert.Equal(5, secondPage.Items.Count);
+        Assert.Equal(matching, firstPage.TotalCount);
+
+        var combined = firstPage.Items.Concat(secondPage.Items).Select(i => i.Id).ToList();
+        Assert.Equal(matching, combined.Distinct().Count());
+        Assert.All(combined, id => Assert.Contains(id, matchingIds));
+    }
+
+    [Fact] // AUTH-RULE-05: search narrows the caller's own scope, it never widens it.
+    public async Task GetAtRiskAsync_SearchNeverExposesTicketsOutsideAuthorizationScope()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var uniqueTitle = $"Secret breach {Guid.NewGuid():N}";
+        var hiddenId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium, title: uniqueTitle);
+
+        var outsider = TicketTestData.User(await TicketTestData.AddUserAsync(context), UserRole.Agent, world.OtherTeamId);
+
+        var page = await NewService(context).GetAtRiskAsync(outsider, 1, search: uniqueTitle);
+
+        Assert.Empty(page.Items);
+        var visibleToOwner = await NewService(context).GetAtRiskAsync(world.Agent, 1, search: uniqueTitle);
+        Assert.Contains(visibleToOwner.Items, i => i.Id == hiddenId);
+    }
+
+    /// <summary>Every ticket id an Admin's unscoped at-risk view contains, across all pages.</summary>
+    private static async Task<HashSet<int>> AllAtRiskIdsAsync(AttentionQueryService service, CurrentUser admin)
+    {
+        var ids = new HashSet<int>();
+        var pageNumber = 1;
+
+        while (true)
+        {
+            var page = await service.GetAtRiskAsync(admin, pageNumber);
+            foreach (var item in page.Items)
+            {
+                ids.Add(item.Id);
+            }
+
+            if (!page.HasNextPage)
+            {
+                return ids;
+            }
+
+            pageNumber++;
+        }
     }
 
     // ---------- seeding ----------
@@ -479,12 +676,18 @@ public sealed partial class AttentionQueryServiceTests
     private static TicketService ServiceAt(FlowOpsDbContext context, DateTimeOffset instant) =>
         new(context, new TicketTestData.FixedTimeProvider(instant));
 
-    private static async Task<int> CreateTicketAsync(FlowOpsDbContext context, World world, DateTimeOffset instant, Priority priority)
+    private static async Task<int> CreateTicketAsync(
+        FlowOpsDbContext context,
+        World world,
+        DateTimeOffset instant,
+        Priority priority,
+        string title = "Printer on 3rd floor is jammed",
+        string description = "The printer near the east stairwell is jammed and needs a technician.")
     {
         var (id, _) = await ServiceAt(context, instant).CreateAsync(
             new CreateTicketRequest(
-                Title: "Printer on 3rd floor is jammed",
-                Description: "The printer near the east stairwell is jammed and needs a technician.",
+                Title: title,
+                Description: description,
                 WorkType: WorkType.Incident,
                 Priority: priority,
                 TeamId: world.TeamId,
@@ -560,6 +763,6 @@ public sealed partial class AttentionQueryServiceTests
             TicketTestData.User(adminId, UserRole.Admin));
     }
 
-    [GeneratedRegex(@"SELECT\s", RegexOptions.IgnoreCase)]
-    private static partial Regex SelectStatementPattern();
+    [GeneratedRegex(@"Executed DbCommand", RegexOptions.IgnoreCase)]
+    private static partial Regex CommandExecutedPattern();
 }

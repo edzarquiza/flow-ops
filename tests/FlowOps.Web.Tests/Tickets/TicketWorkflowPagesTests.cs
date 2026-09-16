@@ -72,9 +72,16 @@ public sealed class TicketWorkflowPagesTests : IClassFixture<FlowOpsWebApplicati
             expectAccessDenied: true,
             tokenPath: "/Tickets/Create");
 
+        // The Ticket Detail rail (docs/ui/design-system.md §6) always spells out all six workflow
+        // stage names for context — including "Closed" — on every ticket, whatever its actual
+        // status. A bare `DoesNotContain("Closed")` would therefore fail on any resolved-but-not-
+        // closed ticket regardless of whether Close was ever attempted, so the real assertion —
+        // the ticket's *actual* stage is Resolved, not Closed — is scoped to the rail's own
+        // accessible label instead, which names the ticket's current stage specifically.
         var afterCloseAttempt = await GetDetailAsync(client, ticketId);
         Assert.Contains("Resolved", afterCloseAttempt, StringComparison.Ordinal);
-        Assert.DoesNotContain("Closed", afterCloseAttempt, StringComparison.Ordinal);
+        Assert.Contains("Workflow stage: Resolved.", afterCloseAttempt, StringComparison.Ordinal);
+        Assert.DoesNotContain("Workflow stage: Closed.", afterCloseAttempt, StringComparison.Ordinal);
     }
 
     [Fact] // An illegal transition is a form error, not an unhandled exception page.

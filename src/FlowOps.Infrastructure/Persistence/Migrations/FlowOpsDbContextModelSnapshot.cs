@@ -43,6 +43,12 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("default_work_type");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
@@ -57,7 +63,8 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TeamId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("ix_categories_team_id_name");
+                        .HasDatabaseName("ix_categories_team_id_name")
+                        .HasFilter("is_active = true");
 
                     b.ToTable("categories", null, t =>
                         {
@@ -78,17 +85,28 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
                     b.HasKey("Id")
                         .HasName("pk_projects");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("OrganizationId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("ix_projects_name");
+                        .HasDatabaseName("ix_projects_organization_id_name")
+                        .HasFilter("is_active = true");
 
                     b.ToTable("projects", (string)null);
                 });
@@ -106,17 +124,28 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
                     b.HasKey("Id")
                         .HasName("pk_teams");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("OrganizationId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("ix_teams_name");
+                        .HasDatabaseName("ix_teams_organization_id_name")
+                        .HasFilter("is_active = true");
 
                     b.ToTable("teams", (string)null);
                 });
@@ -148,6 +177,200 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_team_members_user_id");
 
                     b.ToTable("team_members", (string)null);
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Organizations.Invitation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invited_by_user_id");
+
+                    b.Property<string>("InvitedEmail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("invited_email");
+
+                    b.Property<string>("NormalizedInvitedEmail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_invited_email");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_invitations");
+
+                    b.HasIndex("InvitedByUserId")
+                        .HasDatabaseName("ix_invitations_invited_by_user_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_invitations_token_hash");
+
+                    b.HasIndex("OrganizationId", "NormalizedInvitedEmail")
+                        .HasDatabaseName("ix_invitations_organization_id_normalized_invited_email");
+
+                    b.ToTable("invitations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_invitations_role", "role IN ('Admin', 'Manager', 'Agent', 'Viewer')");
+                        });
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Organizations.Organization", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_organizations");
+
+                    b.ToTable("organizations", (string)null);
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Organizations.OrganizationMembership", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_organization_memberships");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_organization_memberships_user_id");
+
+                    b.HasIndex("OrganizationId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_organization_memberships_organization_id_user_id");
+
+                    b.ToTable("organization_memberships", (string)null);
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Platform.PlatformAuditEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("event_type");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<int?>("TargetOrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("target_organization_id");
+
+                    b.Property<Guid?>("TargetUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_platform_audit_events");
+
+                    b.HasIndex("ActorUserId")
+                        .HasDatabaseName("ix_platform_audit_events_actor_user_id");
+
+                    b.HasIndex("TargetOrganizationId")
+                        .HasDatabaseName("ix_platform_audit_events_target_organization_id");
+
+                    b.HasIndex("TargetUserId")
+                        .HasDatabaseName("ix_platform_audit_events_target_user_id");
+
+                    b.ToTable("platform_audit_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_platform_audit_events_event_type", "event_type IN ('OrganizationDeactivated', 'OrganizationReactivated', 'UserDeactivated', 'UserReactivated', 'UserApproved', 'UserRejected')");
+
+                            t.HasCheckConstraint("ck_platform_audit_events_exactly_one_target", "(target_organization_id IS NOT NULL)::int + (target_user_id IS NOT NULL)::int = 1");
+                        });
                 });
 
             modelBuilder.Entity("FlowOps.Domain.Sla.SlaConfiguration", b =>
@@ -637,6 +860,12 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_demo_protected");
 
+                    b.Property<bool>("IsPlatformAdmin")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_platform_admin");
+
                     b.Property<string>("JobTitle")
                         .HasColumnType("text")
                         .HasColumnName("job_title");
@@ -674,6 +903,14 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                     b.Property<int?>("PrimaryTeamId")
                         .HasColumnType("integer")
                         .HasColumnName("primary_team_id");
+
+                    b.Property<DateTimeOffset?>("RegistrationApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registration_approved_at");
+
+                    b.Property<DateTimeOffset?>("RegistrationRejectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registration_rejected_at");
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("text")
@@ -867,6 +1104,26 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_categories_teams_team_id");
                 });
 
+            modelBuilder.Entity("FlowOps.Domain.Catalog.Project", b =>
+                {
+                    b.HasOne("FlowOps.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_projects_organizations_organization_id");
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Directory.Team", b =>
+                {
+                    b.HasOne("FlowOps.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_teams_organizations_organization_id");
+                });
+
             modelBuilder.Entity("FlowOps.Domain.Directory.TeamMember", b =>
                 {
                     b.HasOne("FlowOps.Domain.Directory.Team", null)
@@ -882,6 +1139,62 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_team_members_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Organizations.Invitation", b =>
+                {
+                    b.HasOne("FlowOps.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("InvitedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invitations_asp_net_users_invited_by_user_id");
+
+                    b.HasOne("FlowOps.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invitations_organizations_organization_id");
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Organizations.OrganizationMembership", b =>
+                {
+                    b.HasOne("FlowOps.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_organization_memberships_organizations_organization_id");
+
+                    b.HasOne("FlowOps.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_organization_memberships_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Platform.PlatformAuditEvent", b =>
+                {
+                    b.HasOne("FlowOps.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_platform_audit_events_asp_net_users_actor_user_id");
+
+                    b.HasOne("FlowOps.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TargetOrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_platform_audit_events_organizations_target_organization_id");
+
+                    b.HasOne("FlowOps.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_platform_audit_events_asp_net_users_target_user_id");
                 });
 
             modelBuilder.Entity("FlowOps.Domain.Tickets.Ticket", b =>

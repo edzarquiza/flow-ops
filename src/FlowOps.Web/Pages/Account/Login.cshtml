@@ -3,54 +3,67 @@
 @{
     ViewData["Title"] = "Sign in";
 }
-<h1>Sign in</h1>
-<div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
-<form method="post">
-    @Html.AntiForgeryToken()
-    <div class="field">
-        <label asp-for="Input.Email">Email</label>
-        <input asp-for="Input.Email" autocomplete="username" aria-describedby="email-error" />
-        <span id="email-error" class="field-validation-error" asp-validation-for="Input.Email"></span>
+<div class="login-shell">
+    <div class="login-brand">
+        @* The same FlowOps mark used in the app header (_Layout.cshtml) — two crossing flow
+           strokes, the brand's own visual metaphor. Not a separate asset: reused verbatim from
+           FlowOps.Web.Icons so Login and the authenticated app share one identity. *@
+        @Html.Raw(FlowOps.Web.Icons.FlowMarkLarge)
+        <div class="login-wordmark">FlowOps</div>
+        <p class="login-tagline">Operations in flow.</p>
     </div>
-    <div class="field">
-        <label asp-for="Input.Password">Password</label>
-        <input asp-for="Input.Password" autocomplete="current-password" aria-describedby="password-error" />
-        <span id="password-error" class="field-validation-error" asp-validation-for="Input.Password"></span>
-    </div>
-    <button type="submit" class="btn-primary">Sign in</button>
-</form>
 
-@if (Model.DemoEnabled)
-{
-    @* CLAUDE.md §14: "credentials supplied via environment variables, displayed on the login
-       page, never in git." Model.DemoPersonaPassword is read from configuration at request time —
-       nothing here is a literal in source. *@
-    <section class="empty-state" aria-label="Public demo credentials">
-        <h2>Public demo credentials</h2>
-        <p>This is a portfolio demonstration running on synthetic data. Sign in as any persona below
-           using the shared demo password.</p>
-        <table>
-            <caption>Demo personas</caption>
-            <thead>
-                <tr>
-                    <th scope="col">Persona</th>
-                    <th scope="col">Email</th>
-                    <th scope="col">Role</th>
-                    <th scope="col">Shows</th>
-                </tr>
-            </thead>
-            <tbody>
+    <div class="login-card">
+        <h1>Sign in</h1>
+        <div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label asp-for="Input.Email">Email</label>
+                <input asp-for="Input.Email" autocomplete="username" aria-describedby="email-error" />
+                <span id="email-error" class="field-validation-error" asp-validation-for="Input.Email"></span>
+            </div>
+            <div class="field">
+                <label asp-for="Input.Password">Password</label>
+                <input asp-for="Input.Password" autocomplete="current-password" aria-describedby="password-error" />
+                <span id="password-error" class="field-validation-error" asp-validation-for="Input.Password"></span>
+            </div>
+            <button type="submit" class="btn-primary login-submit">Sign in</button>
+        </form>
+        <p><a class="text-link" asp-page="/Account/Register">Create an account</a></p>
+    </div>
+
+    @if (Model.DemoEnabled)
+    {
+        @* CLAUDE.md §14: "credentials supplied via environment variables, displayed on the login
+           page, never in git." Model.DemoPersonaPassword is read from configuration at request
+           time — nothing here is a literal in source. Visually secondary to the form above: a
+           smaller heading, a quieter surface, and no changes to what data is shown. *@
+        <section class="demo-access" aria-label="Public demo credentials">
+            <h2>Demo access</h2>
+            <p>This is a portfolio demonstration running on synthetic data. Sign in as any persona
+               below using the shared demo password.</p>
+            @* Bug fix: this used to be a 4-column table (Persona/Email/Role/Shows) wide enough to
+               force horizontal scrolling once the "Shows" description was included — a card per
+               persona wraps and stacks at any width instead, with nothing to scroll sideways to
+               see. Same data, same wording, no credential changed. *@
+            <div class="demo-personas">
                 @foreach (var persona in Model.DemoPersonas)
                 {
-                    <tr>
-                        <td>@persona.DisplayName</td>
-                        <td><code>@persona.Email</code></td>
-                        <td>@persona.Role</td>
-                        <td>@persona.Shows</td>
-                    </tr>
+                    <div class="demo-persona-card">
+                        <div class="demo-persona-card__header">
+                            <span class="demo-persona-card__name">@persona.DisplayName</span>
+                            <span class="demo-persona-card__role">@persona.Role</span>
+                        </div>
+                        <dl class="demo-persona-card__detail">
+                            <dt>Email</dt>
+                            <dd><code>@persona.Email</code></dd>
+                        </dl>
+                        <p class="demo-persona-card__shows">@persona.Shows</p>
+                    </div>
                 }
-            </tbody>
-        </table>
-        <p>Password (all personas): <code>@Model.DemoPersonaPassword</code></p>
-    </section>
-}
+            </div>
+            <p class="demo-password">Password (all personas): <code>@Model.DemoPersonaPassword</code></p>
+        </section>
+    }
+</div>

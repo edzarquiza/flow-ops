@@ -316,7 +316,7 @@ public sealed partial class AnalyticsQueryServiceTests
             Request(memberOnlyTeamId, memberOnlyCategoryId),
             TicketTestData.User(world.Requester.UserId, UserRole.Agent, memberOnlyTeamId))).Id;
 
-        var manager = new CurrentUser(world.Manager.UserId, UserRole.Manager, new HashSet<int> { world.TeamId, memberOnlyTeamId }, new HashSet<int> { world.TeamId });
+        var manager = new CurrentUser(world.Manager.UserId, world.Manager.OrganizationId, UserRole.Manager, new HashSet<int> { world.TeamId, memberOnlyTeamId }, new HashSet<int> { world.TeamId });
         var summary = await Analytics(context, Now).GetDashboardSummaryAsync(manager);
 
         // The managed team's (unassigned) ticket shows up as an "Unassigned" workload row...
@@ -422,7 +422,11 @@ public sealed partial class AnalyticsQueryServiceTests
         var summary = await Analytics(context, Now).GetDashboardSummaryAsync(world.Admin);
         var emitted = sql.ToString();
 
-        var executed = SelectStatementPattern().Matches(emitted).Count;
+        // Counts round trips (one "Executed DbCommand" log line per statement actually sent to
+        // Postgres), not "SELECT" keyword occurrences: Phase 16's organization-boundary check
+        // (ApplyAnalyticsScope) adds a legitimate EXISTS(...) subquery — its own nested SELECT —
+        // inside the SAME single round trip, which a keyword count would wrongly flag as extra.
+        var executed = CommandExecutedPattern().Matches(emitted).Count;
 
         Assert.True(executed <= 6, $"expected at most 6 queries (CLAUDE.md §16), saw {executed}:{Environment.NewLine}{emitted}");
         Assert.True(summary.OpenWorkCount >= 12);
@@ -564,6 +568,6 @@ public sealed partial class AnalyticsQueryServiceTests
             clock);
     }
 
-    [GeneratedRegex(@"SELECT\s", RegexOptions.IgnoreCase)]
-    private static partial Regex SelectStatementPattern();
+    [GeneratedRegex(@"Executed DbCommand", RegexOptions.IgnoreCase)]
+    private static partial Regex CommandExecutedPattern();
 }

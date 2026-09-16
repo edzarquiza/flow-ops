@@ -1,0 +1,19 @@
+@model IReadOnlyList<FlowOps.Web.StatStripItem>
+@* Component-consolidation cleanup: the one KPI/count-group strip used everywhere the app shows a
+   row of labelled figures — hairline-divided, no icon beside any number. See StatStripItem's own
+   doc comment. Dashboard's own Performance strip is the one deliberate exception (its values are
+   themselves filtered links into Work Queue, not plain figures) and keeps its existing markup —
+   flagged, not forced into this shape. *@
+<div class="kpi-strip">
+    @foreach (var item in Model)
+    {
+        <div class="kpi-strip__item">
+            <div class="kpi-strip__label">@item.Label</div>
+            <div class="kpi-strip__value @(item.Highlight ? "kpi-strip__value--teal" : "")">@item.Value</div>
+            @if (item.Caption is not null)
+            {
+                <div class="kpi-strip__caption">@item.Caption</div>
+            }
+        </div>
+    }
+</div>

@@ -1,8 +1,38 @@
 @using FlowOps.Application.Demo
+@using FlowOps.Application.Platform
+@using FlowOps.Application.Tickets
 @inject DemoOptions DemoOptions
+@inject CurrentUserAccessor CurrentUserAccessor
+@inject PlatformUserAccessor PlatformUserAccessor
 @{
     var pageTitle = ViewData["Title"] as string;
     var isAuthenticated = User.Identity?.IsAuthenticated == true;
+
+    // Phase 17: the account area needs the caller's organization role, which the auth cookie never
+    // carries (ADR-0008 — role is re-resolved from the database, never trusted from a stale claim).
+    // One extra CurrentUserAccessor call per authenticated page render, alongside whatever the
+    // PageModel itself already made — accepted deliberately rather than adding a display-only
+    // cookie claim, which ADR-0008 already rejected as a category of solution for the same
+    // staleness reason, or touching CurrentUserAccessor itself (out of this phase's scope).
+    var currentUser = isAuthenticated ? await CurrentUserAccessor.GetCurrentUserAsync(User) : null;
+
+    // Phase 24 (ADR-0023): completely independent of currentUser/OrganizationMembership — see
+    // PlatformUserAccessor's own doc comment. Skipped entirely when unauthenticated, same as above.
+    var platformAdmin = isAuthenticated ? await PlatformUserAccessor.GetCurrentPlatformAdminAsync(User) : null;
+
+    // Phase 19: the switcher's own data — every organization the caller belongs to. A second,
+    // cheap, indexed query alongside the one above; skipped entirely when unauthenticated.
+    IReadOnlyList<FlowOps.Application.Tickets.OrganizationOption> availableOrganizations = currentUser is not null
+        ? await CurrentUserAccessor.GetAvailableOrganizationsAsync(currentUser.UserId)
+        : Array.Empty<FlowOps.Application.Tickets.OrganizationOption>();
+    var currentOrganizationName = currentUser is not null
+        ? availableOrganizations.FirstOrDefault(o => o.Id == currentUser.OrganizationId)?.Name
+        : null;
+    var current = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+
+    // Rendered twice (desktop top-right toolbar, mobile sidebar) via the shared _IdentityBlock
+    // partial — see that partial's own doc comment for why.
+    var identity = new AccountAreaViewModel(currentUser, User.Identity?.Name ?? string.Empty, availableOrganizations, currentOrganizationName);
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -10,48 +40,186 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>@(string.IsNullOrEmpty(pageTitle) ? "FlowOps" : $"{pageTitle} — FlowOps")</title>
-    <link rel="stylesheet" href="~/flowops.css" />
+    <link rel="icon" type="image/svg+xml" href="~/favicon.svg" />
+    <link rel="stylesheet" href="~/flowops.css" asp-append-version="true" />
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
 
     @* CLAUDE.md §14: "A persistent banner identifies the site as a portfolio demonstration with
-       synthetic data." Shown site-wide, authenticated or not — unlike the nav below, this is not
+       synthetic data." Shown site-wide, authenticated or not — unlike the shell below, this is not
        gated on session state. *@
     @if (DemoOptions.Enabled)
     {
-        <div class="empty-state" role="status">Portfolio demo — all data is synthetic.</div>
+        <div class="demo-banner" role="status">Portfolio demo — all data is synthetic.</div>
     }
 
-    @* The primary nav and sign-out form render only for an authenticated request — Login and
-       AccessDenied are reachable anonymously and must not imply a signed-in session.
+    @* The application shell (sidebar + workspace) renders only for an authenticated request —
+       Login and AccessDenied are reachable anonymously and must not imply a signed-in session.
        CLAUDE.md §2 rule 8 / §6.2: this is presentation only. Every link below leads to a page
        that independently re-checks authorization server-side regardless of whether it is shown
        here (e.g. Create Ticket 403s a Viewer exactly as it did before this nav existed). *@
     @if (isAuthenticated)
     {
-        <header class="app-header">
-            <div class="app-header__bar">
-                <a class="app-header__brand" asp-page="/Index">FlowOps</a>
-                <nav class="app-nav" aria-label="Primary">
-                    <a asp-page="/Index">Dashboard</a>
-                    <a asp-page="/Tickets/Index">Work Queue</a>
-                    <a asp-page="/Tickets/AtRisk">At-Risk</a>
-                    <a asp-page="/Tickets/Create">Create Ticket</a>
+        @* A checkbox-driven off-canvas panel — the standard no-JavaScript pattern for a mobile
+           nav toggle (CLAUDE.md §11.1: no JS framework, and this needs none at all). Unchecked by
+           default; the mobile top bar's own label toggles it, and the scrim label closes it. *@
+        <input type="checkbox" id="fo-nav-toggle" class="fo-nav-toggle-input" />
+        <div class="fo-shell">
+            <div class="fo-mobile-bar">
+                <label for="fo-nav-toggle" class="fo-nav-toggle-btn" aria-label="Toggle navigation">@Html.Raw(Icons.Menu)</label>
+                <a class="fo-brand fo-brand--compact" asp-page="/Index">@Html.Raw(Icons.FlowMarkSmall)<span>FlowOps</span></a>
+            </div>
+            <label for="fo-nav-toggle" class="fo-nav-scrim" aria-hidden="true"></label>
+
+            <aside class="fo-sidebar" aria-label="Primary">
+                <a class="fo-brand" asp-page="/Index">
+                    @Html.Raw(Icons.FlowMark)
+                    <span>FlowOps</span>
+                </a>
+
+                @* Step 1: organization context sits directly beneath the brand, not in the
+                   top-right toolbar — the same secure, data-only switcher as before
+                   (ADR-0018/Step 27), just relocated. A single organization renders as plain
+                   text; nothing about switching security changed. *@
+                @if (currentUser is not null && availableOrganizations.Count > 1)
+                {
+                    <details class="fo-org-switcher fo-org-switcher--sidebar">
+                        <summary>@currentOrganizationName</summary>
+                        <ul>
+                            @foreach (var org in availableOrganizations)
+                            {
+                                <li>
+                                    @if (org.Id == currentUser.OrganizationId)
+                                    {
+                                        <span class="fo-org-switcher__current" aria-current="true">@org.Name <span aria-hidden="true">&#10003;</span></span>
+                                    }
+                                    else
+                                    {
+                                        <form method="post" asp-page="/Organization/Switch">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="organizationId" value="@org.Id" />
+                                            <button type="submit">@org.Name</button>
+                                        </form>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                else if (currentOrganizationName is not null)
+                {
+                    <div class="fo-org-switcher fo-org-switcher--single fo-org-switcher--sidebar">@currentOrganizationName</div>
+                }
+
+                <nav class="fo-sidebar__nav" aria-label="Primary navigation">
+                    @* Phase 24: a Platform Admin with no organization membership at all
+                       (currentUser is null) has nothing tenant-scoped to see here — Dashboard/Work
+                       Queue/At-Risk/Create Ticket all 403 via CurrentUserAccessor regardless, so
+                       showing them would only be dead-looking links. Gated the same way
+                       Members/Admin already are; an ordinary tenant user (the overwhelming common
+                       case) always has a non-null currentUser and sees these exactly as before. *@
+                    @if (currentUser is not null)
+                    {
+                        <a asp-page="/Index" aria-current="@(current == "/Index" ? "page" : null)">
+                            @Html.Raw(Icons.Dashboard)
+                            <span>Dashboard</span>
+                        </a>
+                        <a asp-page="/Tickets/Index" aria-current="@(current == "/Tickets/Index" ? "page" : null)">
+                            @Html.Raw(Icons.WorkQueue)
+                            <span>Work Queue</span>
+                        </a>
+                        <a asp-page="/Tickets/AtRisk" aria-current="@(current == "/Tickets/AtRisk" ? "page" : null)">
+                            @Html.Raw(Icons.AtRisk)
+                            <span>At-Risk</span>
+                        </a>
+                        <a asp-page="/Tickets/Create" aria-current="@(current == "/Tickets/Create" ? "page" : null)">
+                            @Html.Raw(Icons.Create)
+                            <span>Create Ticket</span>
+                        </a>
+                    }
+                    @* Phase 18: member management is Admin/Manager-only (ORG-RULE-11) — hidden for
+                       everyone else as an affordance; Members.cshtml.cs re-checks server-side
+                       regardless of whether this link is shown. *@
+                    @if (currentUser is not null && FlowOps.Domain.Organizations.OrganizationAccessPolicy.CanManageMembers(currentUser))
+                    {
+                        <a asp-page="/Organization/Members" aria-current="@(current == "/Organization/Members" ? "page" : null)">
+                            @Html.Raw(Icons.Members)
+                            <span>Members</span>
+                        </a>
+                    }
+                    @* Team/category/project administration is Admin-only (CLAUDE.md §6.1) — the
+                       same DirectoryAccessPolicy gate /Admin/Index.cshtml.cs itself already
+                       enforces server-side, so this link is purely an affordance. *@
+                    @if (currentUser is not null && FlowOps.Domain.Directory.DirectoryAccessPolicy.CanManageTeams(currentUser))
+                    {
+                        <a asp-page="/Admin/Index" aria-current="@(current.StartsWith("/Admin", StringComparison.Ordinal) ? "page" : null)">
+                            @Html.Raw(Icons.Admin)
+                            <span>Admin</span>
+                        </a>
+                    }
+                    @* Phase 24 (ADR-0023): shown only to a Platform Admin — a pure affordance,
+                       exactly like every other conditional link here; every /Platform page
+                       independently re-checks PlatformUserAccessor server-side regardless of
+                       whether this link is shown. Never gated on OrganizationMembership. *@
+                    @if (platformAdmin is not null)
+                    {
+                        <a asp-page="/Platform/Index" aria-current="@(current == "/Platform/Index" ? "page" : null)">
+                            @Html.Raw(Icons.Platform)
+                            <span>Platform</span>
+                        </a>
+                        @* Phase 24B: direct links to Organizations/Users — the homepage itself now
+                           surfaces both already, but a Platform Admin working inside one area for a
+                           while still benefits from a direct route back into it, the same way the
+                           tenant sidebar lists Work Queue/At-Risk separately rather than only via
+                           the dashboard. *@
+                        <a asp-page="/Platform/Organizations/Index" aria-current="@(current.StartsWith("/Platform/Organizations", StringComparison.Ordinal) ? "page" : null)">
+                            @Html.Raw(Icons.DataKpi)
+                            <span>Organizations</span>
+                        </a>
+                        <a asp-page="/Platform/Users/Index" aria-current="@(current.StartsWith("/Platform/Users", StringComparison.Ordinal) ? "page" : null)">
+                            @Html.Raw(Icons.Members)
+                            <span>Users</span>
+                        </a>
+                    }
                 </nav>
-                <div class="app-header__account">
-                    @* Preserved exactly: existing tests source a genuine antiforgery token from
-                       "/" via this form, and Login/logout behavior must not change (CLAUDE.md §12). *@
-                    <form method="post" asp-page="/Account/Logout">
-                        <button type="submit">Sign out</button>
+
+                <div class="fo-sidebar__spacer"></div>
+
+                @* Phase 11: the top bar was removed entirely (it duplicated Profile/Sign out
+                   below and was ~75% empty on every page) — the identity block now renders once,
+                   here, on both desktop and the mobile off-canvas panel. *@
+                <div class="fo-sidebar__identity">
+                    @await Html.PartialAsync("_IdentityBlock", identity)
+                </div>
+
+                @* Step 3 (Platform Administration cleanup): the identity block above is now
+                   itself the link to Profile & Settings, so only Sign out remains here — never
+                   competing with primary navigation for attention. Preserved exactly: existing
+                   tests source a genuine antiforgery token from "/" via this form, and
+                   Login/logout behavior must not change (CLAUDE.md §12). *@
+                <div class="fo-sidebar__footer">
+                    <form method="post" asp-page="/Account/Logout" class="fo-sidebar__signout">
+                        <button type="submit">
+                            @Html.Raw(Icons.SignOut)
+                            <span>Sign out</span>
+                        </button>
                     </form>
                 </div>
-            </div>
-        </header>
-    }
+            </aside>
 
-    <main id="main">
-        @RenderBody()
-    </main>
+            <div class="fo-appmain">
+                <main id="main">
+                    @RenderBody()
+                </main>
+            </div>
+        </div>
+    }
+    else
+    {
+        <main id="main">
+            @RenderBody()
+        </main>
+    }
 </body>
 </html>

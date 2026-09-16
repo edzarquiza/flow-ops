@@ -168,6 +168,105 @@ public sealed class TicketServiceTests
         Assert.Equal(Now, only.OccurredAt);
     }
 
+    [Fact] // Project management phase: a deactivated project can no longer be selected for a
+           // *new* ticket, refused identically to a nonexistent/cross-organization one.
+    public async Task CreateAsync_InactiveProject_IsRejected()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, categoryId, userId) = await SeedAsync(context);
+        var inactiveProjectId = await TicketTestData.AddProjectAsync(context, isActive: false);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
+            service.CreateAsync(Request(teamId, categoryId) with { ProjectId = inactiveProjectId }, TicketTestData.User(userId, UserRole.Agent, teamId)));
+    }
+
+    [Fact] // Deactivating a project must never affect a ticket that already references it — the
+           // row itself is untouched, so the association and the displayed name both survive.
+    public async Task ExistingTicket_RetainsProjectAssociation_AfterProjectIsDeactivated()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, categoryId, userId) = await SeedAsync(context);
+        var projectId = await TicketTestData.AddProjectAsync(context);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        var (id, _) = await service.CreateAsync(
+            Request(teamId, categoryId) with { ProjectId = projectId },
+            TicketTestData.User(userId, UserRole.Agent, teamId));
+
+        var project = await context.Projects.SingleAsync(p => p.Id == projectId);
+        project.Deactivate();
+        await context.SaveChangesAsync();
+
+        await using var verify = _fixture.CreateContext();
+        var persisted = await verify.Tickets.AsNoTracking().SingleAsync(t => t.Id == id);
+        Assert.Equal(projectId, persisted.ProjectId);
+
+        var query = new FlowOps.Application.Tickets.TicketQueryService(verify, new TicketTestData.FixedTimeProvider(Now));
+        var detail = await query.GetDetailAsync(id, TicketTestData.User(userId, UserRole.Agent, teamId));
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.ProjectName);
+    }
+
+    [Fact] // Phase 22 (ADR-0022): a deactivated team can no longer be selected for a *new* ticket.
+    public async Task CreateAsync_InactiveTeam_IsRejected()
+    {
+        await using var context = _fixture.CreateContext();
+        var teamId = await TicketTestData.AddTeamAsync(context, isActive: false);
+        var categoryId = await TicketTestData.AddCategoryAsync(context, teamId);
+        var userId = await TicketTestData.AddUserAsync(context);
+        await TicketTestData.AddTeamMembershipAsync(context, teamId, userId);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
+            service.CreateAsync(Request(teamId, categoryId), TicketTestData.User(userId, UserRole.Agent, teamId)));
+    }
+
+    [Fact] // Phase 22 (ADR-0022): a deactivated category can no longer be selected for a *new*
+           // ticket, even though its (active) team can.
+    public async Task CreateAsync_InactiveCategory_IsRejected()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, _, userId) = await SeedAsync(context);
+        var inactiveCategoryId = await TicketTestData.AddCategoryAsync(context, teamId, isActive: false);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
+            service.CreateAsync(Request(teamId, inactiveCategoryId), TicketTestData.User(userId, UserRole.Agent, teamId)));
+    }
+
+    [Fact] // Deactivating a team must never affect a ticket already filed against it — the row
+           // itself is untouched, so the association, the displayed name, and the workflow all
+           // survive (ADR-0022).
+    public async Task ExistingTicket_RetainsTeamAssociationAndRemainsWorkable_AfterTeamIsDeactivated()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, categoryId, userId) = await SeedAsync(context);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        var (id, _) = await service.CreateAsync(Request(teamId, categoryId), TicketTestData.User(userId, UserRole.Agent, teamId));
+
+        var team = await context.Teams.SingleAsync(t => t.Id == teamId);
+        team.Deactivate();
+        await context.SaveChangesAsync();
+
+        await using var verify = _fixture.CreateContext();
+        var persisted = await verify.Tickets.AsNoTracking().SingleAsync(t => t.Id == id);
+        Assert.Equal(teamId, persisted.TeamId);
+
+        var query = new FlowOps.Application.Tickets.TicketQueryService(verify, new TicketTestData.FixedTimeProvider(Now));
+        var detail = await query.GetDetailAsync(id, TicketTestData.User(userId, UserRole.Agent, teamId));
+        Assert.NotNull(detail);
+        Assert.Equal(teamId, detail!.TeamId);
+
+        // Still fully workable — deactivating a team is never a new way to bypass or restrict
+        // authorization on tickets already scoped to it (ADR-0022's "authorization" guarantee).
+        var verifyService = new TicketService(verify, new TicketTestData.FixedTimeProvider(Now));
+        await verifyService.AssignAsync(id, userId, TicketTestData.User(userId, UserRole.Agent, teamId));
+        var afterAssign = await verify.Tickets.AsNoTracking().SingleAsync(t => t.Id == id);
+        Assert.Equal(userId, afterAssign.AssigneeId);
+    }
+
     private static CreateTicketRequest Request(int teamId, int categoryId) =>
         new(
             Title: "Printer on 3rd floor is jammed",

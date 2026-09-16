@@ -1,78 +1,112 @@
 @page
+@using FlowOps.Domain.Attention
+@using FlowOps.Domain.Tickets
 @model FlowOps.Web.Pages.Tickets.AtRiskModel
 @{
     ViewData["Title"] = "At-risk work";
 }
-<h1>At-risk work</h1>
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>At-risk work</h1>
+                <div class="page-header__metric">
+                    <span class="page-header__metric-value">@Model.Queue.TotalCount</span>
+                    <span class="page-header__metric-label">need@(Model.Queue.TotalCount == 1 ? "s" : "") attention</span>
+                </div>
+            </div>
+            <p class="page-context">Work requiring operational attention, ranked most urgent first.</p>
+        </div>
+        @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search at-risk work...", Model.Search))
+    </div>
+    <p class="page-actions"><a class="back-link" asp-page="/Tickets/Index">&larr; Work queue</a></p>
+</div>
 
 @if (Model.Queue.TotalCount == 0)
 {
-    @* A useful empty state, not a blank panel (CLAUDE.md §22). *@
-    <p class="empty-state">No work is at risk right now.</p>
+    @if (!string.IsNullOrWhiteSpace(Model.Search))
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No tickets found</p>
+            <p>No tickets matched "@Model.Search".</p>
+            <p><a class="back-link" asp-page="/Tickets/AtRisk">Clear search</a></p>
+        </div>
+    }
+    else
+    {
+        @* A useful empty state, not a blank panel (CLAUDE.md §22). *@
+        <p class="empty-state">No work is at risk right now.</p>
+    }
 }
 else
 {
-    <div class="table-responsive">
-        <table>
-            <caption>
-                Ranked most urgent first — showing page @Model.Queue.PageNumber of @Model.Queue.TotalPages
-                (@Model.Queue.TotalCount ticket@(Model.Queue.TotalCount == 1 ? "" : "s") needing attention)
-            </caption>
-            <thead>
-                <tr>
-                    <th scope="col">Reference</th>
-                    <th scope="col">Title</th>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Team</th>
-                    <th scope="col">Assignee</th>
-                    <th scope="col">SLA</th>
-                    <th scope="col">Why it needs attention</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var ticket in Model.Queue.Items)
-                {
-                    <tr>
-                        <th scope="row">
-                            <a asp-page="/Tickets/Details" asp-route-id="@ticket.Id">@ticket.Reference</a>
-                        </th>
-                        <td>@ticket.Title</td>
-                        <td><span class="badge badge-neutral">@ticket.Priority</span></td>
-                        <td><span class="badge badge-neutral">@ticket.Status</span></td>
-                        <td>@ticket.TeamName</td>
-                        <td>@(ticket.AssigneeDisplayName ?? "Unassigned")</td>
-                        <td title="SLA due @ticket.Sla.DueAt.ToString("u")">
-                            <span class="badge badge-danger">@ticket.Sla.Status</span>@(FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining ? $" — {remaining}" : "")
-                        </td>
-                        <td>
-                            @* Each signal is spelled out in words — severity is never conveyed
-                               by colour alone (CLAUDE.md §22). *@
-                            <ul>
-                                @foreach (var signal in ticket.Signals)
-                                {
-                                    <li><span class="badge badge-danger">@signal.Severity:</span> @signal.Headline</li>
-                                }
-                            </ul>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    var atRiskRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "search", Model.Search } };
+    await Html.RenderPartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Tickets/AtRisk",
+            Model.Queue,
+            atRiskRouteValues,
+            "At-risk queue pagination",
+            FlowOps.Web.PaginationPlacement.Top));
+
+    @* Phase 11: the same composed-row component Work Queue uses (see .q-row in flowops.css).
+       Priority and signal severity are deliberately NOT the same visual treatment here — sharing
+       one produced rows that read "LOW ... CRITICAL," genuinely confusing since they're different
+       concepts. Signal severity gets the ranked severity badge (.sev); priority stays plain text
+       in the metadata line. Only the top-ranked signal (AttentionPolicy's own ranking, ATTN-RULE-04)
+       carries colour; the rest fold into the same line at reduced opacity via .why-secondary. *@
+    <div class="q-list">
+        @foreach (var ticket in Model.Queue.Items)
+        {
+            var slaText = ticket.Sla.Status.ToString();
+            var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
+            var topSignal = ticket.Signals[0];
+            var topSevClass = topSignal.Severity.ToString().ToLowerInvariant() switch
+            {
+                "critical" => "crit",
+                "high" => "high",
+                "medium" => "med",
+                _ => "low",
+            };
+            <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                <div class="q-main">
+                    <div class="q-title">@ticket.Title</div>
+                    <div class="q-meta">
+                        <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span class="status-badge status-badge--compact">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                        <span>Priority: @ticket.Priority</span>
+                        @for (var signalIndex = 0; signalIndex < ticket.Signals.Count; signalIndex++)
+                        {
+                            <span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span class="@(signalIndex == 0 ? "" : "why-secondary")">@ticket.Signals[signalIndex].Headline</span>
+                        }
+                    </div>
+                </div>
+                <div class="q-sev-col">
+                    <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
+                </div>
+                <div class="q-rail-col" aria-hidden="true">
+                    @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                </div>
+                <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                    <span class="q-sla__state">@ticket.Sla.Status</span>
+                    @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                    {
+                        <span class="q-sla__time">@remaining</span>
+                    }
+                </div>
+            </a>
+        }
     </div>
 
-    <nav aria-label="At-risk queue pagination">
-        @if (Model.Queue.HasPreviousPage)
-        {
-            <a asp-page="/Tickets/AtRisk" asp-route-pageNumber="@(Model.Queue.PageNumber - 1)"
-               rel="prev">Previous page</a>
-        }
-        @if (Model.Queue.HasNextPage)
-        {
-            <a asp-page="/Tickets/AtRisk" asp-route-pageNumber="@(Model.Queue.PageNumber + 1)"
-               rel="next">Next page</a>
-        }
-    </nav>
+    @await Html.PartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Tickets/AtRisk",
+            Model.Queue,
+            atRiskRouteValues,
+            "At-risk queue pagination"))
 }
-
-<p><a asp-page="/Tickets/Index">Back to work queue</a></p>

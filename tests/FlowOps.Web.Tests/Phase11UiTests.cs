@@ -31,7 +31,9 @@ public sealed class Phase11UiTests : IClassFixture<FlowOpsWebApplicationFactory>
 
         Assert.Contains("What needs attention", html, StringComparison.Ordinal);
         Assert.Contains("Core switch failure", html, StringComparison.Ordinal);
-        Assert.Contains("View all at-risk work", html, StringComparison.Ordinal);
+        // Phase 11: the link label folds the total count in directly ("View all N at-risk items")
+        // rather than repeating it in a separate sentence above the button.
+        Assert.Contains("at-risk item", html, StringComparison.Ordinal);
         Assert.Contains($"/Tickets/Details/{ticketId}", html, StringComparison.Ordinal);
 
         // The dashboard must open on actionable attention content, not KPI counters.

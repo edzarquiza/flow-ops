@@ -1,0 +1,48 @@
+@page
+@model FlowOps.Web.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Create account";
+}
+<div class="login-shell">
+    <div class="login-brand">
+        @Html.Raw(FlowOps.Web.Icons.FlowMarkLarge)
+        <div class="login-wordmark">FlowOps</div>
+        <p class="login-tagline">Set up your organization.</p>
+    </div>
+
+    <div class="login-card">
+        <h1>Create account</h1>
+        <p class="ticket-subtitle">This creates your account and a new organization, with you as its administrator.</p>
+        <div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label asp-for="Input.FullName">Full name</label>
+                <input asp-for="Input.FullName" autocomplete="name" aria-describedby="fullname-error" />
+                <span id="fullname-error" class="field-validation-error" asp-validation-for="Input.FullName"></span>
+            </div>
+            <div class="field">
+                <label asp-for="Input.Email">Email</label>
+                <input asp-for="Input.Email" autocomplete="username" aria-describedby="email-error" />
+                <span id="email-error" class="field-validation-error" asp-validation-for="Input.Email"></span>
+            </div>
+            <div class="field">
+                <label asp-for="Input.Password">Password</label>
+                <input asp-for="Input.Password" autocomplete="new-password" aria-describedby="password-error" />
+                <span id="password-error" class="field-validation-error" asp-validation-for="Input.Password"></span>
+            </div>
+            <div class="field">
+                <label asp-for="Input.ConfirmPassword">Confirm password</label>
+                <input asp-for="Input.ConfirmPassword" autocomplete="new-password" aria-describedby="confirm-password-error" />
+                <span id="confirm-password-error" class="field-validation-error" asp-validation-for="Input.ConfirmPassword"></span>
+            </div>
+            <div class="field">
+                <label asp-for="Input.OrganizationName">Organization name</label>
+                <input asp-for="Input.OrganizationName" autocomplete="organization" aria-describedby="org-error" />
+                <span id="org-error" class="field-validation-error" asp-validation-for="Input.OrganizationName"></span>
+            </div>
+            <button type="submit" class="btn-primary login-submit">Create account</button>
+        </form>
+        <p><a class="text-link" asp-page="/Account/Login">Already have an account? Sign in</a></p>
+    </div>
+</div>

@@ -156,6 +156,7 @@ Modules are folders, consistently named across all four projects.
 | `Directory` | Users, teams, membership, roles | `UserService`, `TeamService` |
 | `Catalog` | Categories, projects, SLA configuration admin | `CatalogService` |
 | `Analytics` | Dashboard KPIs, workload, trends, aging | `AnalyticsQueryService` |
+| `Platform` | Cross-tenant platform administration (organizations, users) — see ADR-0023 | `PlatformUserAccessor`, `PlatformOrganizationService`, `PlatformUserService` |
 
 **Module rules:**
 
@@ -279,7 +280,10 @@ reads badly, propose the addition in an ADR — do not add it silently.
 
 ### 6.1 Roles
 
-`Admin` · `Manager` · `Agent` · `Viewer` — ASP.NET Core Identity roles, one primary role per user.
+`Admin` · `Manager` · `Agent` · `Viewer`. As of §6.3 (Phase 16), role is a fact about a user's
+`OrganizationMembership`, not a single global property of the user — a user with memberships in
+more than one organization may hold a different one of these four roles in each. Within any one
+organization, a user still holds exactly one role, and the capability matrix below is unchanged.
 
 | Capability | Admin | Manager | Agent | Viewer |
 |---|:--:|:--:|:--:|:--:|
@@ -292,7 +296,8 @@ reads badly, propose the addition in an ADR — do not add it silently.
 | Change priority | ✓ | own teams | own assigned tickets | ✗ |
 | Reopen | ✓ | own teams | requester of the ticket | ✗ |
 | Team analytics | all | own teams | own workload only | own teams (read) |
-| Manage users/teams/categories/SLA | ✓ | ✗ | ✗ | ✗ |
+| Manage users (invite/change role/remove) | ✓ | ✓ (Agent/Viewer targets only) | ✗ | ✗ |
+| Manage teams/categories/projects/SLA | ✓ | ✗ | ✗ | ✗ |
 
 ### 6.2 Where authorization lives
 
@@ -313,6 +318,170 @@ a performance bug and a leak waiting for a pagination change.
 **Privilege escalation guards:** users cannot change their own role; the last active Admin cannot be
 demoted or deactivated; role assignment is Admin-only and audited; demo accounts (§14) cannot have
 their credentials or roles changed at all.
+
+### 6.3 Multi-tenancy & organizations (Phase 16 — ADR-0015)
+
+FlowOps is a **true multi-tenant SaaS application**: one deployment serves multiple unrelated
+organizations, and an `Organization` is the **outer authorization boundary** — it sits above every
+rule in §6.1/§6.2, which continue to apply *beneath* it, unchanged. A user may belong to more than
+one `Organization`.
+
+**`ORG-RULE-01` — Organization is the outer boundary.** Every `Team` and `Project`, and (transitively,
+through `Team`) every `Ticket`, belongs to exactly one `Organization`. Owner: `Organization`, `Team`,
+`Project` (Domain).
+
+**`ORG-RULE-02` — Role lives on the membership, not the user.** `OrganizationMembership` — the join
+`ApplicationUser —1:N→ OrganizationMembership —N:1→ Organization` — is the sole source of a user's
+role. Role **must not** be treated as a single global property of a user (see the correction to
+§6.1): the same user may hold a different one of the four §6.1 roles in each organization they
+belong to. Owner: `OrganizationMembership` (Domain).
+
+**`ORG-RULE-03` — Authorization order.** Every resource access follows this exact chain, and
+organization authorization is always established *before* resource access, never after or in
+parallel with it:
+
+```
+User → Organization Membership → Organization boundary → existing role/team authorization (§6.1/§6.2) → Resource
+```
+
+This is why the org boundary is applied **first and unconditionally** at every query/mutation entry
+point, ahead of any role-based narrowing — including for Admin, whose §6.1 "all teams" reach is
+unconditional *within* an organization but must never cross into another one. Owner:
+`TicketQueryService`, `AttentionQueryService`, `AnalyticsQueryService`, `TicketService.MutateAsync`.
+
+**`ORG-RULE-04` — Current organization is never client-supplied as an authorization grant.** The
+caller's current organization is derived **server-side, re-validated against a real
+`OrganizationMembership` row on every request**, the same way `CurrentUser.Role`/team membership
+already are — never trusted from a client-supplied organization id, a route segment, a hidden
+field, a cookie value, or any other client-controlled input, *as proof of access*. As of Phase 19
+(ADR-0018), the caller may explicitly choose which of their own real memberships is current
+(`ORG-RULE-14`); before that phase, `CurrentUserAccessor` used a fixed deterministic pick (lowest
+`OrganizationId`) with no explicit choice at all. Owner: `CurrentUserAccessor`.
+
+**`ORG-RULE-14` — Organization context is explicit, persisted, and re-validated on every use; a
+selected value is never itself an authorization grant (Phase 19, ADR-0018).** The caller's current
+organization is stored as a small, Data-Protection-protected cookie, written only by
+`CurrentUserAccessor.TrySwitchOrganizationAsync` after verifying a real `OrganizationMembership`
+exists — never accepted from any other source. Every read of that cookie re-validates it against
+the caller's real memberships; a value that does not match one (tampered, forged, stale because the
+membership was since removed, or simply absent) is discarded exactly like "no selection at all",
+and a deterministic safe fallback (lowest `OrganizationId` among real memberships) applies and is
+itself persisted, so it becomes the caller's durable context rather than being recomputed on every
+request. Switching is allowed only among the caller's own real memberships
+(`TrySwitchOrganizationAsync`); an inaccessible or nonexistent organization id fails
+**identically** — same response shape, no distinguishing error — so organization ids can never be
+enumerated through the switch operation. The switch endpoint accepts no client-supplied return
+path; it always redirects to a fixed local destination. Logging out clears the stored selection, so
+a different account signing in on the same browser can never inherit it. Owner:
+`CurrentUserAccessor`, `Pages/Organization/Switch`.
+
+**`ORG-RULE-05` — Organization administration has no separate ownership concept.** An organization's
+administrator is represented purely as an `OrganizationMembership` row with `Role = Admin` in that
+organization — there is no separate `OwnerId`/ownership field. Owner: `OrganizationMembership`
+(Domain).
+
+**`ORG-RULE-06` — Every organization-scoped read and write must enforce the boundary.** Concretely:
+- Every ticket/resource query capable of exposing organization-owned data (work queue, ticket
+  detail, activity/comment history, attention/at-risk, analytics/dashboard) must filter by the
+  caller's organization, not merely by team/role.
+- Every ticket mutation (`TicketService`) must enforce organization scope **at ticket load time** —
+  the same load point every workflow transition shares — not only at the authorization-decision step.
+- A resource id belonging to another organization must be refused **indistinguishably** from a
+  nonexistent id (no different error, status, or response shape may disclose that the resource
+  exists in another organization) — the multi-tenant extension of §6.2's existing "list queries are
+  filtered, not post-checked" principle.
+- Ticket creation must reject a Team/Category/Project combination that does not belong to the
+  caller's own organization, exactly as TICKET-INV-02 already rejects a category from the wrong team.
+
+**Resource ownership (informative — see ADR-0015 for full reasoning):**
+
+| Entity | Scope |
+|---|---|
+| `Organization` / `OrganizationMembership` | Organization-scoped (the boundary itself / its membership) |
+| `Team` | Organization-scoped (`OrganizationId` FK) |
+| `Project` | Organization-scoped (`OrganizationId` FK) |
+| `Category` | Organization-scoped indirectly, through `Team` |
+| `Ticket` | Organization-scoped indirectly, through `Team` — **no `Ticket.OrganizationId` column** (deliberate; see ADR-0015 Alternatives) |
+| `TeamMember` | Organization-scoped indirectly, through `Team` |
+| `TicketComment` / `TicketEvent` | Scoped indirectly, through `Ticket` |
+| `ApplicationUser` | Cross-organization identity — not itself organization-scoped, since one user may hold memberships in more than one organization |
+| `SlaConfiguration` | Global, by deliberate Phase 16 decision (shared policy reference data; revisit only if per-organization SLA customization becomes a real requirement) |
+
+**Data integrity:** `OrganizationMembership` has a unique `(OrganizationId, UserId)` constraint — a
+user belongs to a given organization at most once. `Team.Name` and `Project.Name` are unique
+**within an organization**, not globally (two organizations may each have a "Service Desk" team).
+FK delete behaviors established in Phase 16 (`RESTRICT` on `Team`/`Project` → `Organization`,
+`CASCADE` on `OrganizationMembership` → `Organization`/`ApplicationUser`) are load-bearing and must
+not be changed without an ADR amendment.
+
+**Role semantics are unchanged by multi-tenancy** — only their scope moved from "the user" to "the
+user's membership in this organization": `Admin` (organization-wide administrative access),
+`Manager` (organization-wide ticket access subject to the existing §6.1 authorization rules),
+`Agent` (assigned/team-scoped ticket access), `Viewer` (organization-wide read-only access). Do not
+redesign these semantics under cover of a multi-tenancy change — see §21 and ADR-0015's own scope.
+
+Full architecture reasoning, rejected alternatives (a denormalized `Ticket.OrganizationId`, EF Core
+global query filters, a generic `IOrganizationService`), and the migration/backfill strategy for
+pre-existing data are recorded in **ADR-0015**, not repeated here.
+
+### 6.4 Invitations & member management (Phase 18 — ADR-0017)
+
+An `Invitation` is an outstanding offer to join one `Organization` with one specific role — it is
+**not** a membership; only accepting one, followed by creating a real `OrganizationMembership`,
+grants access. There is no email delivery and no email-verification flow in FlowOps: an invitation
+is created, its link is displayed once for the inviter to copy and send however they choose, and
+the recipient's own account creation carries no separate confirmation step.
+
+**`ORG-RULE-07` — An invitation is organization-scoped.** It belongs to exactly one `Organization`
+(a direct FK), the same outer boundary `ORG-RULE-01` already establishes for every other
+organization-owned entity. Owner: `Invitation` (Domain).
+
+**`ORG-RULE-08` — An invitation token is single-use.** `Invitation.Accept` refuses an
+already-accepted invitation outright. Only the invitation's SHA-256 token *hash* is ever persisted
+— never the raw bearer token, which exists only long enough to be generated, hashed, and handed to
+the inviter once. Concurrent acceptance of the same token is resolved by the PostgreSQL `xmin`
+optimistic-concurrency token (the same mechanism ADR-0011 already established for tickets): exactly
+one of two simultaneous attempts commits; the other fails safely with no membership created. Owner:
+`Invitation` (Domain), `InvitationService` (Application).
+
+**`ORG-RULE-09` — An invitation is bound to its invited email.** The email is stored in both its
+original and Identity-normalized form; acceptance requires the accepting account's own normalized
+email to match exactly — a valid token alone is not sufficient. A new account created through
+invitation acceptance always uses the invitation's own email, never a client-supplied one, so there
+is no field through which the binding could be bypassed. Owner: `Invitation` (Domain),
+`InvitationService.AcceptForCurrentUserAsync`/`AcceptForNewUserAsync` (Application).
+
+**`ORG-RULE-10` — Invitations expire.** A fixed 7-day lifetime (`Invitation.DefaultLifetime`),
+checked server-side on every acceptance attempt regardless of whether the token is otherwise valid.
+Expired invitations are never deleted (no cleanup scheduler exists or is planned) — expiry is a
+read-time check, not a row lifecycle. Owner: `Invitation` (Domain).
+
+**`ORG-RULE-11` — Only Admin/Manager may invite or manage members, and Manager is least-privilege.**
+`OrganizationAccessPolicy` (Domain, alongside `TicketAccessPolicy`) is the single authorization
+surface for creating invitations, viewing the member list, changing a member's role, and removing a
+member. Admin has no restriction. Manager may invite, role-change, or remove only Agent/Viewer
+members — **never** Admin, and never another Manager — a deliberate least-privilege default (no
+existing product requirement pinned an exact rule; granting Manager the ability to create or manage
+an Admin would let a non-Admin role quietly accumulate Admin-equivalent influence). Every check
+resolves the acting organization server-side from `CurrentUser` — never a client-supplied
+organization id, invitation id, or membership id. Owner: `OrganizationAccessPolicy` (Domain).
+
+**`ORG-RULE-12` — No action may leave an organization without an Admin.** The same sole-admin
+invariant Phase 17 introduced for account deletion (ADR-0016) extended to cover membership role
+changes and removal too, via one shared helper (`SoleAdminGuard`) rather than three independent
+copies of the same check. Owner: `SoleAdminGuard` (Application), called from
+`AccountService.DeleteAccountAsync` and `MembershipService.ChangeRoleAsync`/`RemoveMemberAsync`.
+
+**`ORG-RULE-13` — Removing a member never deletes their identity or history.** Member removal
+deletes only the `OrganizationMembership` row. The `ApplicationUser`, every other organization's
+membership for that same user, and every ticket/comment/event they authored or acted on are
+completely untouched — the same deactivation-not-deletion principle ADR-0016 established for
+account deletion, applied here to one organization's access grant rather than the whole account.
+Owner: `MembershipService.RemoveMemberAsync` (Application).
+
+Full token-generation/hashing, expiration, and concurrency reasoning — including the specific
+token-leakage check performed and its one required logging fix — is recorded in **ADR-0017**, not
+repeated here.
 
 ---
 
@@ -548,7 +717,9 @@ an information-dense, form-and-table business application; this is what Razor Pa
 - Shared UI logic in view components / partials (`_TicketStatusBadge`, `_SlaIndicator`,
   `_AttentionSignals`, `_Pager`).
 - JavaScript: vanilla, progressive enhancement only (filter submit, confirm dialogs, live "time
-  remaining" tick). Every page must work with JS disabled, degrading to full-page posts.
+  remaining" tick, account-approval status polling). Every page must work with JS disabled,
+  degrading to full-page posts (or, for polling, to a manual reload showing the same server-rendered
+  current state).
 - CSS: locally hosted Bootstrap 5 + `flowops.css` with design tokens for status/priority/SLA colour
   semantics. **No CDN links** (CSP, offline dev, availability). **No Node build step.**
 - Charts: Chart.js, locally hosted, data supplied as a JSON payload from the PageModel. Maximum four
@@ -871,6 +1042,7 @@ Expected initial set:
 - ADR-0007 Startup migrations behind a flag
 - ADR-0008 Cookie authentication for the API instead of JWT
 - ADR-0009 PostgreSQL/Neon and text-valued enums with check constraints
+- ADR-0019 Dashboard filter bar, date-range semantics, and server-rendered charts
 
 **Also record what was deliberately not adopted, and why.** "We did not add Redis because there is no
 measured cache need at this scale" is stronger engineering evidence than adding Redis.
@@ -916,22 +1088,35 @@ hierarchy over decoration.
 - Useful empty states ("No work is at risk right now" beats a blank panel) and honest error states.
 - Responsive to tablet width at minimum; the work queue must remain usable on a support technician's
   smaller screen.
+- **Phase 20 (ADR-0019):** the dashboard's KPI cap above is unchanged — it applies to the four-KPI
+  stat strip only. Beyond it, the dashboard also carries a filter bar (date range: 30/90/180 days,
+  default 90; team; work type) and five further sections (ticket volume trend, tickets by status,
+  workload by team, SLA performance, resolution time by work type), each server-aggregated, scoped
+  by organization/role *before* the filter ever narrows anything, and drawn without a charting
+  library (one inline SVG polyline, the rest plain CSS bars) — all fully usable with JavaScript
+  disabled.
 
 ---
 
 ## 23. Scope control
 
-**Core (build):** authentication · roles & authorization · users · teams · projects · categories ·
-tickets · workflow · comments · audit history · SLA engine · attention engine · work queue ·
-dashboard & analytics · workload · PostgreSQL · justified REST API · Docker · CI/CD · public
-deployment · documentation.
+**Core (build):** authentication · roles & authorization · multi-tenancy / organizations (§6.3) ·
+users · teams · projects · categories · tickets · workflow · comments · audit history · SLA engine ·
+attention engine · work queue · dashboard & analytics · workload · PostgreSQL · justified REST API ·
+Docker · CI/CD · public deployment · documentation.
 
 **Stretch (only after Phase 16, only with an ADR):** attachments · email notifications · saved
 filters · CSV export · Kanban view · advanced trend analytics · demo auto-reset job.
 
 **Out of scope — belongs to other portfolio projects:** AI, LLM features, agents, anomaly detection
 (Project 7) · public API product, integrations platform, embedded analytics (Project 8) ·
-microservices, Kubernetes, Redis, message queues, real-time chat, mobile app, multi-tenancy (never).
+microservices, Kubernetes, Redis, message queues, real-time chat, mobile app.
+
+**Correction (Phase 16):** this list previously named "multi-tenancy (never)" as out of scope. That
+is superseded — FlowOps is now a true multi-tenant SaaS application (§6.3, ADR-0015); an
+`Organization`/`OrganizationMembership` foundation is built and is Core. What remains out of scope
+for now, per §6.3's own stated limits, is the *product surface* around it — organization
+registration, invitations, an organization switcher UI — not multi-tenancy itself.
 
 If a request would pull Project 7 or 8 capability into FlowOps, say so and decline. The portfolio
 progression is DATA → PIPELINE → **BUSINESS APPLICATION** → INTELLIGENT AUTOMATION → PLATFORM. FlowOps

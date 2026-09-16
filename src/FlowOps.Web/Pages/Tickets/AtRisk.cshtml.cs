@@ -24,7 +24,11 @@ public sealed class AtRiskModel : PageModel
     public PagedResult<AttentionListItem> Queue { get; private set; } =
         new([], 1, AttentionQueryService.PageSize, 0);
 
-    public async Task<IActionResult> OnGetAsync(int pageNumber = 1, CancellationToken cancellationToken = default)
+    /// <summary>The active search term, echoed back so the view can show it in the search box and
+    /// carry it into pagination links and the "clear search" link.</summary>
+    public string? Search { get; private set; }
+
+    public async Task<IActionResult> OnGetAsync(int pageNumber = 1, string? search = null, CancellationToken cancellationToken = default)
     {
         var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
         if (user is null)
@@ -32,7 +36,8 @@ public sealed class AtRiskModel : PageModel
             return Forbid();
         }
 
-        Queue = await _attentionQueryService.GetAtRiskAsync(user, pageNumber, cancellationToken);
+        Search = search;
+        Queue = await _attentionQueryService.GetAtRiskAsync(user, pageNumber, search, cancellationToken);
         return Page();
     }
 }

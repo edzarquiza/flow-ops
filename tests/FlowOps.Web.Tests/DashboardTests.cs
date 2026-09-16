@@ -1,5 +1,7 @@
 using System.Net;
+using FlowOps.Application.Tickets;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Persistence;
 using FlowOps.Web.Tests.Fixtures;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -14,7 +16,7 @@ namespace FlowOps.Web.Tests;
 /// (CLAUDE.md §22) as actionable links, an Agent's numbers never disclose team-wide data, and a
 /// caller with nothing in scope sees an honest empty state rather than a crash or fake numbers.
 /// </summary>
-/// <remarks>Three sign-ins, well inside the five-per-minute login rate limit (CLAUDE.md §12).</remarks>
+/// <remarks>Four sign-ins, inside the five-per-minute login rate limit (CLAUDE.md §12).</remarks>
 public sealed class DashboardTests : IClassFixture<FlowOpsWebApplicationFactory>
 {
     private readonly FlowOpsWebApplicationFactory _factory;
@@ -91,7 +93,7 @@ public sealed class DashboardTests : IClassFixture<FlowOpsWebApplicationFactory>
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
-            var emptyTeam = new Team(0, $"Empty-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+            var emptyTeam = new Team(0, _factory.OrganizationId, $"Empty-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
             db.Add(emptyTeam);
             await db.SaveChangesAsync();
 
@@ -111,7 +113,54 @@ public sealed class DashboardTests : IClassFixture<FlowOpsWebApplicationFactory>
         Assert.Contains(">0<", html, StringComparison.Ordinal); // Open Work / Overdue render as 0, not blank
         Assert.Contains("No data yet", html, StringComparison.Ordinal); // SLA/resolution-time honesty
         Assert.Contains("No open work in your scope right now.", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("NaN", html, StringComparison.Ordinal);
+        // Scoped to where a computed number would actually render (element text / a percentage),
+        // not the whole raw response — an opaque antiforgery token elsewhere on the page can
+        // coincidentally contain the literal substring "NaN" with no connection to this defect.
+        Assert.DoesNotContain(">NaN<", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("NaN%", html, StringComparison.Ordinal);
+    }
+
+    [Fact] // Phase 20C §12: a work type with zero resolved tickets must render as a distinct
+           // "no data" row, never a bar at 0% width indistinguishable from a real (if small) one.
+           // Every ticket this factory ever creates is WorkType.Incident (CreateTicketAsync's own
+           // hard-coded request), so resolving one gives exactly one work type real data while the
+           // other three stay genuinely at zero — the precise scenario the defect was about.
+    public async Task ResolutionTimePanel_WorkTypeWithNoResolvedTickets_ShowsNoDataRow_NotAFakeBar()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            var ticketService = scope.ServiceProvider.GetRequiredService<TicketService>();
+            var managerId = await TestReferenceData.UserIdAsync(scope.ServiceProvider, TestUsers.ManagerEmail);
+            var manager = new CurrentUser(managerId, _factory.OrganizationId, UserRole.Manager, new HashSet<int> { _factory.TeamId }, new HashSet<int> { _factory.TeamId });
+
+            var (ticketId, _) = await ticketService.CreateAsync(
+                new CreateTicketRequest(
+                    Title: "Resolution time regression fixture",
+                    Description: "Seeded so exactly one work type has a real resolved-ticket average.",
+                    WorkType: WorkType.Incident,
+                    Priority: Priority.Medium,
+                    TeamId: _factory.TeamId,
+                    CategoryId: _factory.CategoryId,
+                    ProjectId: null),
+                manager);
+            await ticketService.AssignAsync(ticketId, managerId, manager);
+            await ticketService.StartWorkAsync(ticketId, manager);
+            await ticketService.ResolveAsync(ticketId, Resolution.Fixed, "Fixed for the regression fixture.", manager);
+            _ = db;
+        }
+
+        var client = _factory.CreateClient(new() { AllowAutoRedirect = false });
+        await TestAuthentication.SignInAsync(client, TestUsers.ManagerEmail);
+
+        var response = await client.GetAsync("/");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("Incident", html, StringComparison.Ordinal);
+        Assert.Contains("No resolved tickets in period", html, StringComparison.Ordinal);
+        // The no-data rows never render a bar element at all for that row.
+        Assert.Contains("hbar-row__no-data", html, StringComparison.Ordinal);
     }
 
     [Fact]

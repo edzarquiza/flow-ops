@@ -9,7 +9,7 @@ public sealed class TeamMember
 {
     public int TeamId { get; }
     public Guid UserId { get; }
-    public bool IsTeamManager { get; }
+    public bool IsTeamManager { get; private set; }
     public DateTimeOffset JoinedAt { get; }
 
     public TeamMember(int teamId, Guid userId, bool isTeamManager, DateTimeOffset joinedAt)
@@ -19,4 +19,11 @@ public sealed class TeamMember
         IsTeamManager = isTeamManager;
         JoinedAt = joinedAt;
     }
+
+    /// <summary>The only mutation this entity supports — the same shape as
+    /// <see cref="FlowOps.Domain.Organizations.OrganizationMembership.ChangeRole"/>. Authorization
+    /// (CLAUDE.md §6.1: "Manage... teams" is Admin-only) is decided by the caller
+    /// (<c>TeamService</c>) before this is ever invoked; this method only records the
+    /// already-authorized flag.</summary>
+    public void SetManager(bool isTeamManager) => IsTeamManager = isTeamManager;
 }

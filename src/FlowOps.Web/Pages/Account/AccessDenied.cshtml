@@ -2,5 +2,26 @@
 @{
     ViewData["Title"] = "Access Denied";
 }
-<h1>Access Denied</h1>
-<p>You do not have permission to view this page.</p>
+@* Phase 24A (UI/UX stabilization): previously a bare <h1> and one sentence — no shell, no brand,
+   no route back. Reached almost always by an already-authenticated caller whose role or
+   organization does not extend to the page they tried (the cookie-auth handler only ever routes
+   here, rather than to /Account/Login, once a caller is already authenticated), so _Layout.cshtml
+   already wraps this in the ordinary sidebar shell; this just needs to look like any other
+   FlowOps page rather than raw HTML. Deliberately generic about the reason (CLAUDE.md's own
+   authorization posture: never disclose which specific role/organization check failed, since that
+   is itself information a caller without access shouldn't get). *@
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Access Denied</h1>
+        <p class="page-context">You don't have permission to access this page in your current role or organization.</p>
+    </div>
+</div>
+<div class="zone">
+    <p class="prose">
+        If you believe this is a mistake, confirm you're signed in with the right account, or ask
+        an administrator in your organization to check your role.
+    </p>
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/Index">Back to dashboard</a>
+    </p>
+</div>

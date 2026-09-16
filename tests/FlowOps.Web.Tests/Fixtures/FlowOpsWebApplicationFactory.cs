@@ -26,6 +26,9 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
         .WithPassword("flowops_webtest")
         .Build();
 
+    /// <summary>The organization every seeded test user belongs to (Phase 16).</summary>
+    public int OrganizationId { get; private set; }
+
     /// <summary>The team Manager and Agent belong to. Admin and Viewer deliberately do not.</summary>
     public int TeamId { get; private set; }
 
@@ -48,6 +51,7 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
         await TestUsers.SeedAsync(scope.ServiceProvider);
 
         var reference = await TestReferenceData.SeedAsync(scope.ServiceProvider);
+        OrganizationId = reference.OrganizationId;
         TeamId = reference.TeamId;
         CategoryId = reference.CategoryId;
         SeededTicketId = reference.TicketId;
@@ -73,7 +77,7 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
                 TeamId: TeamId,
                 CategoryId: CategoryId,
                 ProjectId: null),
-            new CurrentUser(requesterId, UserRole.Agent, new HashSet<int> { TeamId }, new HashSet<int>()));
+            new CurrentUser(requesterId, OrganizationId, UserRole.Agent, new HashSet<int> { TeamId }, new HashSet<int>()));
 
         return ticketId;
     }
@@ -102,7 +106,7 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
                 TeamId: TeamId,
                 CategoryId: CategoryId,
                 ProjectId: null),
-            new CurrentUser(requesterId, UserRole.Agent, new HashSet<int> { TeamId }, new HashSet<int>()));
+            new CurrentUser(requesterId, OrganizationId, UserRole.Agent, new HashSet<int> { TeamId }, new HashSet<int>()));
 
         return ticketId;
     }
@@ -122,6 +126,15 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
         // against the developer's real local database instead of this container. UseSetting is
         // applied to the host's own configuration and survives that layering.
         builder.UseSetting("ConnectionStrings:FlowOps", _container.GetConnectionString());
+
+        // Phase 24A: registration no longer auto-signs-in (approval is required first), so a Web
+        // test fixture that needs an authenticated session now needs one extra, genuine
+        // /Account/Login POST per registered account on top of the registration itself. Every
+        // request this in-process TestServer handles shares one synthetic remote IP, so without
+        // this the production 5/min/IP login limit (CLAUDE.md §12, unchanged in Program.cs's own
+        // default) would throttle test setup, not a real attacker. No appsettings.*.json file sets
+        // this key, so a real deployment is entirely unaffected.
+        builder.UseSetting("RateLimiting:Login:PermitLimitPerMinute", "1000");
     }
 
     async Task IAsyncLifetime.DisposeAsync()

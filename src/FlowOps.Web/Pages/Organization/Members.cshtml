@@ -1,0 +1,182 @@
+@page
+@model FlowOps.Web.Pages.Organization.MembersModel
+@using FlowOps.Domain.Tickets
+@{
+    ViewData["Title"] = "Members";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Members</h1>
+                <span class="page-header__count">@Model.Members.Count member@(Model.Members.Count == 1 ? "" : "s")</span>
+            </div>
+            <p class="page-context">People and access in this organization.</p>
+        </div>
+        <div class="page-header__actions">
+            @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search members...", Model.Search))
+            <a class="btn-primary" href="#invite">Invite member</a>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage));
+}
+
+<div class="zone">
+    @if (Model.Members.Count == 0)
+    {
+        @if (!string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <div class="empty-state">
+                <p class="empty-state__title">No members found</p>
+                <p>No organization members matched "@Model.Search".</p>
+                <p><a class="back-link" asp-page="/Organization/Members">Clear search</a></p>
+            </div>
+        }
+        else
+        {
+            <p class="empty-state">No members found.</p>
+        }
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Organization members</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Email</th>
+                        <th scope="col">Role</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var member in Model.Members)
+                    {
+                        var canManage = Model.AssignableRoles.Contains(member.Role) && !member.IsDemoProtected;
+                        <tr>
+                            <td>
+                                <div class="fo-row-identity">
+                                    <span class="fo-avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(member.DisplayName)</span>
+                                    @member.DisplayName
+                                </div>
+                            </td>
+                            <td class="cell-muted">@member.Email</td>
+                            @* Phase 11: role is always plain text — one concept, one presentation,
+                               never a live select in some rows and a badge in others. Editing it
+                               moves behind the row's "..." menu below. *@
+                            <td class="cell-muted">@FlowOps.Web.RoleDisplay.ToDisplayName(member.Role)</td>
+                            <td>
+                                <span class="fo-status-dot @(member.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                                @(member.IsActive ? "Active" : "Deactivated")
+                            </td>
+                            <td>
+                                @if (canManage)
+                                {
+                                    <details class="row-menu">
+                                        <summary aria-label="Actions for @member.DisplayName">@Html.Raw(Icons.More)</summary>
+                                        <div class="row-menu__panel">
+                                            <form method="post" asp-page-handler="ChangeRole" class="role-update-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="targetUserId" value="@member.UserId" />
+                                                <input type="hidden" name="Search" value="@Model.Search" />
+                                                <select name="newRole" aria-label="Role for @member.DisplayName" class="role-update-form__select">
+                                                    @foreach (var role in Model.AssignableRoles)
+                                                    {
+                                                        <option value="@role" selected="@(role == member.Role)">@FlowOps.Web.RoleDisplay.ToDisplayName(role)</option>
+                                                    }
+                                                </select>
+                                                <button type="submit" class="btn">Update role</button>
+                                            </form>
+                                            <div class="confirm">
+                                                <input type="checkbox" id="confirm-remove-member-@member.UserId" class="confirm-toggle" />
+                                                <label for="confirm-remove-member-@member.UserId" class="btn-caution confirm-trigger">Remove</label>
+                                                <div class="confirm-panel">
+                                                    <p class="confirm-panel__question">Remove @member.DisplayName from this organization?</p>
+                                                    <p class="confirm-panel__detail">
+                                                        Their existing tickets and history stay unchanged. They lose
+                                                        access to this organization immediately.
+                                                    </p>
+                                                    <div class="confirm-panel__actions">
+                                                        <form method="post" asp-page-handler="RemoveMember">
+                                                            @Html.AntiForgeryToken()
+                                                            <input type="hidden" name="targetUserId" value="@member.UserId" />
+                                                            <input type="hidden" name="Search" value="@Model.Search" />
+                                                            <button type="submit" class="btn-caution">Yes, remove</button>
+                                                        </form>
+                                                        <label for="confirm-remove-member-@member.UserId" class="btn">Cancel</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </details>
+                                }
+                                else
+                                {
+                                    @* A locked/demo-protected row previously rendered no action
+                                       controls at all, which read as broken rendering — an
+                                       explicit label says this is deliberate. *@
+                                    <span class="row-locked">Locked</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone" id="invite">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Invite a new member")); }
+
+    @if (Model.CreatedInvitationLink is not null)
+    {
+        await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel("Invitation created. Copy the link below and send it to the invited person — FlowOps does not send email."));
+        <div class="field">
+            <label for="invitation-link">Invitation link</label>
+            @* Phase 24A: a real copy button (wwwroot/js/copy-button.js) replaces the old
+               onclick="this.select()" — dead under CSP's script-src 'self', which has no
+               'unsafe-inline' and blocks inline event-handler attributes. *@
+            <div class="copy-field">
+                <input id="invitation-link" type="text" readonly value="@Model.CreatedInvitationLink" />
+                <button type="button" class="btn" data-copy-target="invitation-link" data-copy-feedback="invitation-link-feedback">Copy</button>
+            </div>
+            <span id="invitation-link-feedback" class="copy-feedback" role="status"></span>
+        </div>
+    }
+
+    <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+    <form method="post" asp-page-handler="Invite">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="Search" value="@Model.Search" />
+        <div class="field-grid">
+            <div class="field">
+                <label asp-for="InviteInput.Email">Email</label>
+                <input asp-for="InviteInput.Email" autocomplete="email" aria-describedby="invite-email-error" />
+                <span id="invite-email-error" class="field-validation-error" asp-validation-for="InviteInput.Email"></span>
+            </div>
+            <div class="field">
+                <label asp-for="InviteInput.Role">Role</label>
+                <select asp-for="InviteInput.Role">
+                    @foreach (var role in Model.AssignableRoles)
+                    {
+                        <option value="@role">@FlowOps.Web.RoleDisplay.ToDisplayName(role)</option>
+                    }
+                </select>
+                <span class="field-validation-error" asp-validation-for="InviteInput.Role"></span>
+            </div>
+        </div>
+        <button type="submit" class="btn-primary">Create invitation</button>
+    </form>
+</div>
+
+@if (Model.CreatedInvitationLink is not null)
+{
+    <script src="~/js/copy-button.js" asp-append-version="true"></script>
+}

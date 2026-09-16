@@ -18,9 +18,12 @@ public class TicketAccessPolicyTests
     private static TicketAuthorizationSnapshot Snapshot(Guid? assignee = null) =>
         new(TicketId: 1, TeamId: Team, RequesterId: Requester, AssigneeId: assignee ?? Assignee, Status: Status.Assigned);
 
+    private const int OrganizationId = 1;
+
     private static CurrentUser User(UserRole role, bool memberOfTeam = true, bool managesTeam = false, Guid? id = null) =>
         new(
             id ?? Guid.NewGuid(),
+            OrganizationId,
             role,
             memberOfTeam ? new HashSet<int> { Team } : new HashSet<int>(),
             managesTeam ? new HashSet<int> { Team } : new HashSet<int>());

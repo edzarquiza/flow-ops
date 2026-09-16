@@ -1,0 +1,82 @@
+@page
+@model FlowOps.Web.Pages.Platform.Organizations.IndexModel
+@{
+    ViewData["Title"] = "Organizations";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Organizations</h1>
+                <span class="page-header__count">@Model.Organizations.TotalCount organization@(Model.Organizations.TotalCount == 1 ? "" : "s")</span>
+            </div>
+            <p class="page-context">Every organization on the platform, active and inactive.</p>
+        </div>
+        @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search organizations...", Model.Search))
+    </div>
+</div>
+
+@if (Model.Organizations.TotalCount == 0)
+{
+    @if (!string.IsNullOrWhiteSpace(Model.Search))
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No organizations found</p>
+            <p>No organizations matched "@Model.Search".</p>
+            <p><a class="back-link" asp-page="/Platform/Organizations/Index">Clear search</a></p>
+        </div>
+    }
+    else
+    {
+        <p class="empty-state">No organizations exist yet.</p>
+    }
+}
+else
+{
+    var organizationsRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "search", Model.Search } };
+    await Html.RenderPartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Organizations/Index",
+            Model.Organizations,
+            organizationsRouteValues,
+            "Organizations pagination",
+            FlowOps.Web.PaginationPlacement.Top));
+    <div class="table-responsive">
+        <table>
+            <caption class="sr-only">Organizations on the platform</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Members</th>
+                    <th scope="col">Tickets</th>
+                    <th scope="col">Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var org in Model.Organizations.Items)
+                {
+                    <tr>
+                        <td><a asp-page="/Platform/Organizations/Details" asp-route-id="@org.OrganizationId">@org.Name</a></td>
+                        <td>
+                            <span class="fo-status-dot @(org.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                            @(org.IsActive ? "Active" : "Inactive")
+                        </td>
+                        <td class="cell-muted">@org.MemberCount</td>
+                        <td class="cell-muted">@org.TicketCount</td>
+                        <td class="cell-muted"><time datetime="@org.CreatedAt.ToString("O")" title="@org.CreatedAt.ToString("O")">@org.CreatedAt.ToString("yyyy-MM-dd")</time></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @await Html.PartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Organizations/Index",
+            Model.Organizations,
+            organizationsRouteValues,
+            "Organizations pagination"))
+}

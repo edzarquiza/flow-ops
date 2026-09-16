@@ -1,0 +1,12 @@
+@model FlowOps.Web.NoticeViewModel
+@{
+    var toneClass = Model.Tone switch
+    {
+        FlowOps.Web.NoticeTone.Success => "notice--success",
+        FlowOps.Web.NoticeTone.Info => "notice--info",
+        FlowOps.Web.NoticeTone.Warning => "notice--warning",
+        FlowOps.Web.NoticeTone.Danger => "notice--danger",
+        _ => "notice--success",
+    };
+}
+<p class="notice @toneClass" role="@(Model.Urgent ? "alert" : "status")">@Model.Message</p>

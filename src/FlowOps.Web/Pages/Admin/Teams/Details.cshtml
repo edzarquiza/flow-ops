@@ -1,0 +1,250 @@
+@page "{id:int}"
+@model FlowOps.Web.Pages.Admin.Teams.DetailsModel
+@using FlowOps.Domain.Tickets
+@{
+    ViewData["Title"] = Model.Team?.TeamName ?? "Team";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>@Model.Team!.TeamName</h1>
+                <span class="page-header__count">@Model.Team.Members.Count member@(Model.Team.Members.Count == 1 ? "" : "s")</span>
+            </div>
+            <p class="page-context">
+                <span class="fo-status-dot @(Model.Team.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                @(Model.Team.IsActive ? "Active" : "Inactive") — team membership determines which Agents, Managers, and Viewers can see this team's work.
+            </p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Team settings")); }
+    @if (Model.Team.IsActive)
+    {
+        <div class="project-actions">
+            <form method="post" asp-page-handler="RenameTeam" asp-route-id="@Model.Team.TeamId" class="project-actions__rename">
+                @Html.AntiForgeryToken()
+                <label class="sr-only" for="rename-team">Rename @Model.Team.TeamName</label>
+                <input id="rename-team" type="text" name="name" value="@Model.Team.TeamName" maxlength="100" />
+                <button type="submit" class="btn" aria-label="Save new name for @Model.Team.TeamName">Save</button>
+            </form>
+            <div class="confirm">
+                <input type="checkbox" id="confirm-deactivate-team" class="confirm-toggle" />
+                <label for="confirm-deactivate-team" class="btn-caution confirm-trigger" aria-label="Deactivate @Model.Team.TeamName">Deactivate</label>
+                <div class="confirm-panel">
+                    <p class="confirm-panel__question">Deactivate @Model.Team.TeamName?</p>
+                    <p class="confirm-panel__detail">
+                        Existing tickets and historical data will remain intact, but the team will no
+                        longer be available for new ticket creation. This can be reversed at any time.
+                    </p>
+                    <div class="confirm-panel__actions">
+                        <form method="post" asp-page-handler="DeactivateTeam" asp-route-id="@Model.Team.TeamId">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn-caution">Yes, deactivate</button>
+                        </form>
+                        <label for="confirm-deactivate-team" class="btn">Cancel</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="page-context">This team is inactive. It no longer appears when creating a new ticket, but its history, members, and categories remain unchanged.</p>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Members")); }
+    @if (Model.Team.Members.Count == 0)
+    {
+        <p class="empty-state">No members on this team yet — add one below.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Members of @Model.Team.TeamName</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Organization role</th>
+                        <th scope="col">Team manager</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var member in Model.Team.Members)
+                    {
+                        <tr>
+                            <td>@member.DisplayName</td>
+                            <td class="cell-muted">@FlowOps.Web.RoleDisplay.ToDisplayName(member.OrganizationRole)</td>
+                            <td class="cell-muted">@(member.IsTeamManager ? "Yes" : "No")</td>
+                            <td>
+                                <div class="team-member-actions">
+                                    <form method="post" asp-page-handler="SetManager" asp-route-id="@Model.Team.TeamId">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="userId" value="@member.UserId" />
+                                        <input type="hidden" name="isTeamManager" value="@(!member.IsTeamManager)" />
+                                        <button type="submit" class="btn" aria-label="@(member.IsTeamManager ? "Remove team manager from" : "Make team manager") @member.DisplayName">
+                                            @(member.IsTeamManager ? "Remove manager" : "Make manager")
+                                        </button>
+                                    </form>
+                                    <div class="confirm">
+                                        <input type="checkbox" id="confirm-remove-@member.UserId" class="confirm-toggle" />
+                                        <label for="confirm-remove-@member.UserId" class="btn-caution confirm-trigger" aria-label="Remove @member.DisplayName from this team">Remove</label>
+                                        <div class="confirm-panel">
+                                            <p class="confirm-panel__question">Remove @member.DisplayName from this team?</p>
+                                            <p class="confirm-panel__detail">
+                                                Their existing tickets and history stay unchanged. They can be
+                                                added back to this team at any time.
+                                            </p>
+                                            <div class="confirm-panel__actions">
+                                                <form method="post" asp-page-handler="RemoveMember" asp-route-id="@Model.Team.TeamId">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="userId" value="@member.UserId" />
+                                                    <button type="submit" class="btn-caution">Yes, remove</button>
+                                                </form>
+                                                <label for="confirm-remove-@member.UserId" class="btn">Cancel</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Add a member")); }
+    @if (Model.EligibleMembers.Count == 0)
+    {
+        <p class="empty-state">Every active member of this organization is already on this team.</p>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="AddMember" asp-route-id="@Model.Team.TeamId" class="field-grid">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label for="add-member-select">Organization member<span class="field-required" aria-hidden="true">*</span></label>
+                <select id="add-member-select" name="userId">
+                    @foreach (var candidate in Model.EligibleMembers)
+                    {
+                        <option value="@candidate.UserId">@candidate.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <div class="field field--align-bottom">
+                <button type="submit" class="btn-primary">Add member</button>
+            </div>
+        </form>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Categories")); }
+    @if (Model.Categories.Count == 0)
+    {
+        <p class="empty-state">No categories on this team yet — add one below.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Categories on @Model.Team.TeamName</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Work type</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var category in Model.Categories)
+                    {
+                        <tr>
+                            <td>@category.Name</td>
+                            <td class="cell-muted">@category.DefaultWorkType</td>
+                            <td>
+                                <span class="fo-status-dot @(category.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                                @(category.IsActive ? "Active" : "Inactive")
+                            </td>
+                            <td>
+                                @if (category.IsActive)
+                                {
+                                    <div class="project-actions">
+                                        <form method="post" asp-page-handler="RenameCategory" asp-route-id="@Model.Team.TeamId" class="project-actions__rename">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="categoryId" value="@category.CategoryId" />
+                                            <label class="sr-only" for="rename-category-@category.CategoryId">Rename @category.Name</label>
+                                            <input id="rename-category-@category.CategoryId" type="text" name="name" value="@category.Name" maxlength="100" />
+                                            <button type="submit" class="btn" aria-label="Save new name for @category.Name">Save</button>
+                                        </form>
+                                        <div class="confirm">
+                                            <input type="checkbox" id="confirm-deactivate-cat-@category.CategoryId" class="confirm-toggle" />
+                                            <label for="confirm-deactivate-cat-@category.CategoryId" class="btn-caution confirm-trigger" aria-label="Deactivate @category.Name">Deactivate</label>
+                                            <div class="confirm-panel">
+                                                <p class="confirm-panel__question">Deactivate @category.Name?</p>
+                                                <p class="confirm-panel__detail">
+                                                    It no longer appears when creating a new ticket, but its history
+                                                    remains unchanged. This can be reversed at any time.
+                                                </p>
+                                                <div class="confirm-panel__actions">
+                                                    <form method="post" asp-page-handler="DeactivateCategory" asp-route-id="@Model.Team.TeamId">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="categoryId" value="@category.CategoryId" />
+                                                        <button type="submit" class="btn-caution">Yes, deactivate</button>
+                                                    </form>
+                                                    <label for="confirm-deactivate-cat-@category.CategoryId" class="btn">Cancel</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="cell-muted">&mdash;</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Add a category")); }
+    <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+    <form method="post" asp-page-handler="AddCategory" asp-route-id="@Model.Team.TeamId" class="field-grid">
+        @Html.AntiForgeryToken()
+        <div class="field">
+            <label asp-for="CreateCategoryInput.Name">Category name<span class="field-required" aria-hidden="true">*</span></label>
+            <input asp-for="CreateCategoryInput.Name" aria-describedby="category-name-error" />
+            <span id="category-name-error" class="field-validation-error" asp-validation-for="CreateCategoryInput.Name"></span>
+        </div>
+        <div class="field">
+            <label asp-for="CreateCategoryInput.DefaultWorkType">Work type<span class="field-required" aria-hidden="true">*</span></label>
+            <select asp-for="CreateCategoryInput.DefaultWorkType" asp-items="Html.GetEnumSelectList<WorkType>()"></select>
+            <span class="field-validation-error" asp-validation-for="CreateCategoryInput.DefaultWorkType"></span>
+        </div>
+        <div class="field field--align-bottom">
+            <button type="submit" class="btn-primary">Add category</button>
+        </div>
+    </form>
+</div>
+
+<p><a class="back-link" asp-page="/Admin/Index">&larr; Back to teams</a></p>

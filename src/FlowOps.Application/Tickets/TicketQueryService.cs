@@ -88,10 +88,18 @@ public sealed class TicketQueryService
     /// framework (CLAUDE.md's ban on unnecessary abstraction) — it is the smallest extension that
     /// makes each KPI "clickable through to the filtered work it represents" (§22).
     /// </param>
+    /// <param name="search">
+    /// An optional free-text term matched against reference, title, description, requester,
+    /// assignee, team, and category — applied as an additional <c>AND</c> narrowing the same
+    /// authorization- and filter-scoped query (ATTN/AUTH ordering: scope, then filter, then
+    /// search), never a replacement for either. <see langword="null"/>/whitespace is treated as no
+    /// search, so an empty box reproduces this method's exact pre-search behavior.
+    /// </param>
     public async Task<PagedResult<TicketListItem>> GetQueueAsync(
         CurrentUser user,
         int pageNumber,
         TicketQueueFilter filter = TicketQueueFilter.None,
+        string? search = null,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
@@ -99,46 +107,68 @@ public sealed class TicketQueryService
             pageNumber = 1;
         }
 
-        var scoped = ApplyViewScope(_dbContext.Tickets.AsNoTracking(), user);
+        var normalizedSearch = SearchTermNormalizer.Normalize(search);
+
+        var scoped = ApplyViewScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user);
         scoped = ApplyQueueFilter(scoped, filter, _timeProvider.GetUtcNow());
 
-        var totalCount = await scoped.CountAsync(cancellationToken);
+        // The requester join exists only to make "Requester" a searchable field (the queue never
+        // displayed it before). RequesterId is a required FK, so this INNER JOIN can never exclude
+        // an otherwise-visible ticket — result set and count are unaffected when search is empty.
+        var joined =
+            from ticket in scoped
+            join team in _dbContext.Teams on ticket.TeamId equals team.Id
+            join category in _dbContext.Categories on ticket.CategoryId equals category.Id
+            join requester in _dbContext.Users on ticket.RequesterId equals requester.Id
+            join assignee in _dbContext.Users on ticket.AssigneeId equals assignee.Id into assignees
+            from assignee in assignees.DefaultIfEmpty()
+            select new { ticket, team, category, requester, assignee };
+
+        if (normalizedSearch is not null)
+        {
+            var pattern = SearchTermNormalizer.ToLikePattern(normalizedSearch);
+            joined = joined.Where(x =>
+                EF.Functions.ILike(x.ticket.Reference!, pattern, SearchTermNormalizer.LikeEscapeCharacter)
+                || EF.Functions.ILike(x.ticket.Title, pattern, SearchTermNormalizer.LikeEscapeCharacter)
+                || EF.Functions.ILike(x.ticket.Description, pattern, SearchTermNormalizer.LikeEscapeCharacter)
+                || EF.Functions.ILike(x.requester.DisplayName, pattern, SearchTermNormalizer.LikeEscapeCharacter)
+                || (x.assignee != null && EF.Functions.ILike(x.assignee.DisplayName, pattern, SearchTermNormalizer.LikeEscapeCharacter))
+                || EF.Functions.ILike(x.team.Name, pattern, SearchTermNormalizer.LikeEscapeCharacter)
+                || EF.Functions.ILike(x.category.Name, pattern, SearchTermNormalizer.LikeEscapeCharacter));
+        }
+
+        var totalCount = await joined.CountAsync(cancellationToken);
 
         // Deterministic ordering (CLAUDE.md §7.2): CreatedAt DESC with Id DESC as the tiebreak,
         // so two tickets created in the same instant can never swap places between pages.
         // Deliberately not an urgency ordering — ranking at-risk work is AttentionPolicy's job in
         // Phase 8, and pre-empting it here would create a second ordering rule to keep in sync.
-        var rows = await (
-            from ticket in scoped
-            join team in _dbContext.Teams on ticket.TeamId equals team.Id
-            join category in _dbContext.Categories on ticket.CategoryId equals category.Id
-            join assignee in _dbContext.Users on ticket.AssigneeId equals assignee.Id into assignees
-            from assignee in assignees.DefaultIfEmpty()
-            orderby ticket.CreatedAt descending, ticket.Id descending
-            select new
-            {
-                ticket.Id,
-                Reference = ticket.Reference!,
-                ticket.Title,
-                ticket.WorkType,
-                ticket.Priority,
-                ticket.Status,
-                TeamName = team.Name,
-                CategoryName = category.Name,
-                AssigneeDisplayName = assignee == null ? null : assignee.DisplayName,
-                ticket.CreatedAt,
-                Sla = new SlaFacts(
-                    ticket.WorkType,
-                    ticket.Priority,
-                    ticket.Status,
-                    ticket.SlaMet,
-                    ticket.SlaStartedAt,
-                    ticket.SlaDueAt,
-                    ticket.SlaPausedMinutes,
-                    ticket.SlaTargetMinutes),
-            })
+        var rows = await joined
+            .OrderByDescending(x => x.ticket.CreatedAt).ThenByDescending(x => x.ticket.Id)
             .Skip((pageNumber - 1) * PageSize)
             .Take(PageSize)
+            .Select(x => new
+            {
+                x.ticket.Id,
+                Reference = x.ticket.Reference!,
+                x.ticket.Title,
+                x.ticket.WorkType,
+                x.ticket.Priority,
+                x.ticket.Status,
+                TeamName = x.team.Name,
+                CategoryName = x.category.Name,
+                AssigneeDisplayName = x.assignee == null ? null : x.assignee.DisplayName,
+                x.ticket.CreatedAt,
+                Sla = new SlaFacts(
+                    x.ticket.WorkType,
+                    x.ticket.Priority,
+                    x.ticket.Status,
+                    x.ticket.SlaMet,
+                    x.ticket.SlaStartedAt,
+                    x.ticket.SlaDueAt,
+                    x.ticket.SlaPausedMinutes,
+                    x.ticket.SlaTargetMinutes),
+            })
             .ToListAsync(cancellationToken);
 
         // One configuration read for the whole page, not one per row.
@@ -174,7 +204,7 @@ public sealed class TicketQueryService
         CurrentUser user,
         CancellationToken cancellationToken = default)
     {
-        var scoped = ApplyViewScope(_dbContext.Tickets.AsNoTracking(), user)
+        var scoped = ApplyViewScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user)
             .Where(t => t.Id == ticketId);
 
         var row = await (
@@ -274,7 +304,7 @@ public sealed class TicketQueryService
         CurrentUser user,
         CancellationToken cancellationToken = default)
     {
-        var scoped = ApplyViewScope(_dbContext.Tickets.AsNoTracking(), user)
+        var scoped = ApplyViewScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user)
             .Where(t => t.Id == ticketId);
 
         var events = await (
@@ -341,17 +371,23 @@ public sealed class TicketQueryService
     /// rows <c>CanView</c> accepts — the same pattern ATTN-RULE-06 uses to make its prefilter
     /// duplication safe. If <c>CanView</c> changes, this method and those tests change with it.
     /// </remarks>
-    private static IQueryable<Ticket> ApplyViewScope(IQueryable<Ticket> tickets, CurrentUser user)
+    private static IQueryable<Ticket> ApplyViewScope(FlowOpsDbContext dbContext, IQueryable<Ticket> tickets, CurrentUser user)
     {
+        // Phase 16: the organization boundary is applied first, unconditionally — including for
+        // Admin, who otherwise bypasses every team check below and would see every organization's
+        // tickets. This is the query-side twin of TicketService.MutateAsync's org-scoped load.
+        var orgScoped = tickets.Where(t =>
+            dbContext.Teams.Any(team => team.Id == t.TeamId && team.OrganizationId == user.OrganizationId));
+
         if (user.Role == UserRole.Admin)
         {
-            return tickets;
+            return orgScoped;
         }
 
         // Materialised to an array so the provider translates it to a single SQL array
         // membership test rather than an unpredictable set-type translation.
         var memberTeamIds = user.MemberTeamIds.ToArray();
-        return tickets.Where(t => memberTeamIds.Contains(t.TeamId));
+        return orgScoped.Where(t => memberTeamIds.Contains(t.TeamId));
     }
 
     /// <summary>
@@ -370,7 +406,10 @@ public sealed class TicketQueryService
     /// </remarks>
     public async Task<TicketCreationOptions> GetCreationOptionsAsync(CurrentUser user, CancellationToken cancellationToken = default)
     {
-        var teamsQuery = _dbContext.Teams.AsNoTracking();
+        // Phase 22 (ADR-0022): a deactivated team offers no options for a *new* ticket — its
+        // categories are never even queried, so nothing about the team or its categories needs to
+        // be touched when it is deactivated.
+        var teamsQuery = _dbContext.Teams.AsNoTracking().Where(t => t.OrganizationId == user.OrganizationId && t.IsActive);
         if (user.Role != UserRole.Admin)
         {
             var memberTeamIds = user.MemberTeamIds.ToArray();
@@ -386,7 +425,7 @@ public sealed class TicketQueryService
 
         var categories = await _dbContext.Categories
             .AsNoTracking()
-            .Where(c => teamIds.Contains(c.TeamId))
+            .Where(c => teamIds.Contains(c.TeamId) && c.IsActive)
             .OrderBy(c => c.Name)
             .Select(c => new { c.Id, c.Name, c.TeamId })
             .ToListAsync(cancellationToken);
@@ -399,7 +438,19 @@ public sealed class TicketQueryService
             .Where(t => t.Categories.Count > 0) // a team with no categories offers nothing to select
             .ToList();
 
-        return new TicketCreationOptions(teamOptions);
+        // Projects have no team relation (unlike Category) — every ACTIVE project in the caller's
+        // own organization is offered, the same organization boundary CreateAsync's own ProjectId
+        // check already enforces (Phase 16), plus the same active-only rule that check now also
+        // enforces (project management phase) — a deactivated project cannot be selected for a new
+        // ticket even though it remains fully visible on tickets that already reference it.
+        var projectOptions = await _dbContext.Projects
+            .AsNoTracking()
+            .Where(p => p.OrganizationId == user.OrganizationId && p.IsActive)
+            .OrderBy(p => p.Name)
+            .Select(p => new ProjectOption(p.Id, p.Name))
+            .ToListAsync(cancellationToken);
+
+        return new TicketCreationOptions(teamOptions, projectOptions);
     }
 
     /// <summary>

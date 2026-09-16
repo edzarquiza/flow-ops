@@ -216,14 +216,18 @@ public sealed record CategoryOption(int CategoryId, string CategoryName);
 /// <summary>One team a caller may file a ticket against, with the categories that belong to it.</summary>
 public sealed record TeamOption(int TeamId, string TeamName, IReadOnlyList<CategoryOption> Categories);
 
+/// <summary>One project a caller may optionally associate a ticket with, scoped to their own
+/// organization exactly like <see cref="TicketService.CreateAsync"/>'s own ProjectId check.</summary>
+public sealed record ProjectOption(int ProjectId, string ProjectName);
+
 /// <summary>
-/// The options a ticket-creation form needs to populate its Team/Category control — reference
-/// data only, resolved once per page load. This is a UI convenience, not a new authorization
-/// boundary: it never replaces <see cref="TicketAccessPolicy.CanCreate"/> or TICKET-INV-02, both
-/// of which still run, unchanged, inside <see cref="TicketService.CreateAsync"/> regardless of
-/// what this list contains.
+/// The options a ticket-creation form needs to populate its Team/Category/Project controls —
+/// reference data only, resolved once per page load. This is a UI convenience, not a new
+/// authorization boundary: it never replaces <see cref="TicketAccessPolicy.CanCreate"/>,
+/// TICKET-INV-02, or the Project organization check, all of which still run, unchanged, inside
+/// <see cref="TicketService.CreateAsync"/> regardless of what this list contains.
 /// </summary>
-public sealed record TicketCreationOptions(IReadOnlyList<TeamOption> Teams);
+public sealed record TicketCreationOptions(IReadOnlyList<TeamOption> Teams, IReadOnlyList<ProjectOption> Projects);
 
 /// <summary>
 /// SLA Compliance (CLAUDE.md §22), computed over the 90-day reporting window. Counts the
@@ -269,7 +273,9 @@ public sealed record WorkloadItem(
 /// <summary>
 /// The Phase 10 dashboard's exactly-four KPIs (CLAUDE.md §22) plus the workload distribution.
 /// "KPIs are limited to Open Work, Overdue, SLA Compliance, Average Resolution Time" — no
-/// additional vanity counter belongs here, whatever seems informative in isolation.
+/// additional vanity counter belongs here, whatever seems informative in isolation. Phase 20 adds
+/// further sections *beyond* this KPI strip (trend/status/team/SLA/resolution breakdowns) — this
+/// record itself, and the four KPIs it carries, are unchanged.
 /// </summary>
 public sealed record DashboardSummary(
     int OpenWorkCount,
@@ -277,3 +283,89 @@ public sealed record DashboardSummary(
     SlaComplianceSummary SlaCompliance,
     ResolutionTimeSummary AverageResolutionTime,
     IReadOnlyList<WorkloadItem> Workload);
+
+/// <summary>
+/// Phase 20: the dashboard's own filter state — a closed, small set of operational controls, never
+/// a general query-builder. <see cref="RangeDays"/> bounds every date-scoped section (see each
+/// query method's own doc comment for exactly which date column it filters); <see cref="TeamId"/>
+/// and <see cref="WorkType"/> narrow every section uniformly. Never trusted as authorization: every
+/// consumer applies <see cref="AnalyticsQueryService"/>'s existing organization/role scope *first*,
+/// then this filter on top — a caller-supplied <see cref="TeamId"/> outside that scope simply
+/// yields empty results, never a leak (see ADR-0019).
+/// </summary>
+public sealed record DashboardFilter(int RangeDays, int? TeamId, WorkType? WorkType)
+{
+    /// <summary>The only selectable range lengths — Step 7's "small set of useful ranges," not
+    /// an arbitrary date picker.</summary>
+    public static readonly IReadOnlyList<int> AllowedRangeDays = [30, 90, 180];
+
+    public static readonly DashboardFilter Default = new(90, null, null);
+
+    /// <summary>Coerces an arbitrary requested range onto the closest allowed value, and never
+    /// throws on a malformed request — the dashboard degrades to the default rather than erroring.</summary>
+    public static DashboardFilter From(int? rangeDays, int? teamId, WorkType? workType)
+    {
+        var range = rangeDays.HasValue && AllowedRangeDays.Contains(rangeDays.Value) ? rangeDays.Value : Default.RangeDays;
+        return new DashboardFilter(range, teamId, workType);
+    }
+}
+
+/// <summary>One team the dashboard filter bar may offer — deliberately just an id and a name, the
+/// same minimal shape <see cref="TeamOption"/> uses for ticket creation.</summary>
+public sealed record DashboardFilterTeamOption(int TeamId, string TeamName);
+
+/// <summary>Phase 20 §3: one bucket of the ticket-volume trend line — a count of tickets *created*
+/// within one period (a day or a week, depending on the selected range; see
+/// <see cref="AnalyticsQueryService.GetTicketVolumeTrendAsync"/>). Every period in the requested
+/// range appears exactly once, including zero-count periods, so the line is never misleadingly
+/// discontinuous.</summary>
+public sealed record DashboardTrendPoint(DateOnly PeriodStart, int Count);
+
+/// <summary>Phase 20 §4: how many tickets *currently* hold each <see cref="Status"/>, among those
+/// created within the selected range. Every status appears, including zero counts, in the
+/// workflow's own declaration order (open → closed) rather than sorted by count.</summary>
+public sealed record DashboardStatusCount(Status Status, int Count);
+
+/// <summary>Phase 20 §5: one team's current open workload — a present-tense snapshot, deliberately
+/// not scoped by the dashboard's date-range filter (see
+/// <see cref="AnalyticsQueryService.GetTeamWorkloadBreakdownAsync"/> for why "who is carrying the
+/// work right now" is not a question a creation-date window can answer).</summary>
+public sealed record DashboardTeamWorkload(int TeamId, string TeamName, int OpenTicketCount);
+
+/// <summary>
+/// Phase 20 §6: every ticket created within the selected range, classified by
+/// <see cref="Domain.Sla.SlaPolicy.GetStatus"/> — the same, single SLA-status authority every other
+/// SLA-aware read path already uses (never re-derived). All five real <see cref="Domain.Sla.SlaStatus"/>
+/// values are reported distinctly, rather than the caller collapsing them into a lossy three-way
+/// "good/at-risk/bad" split — <see cref="MetCount"/> (resolved, on time) and
+/// <see cref="WithinCount"/> (still open, on track) are different facts, and so is
+/// <see cref="PausedCount"/> (on hold, so neither on nor off track).
+/// </summary>
+public sealed record DashboardSlaBreakdown(int MetCount, int WithinCount, int PausedCount, int AtRiskCount, int BreachedCount)
+{
+    public int Total => MetCount + WithinCount + PausedCount + AtRiskCount + BreachedCount;
+}
+
+/// <summary>Phase 20 §7: mean resolution time (identical definition to the existing
+/// <see cref="ResolutionTimeSummary"/> KPI — <c>ResolvedAt − SlaStartedAt</c>, never <c>CreatedAt</c>)
+/// for tickets resolved within the selected range, grouped by <see cref="WorkType"/>. Every work
+/// type appears, including one with no qualifying tickets (<see cref="Average"/> null,
+/// <see cref="SampleCount"/> zero).</summary>
+public sealed record DashboardWorkTypeResolution(WorkType WorkType, TimeSpan? Average, int SampleCount);
+
+/// <summary>
+/// First-run workspace setup state (ADR-0020) — three facts derived live from the caller's own
+/// organization, never persisted. "Organization created" is not a field here: it is always true
+/// for an authenticated caller (they are necessarily inside one), so the dashboard renders it as a
+/// given rather than asking this record to state the obvious.
+/// </summary>
+/// <param name="HasTeam">The organization has at least one team.</param>
+/// <param name="HasMultipleActiveMembers">The organization has more than one active membership —
+/// deliberately "active member exists," not "an invitation was sent": accepting an invitation is
+/// what creates a membership row (see <see cref="FlowOps.Application.Organizations.InvitationService"/>),
+/// so this item only completes once someone has actually joined.</param>
+/// <param name="HasTicket">The organization has at least one ticket.</param>
+public sealed record WorkspaceSetupStatus(bool HasTeam, bool HasMultipleActiveMembers, bool HasTicket)
+{
+    public bool IsComplete => HasTeam && HasMultipleActiveMembers && HasTicket;
+}

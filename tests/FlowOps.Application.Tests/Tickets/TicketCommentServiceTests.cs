@@ -288,7 +288,12 @@ public sealed partial class TicketCommentServiceTests
 
         Assert.True(timeline.Count >= 16, "the scenario must produce enough rows to expose an N+1"); // Created + 15 comments' CommentAdded... wait, comments also each add an event
 
-        var executed = SelectStatementPattern().Matches(emitted).Count;
+        // Counts round trips (one "Executed DbCommand" log line per statement actually sent to
+        // Postgres), not "SELECT" keyword occurrences: Phase 16's organization-boundary check
+        // (TicketQueryService.ApplyViewScope) adds a legitimate EXISTS(...) subquery — its own
+        // nested SELECT — inside the SAME single round trip, which a keyword count would wrongly
+        // flag as extra.
+        var executed = CommandExecutedPattern().Matches(emitted).Count;
 
         // Two source queries (events, comments), each with its own actor/author join folded into
         // the same statement — a constant count regardless of how many comments exist.
@@ -358,6 +363,6 @@ public sealed partial class TicketCommentServiceTests
             clock);
     }
 
-    [GeneratedRegex(@"SELECT\s", RegexOptions.IgnoreCase)]
-    private static partial Regex SelectStatementPattern();
+    [GeneratedRegex(@"Executed DbCommand", RegexOptions.IgnoreCase)]
+    private static partial Regex CommandExecutedPattern();
 }

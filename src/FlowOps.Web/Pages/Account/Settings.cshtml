@@ -1,0 +1,98 @@
+@page
+@model FlowOps.Web.Pages.Account.SettingsModel
+@{
+    ViewData["Title"] = "Profile & Settings";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Profile &amp; Settings</h1>
+        <p class="page-context">Manage your FlowOps account.</p>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage));
+}
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Full name")); }
+    <form method="post" asp-page-handler="UpdateName">
+        @Html.AntiForgeryToken()
+        <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+        <div class="field">
+            @* The heading above ("Full name") already names this field — the label stays in the
+               DOM (for its asp-for association and screen readers) but is visually hidden rather
+               than repeating the same words a second time on screen. *@
+            <label asp-for="NameInput.FullName" class="sr-only">Full name</label>
+            <input asp-for="NameInput.FullName" autocomplete="name" aria-describedby="fullname-error" />
+            <span id="fullname-error" class="field-validation-error" asp-validation-for="NameInput.FullName"></span>
+        </div>
+        <button type="submit" class="btn">Save name</button>
+    </form>
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Email")); }
+    <p class="ticket-subtitle">Currently <strong>@Model.CurrentEmail</strong>. Your email is also your sign-in name.</p>
+    <form method="post" asp-page-handler="ChangeEmail">
+        @Html.AntiForgeryToken()
+        <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+        <div class="field">
+            <label asp-for="EmailInput.NewEmail">New email</label>
+            <input asp-for="EmailInput.NewEmail" autocomplete="email" placeholder="@Model.CurrentEmail" aria-describedby="email-error" />
+            <span id="email-error" class="field-validation-error" asp-validation-for="EmailInput.NewEmail"></span>
+        </div>
+        <button type="submit" class="btn">Save email</button>
+    </form>
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Password")); }
+    <form method="post" asp-page-handler="ChangePassword">
+        @Html.AntiForgeryToken()
+        <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+        <div class="field">
+            <label asp-for="PasswordInput.CurrentPassword">Current password</label>
+            <input asp-for="PasswordInput.CurrentPassword" autocomplete="current-password" aria-describedby="current-password-error" />
+            <span id="current-password-error" class="field-validation-error" asp-validation-for="PasswordInput.CurrentPassword"></span>
+        </div>
+        <div class="field">
+            <label asp-for="PasswordInput.NewPassword">New password</label>
+            <input asp-for="PasswordInput.NewPassword" autocomplete="new-password" aria-describedby="new-password-error" />
+            <span id="new-password-error" class="field-validation-error" asp-validation-for="PasswordInput.NewPassword"></span>
+        </div>
+        <div class="field">
+            <label asp-for="PasswordInput.ConfirmNewPassword">Confirm new password</label>
+            <input asp-for="PasswordInput.ConfirmNewPassword" autocomplete="new-password" aria-describedby="confirm-new-password-error" />
+            <span id="confirm-new-password-error" class="field-validation-error" asp-validation-for="PasswordInput.ConfirmNewPassword"></span>
+        </div>
+        <button type="submit" class="btn">Change password</button>
+    </form>
+</div>
+
+<div class="zone">
+    @* Phase 24A: kept as its own eyebrow+heading, not migrated to the plain _SectionHeading — the
+       one place on this page a section needs a genuine warning signal ahead of its heading, not
+       just a repeated content label. Every other zone on this page moved to the plain pattern. *@
+    <div class="panel__head">
+        <div class="fo-label fo-label--danger">Danger zone</div>
+        <h2>Delete account</h2>
+    </div>
+    <p class="prose">
+        This deactivates your account and removes your access to every organization you belong to.
+        It does not delete any organization, ticket, comment, or history — yours or anyone else's.
+        If you are the only Admin of an organization, you must assign another Admin there first.
+    </p>
+    <form method="post" asp-page-handler="DeleteAccount">
+        @Html.AntiForgeryToken()
+        <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+        <div class="field">
+            <label>
+                <input asp-for="ConfirmDelete" required />
+                I understand this cannot be undone.
+            </label>
+        </div>
+        <button type="submit" class="btn-danger">Delete my account</button>
+    </form>
+</div>

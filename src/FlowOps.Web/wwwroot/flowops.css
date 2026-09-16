@@ -1,69 +1,121 @@
-/* FlowOps — Phase 11 visual foundation.
-   Restrained, operational, calm. No gradients, no animation, no decorative elements.
-   Four semantic tones only (neutral / info / warning / danger), reused consistently across
-   status, priority, SLA, and attention severity — every one of them is always paired with the
-   text CLAUDE.md §22 requires; none of the classes below is ever the only signal on the page. */
+/* FlowOps — dark charcoal + teal design system (docs/ui/design-system.md).
+   Single theme, deliberately: FlowOps is dark-only today (see design-system.md §11). Restrained,
+   operational, calm. No gradients except the functional ones on the workflow rail, no shadows
+   except the rail's own current-stop glow, no decoration. */
+
+/* ---- Fonts: self-hosted (CLAUDE.md §11.1 — no CDN). Both are variable fonts; one file per
+   family covers every weight declared below, matching how Google itself serves them. ---- */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin.woff2") format("woff2");
+}
 
 :root {
-  --fo-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --fo-text: #1a1d21;
-  --fo-text-muted: #565c63;
-  --fo-bg: #ffffff;
-  --fo-bg-subtle: #f4f5f6;
-  --fo-border: #cdd2d8;
-  --fo-border-strong: #8a9099;
-  --fo-link: #0b4a8f;
-  --fo-focus: #0b4a8f;
+  /* Ground */
+  --fo-bg: #081012;
+  --fo-surface: #0D1719;
+  --fo-surface-2: #132124;
 
-  --fo-neutral-bg: #eceef0;
-  --fo-neutral-text: #33383e;
-  --fo-neutral-border: #b7bcc2;
+  /* Lines — three weights, used by role, never interchangeably */
+  --fo-line-row: #1A2729;
+  --fo-line: #243638;
+  --fo-line-hi: #34494B;
 
-  --fo-info-bg: #e4edf7;
-  --fo-info-text: #0b4a8f;
-  --fo-info-border: #9fbfe0;
+  /* Text — primary softened off pure white; light text on dark blooms at full white */
+  --fo-text-hi: #F6FAFA;
+  --fo-text: #E9EFEF;
+  --fo-text-2: #A7B5B7;
+  --fo-text-3: #718285;
 
-  --fo-warning-bg: #fbeed6;
-  --fo-warning-text: #7a4a05;
-  --fo-warning-border: #e6bd7a;
+  /* Identity — teal means resolution. Nothing else spends it. */
+  --fo-teal: #5FD3C4;
+  --fo-teal-dim: #0F766E;
+  --fo-teal-ink: #06181A;
 
-  --fo-danger-bg: #f8dfdd;
-  --fo-danger-text: #8a2420;
-  --fo-danger-border: #e3a29e;
+  /* Operational semantics, independent of the brand */
+  --fo-ok: #4CC38A;
+  --fo-info: #63A7E8;
+  --fo-warn: #E8B45C;
+  --fo-danger: #E56B6F;
 
-  --fo-space-1: 0.25rem;
-  --fo-space-2: 0.5rem;
-  --fo-space-3: 1rem;
-  --fo-space-4: 1.5rem;
-  --fo-space-5: 2rem;
+  /* One additional restrained hue, reserved for the Viewer role badge alone (Step 12 explicitly
+     permits "additional restrained hues" for role tints) — a muted slate-violet, dim enough not
+     to compete with teal as a second "identity" color. */
+  --fo-violet: #8D85C9;
 
-  --fo-radius: 3px;
+  --fo-space-1: 4px;
+  --fo-space-2: 8px;
+  --fo-space-3: 12px;
+  --fo-space-4: 16px;
+  --fo-space-5: 24px;
+  --fo-space-6: 32px;
+  --fo-space-7: 48px;
+
+  --fo-radius-chip: 3px;
+  --fo-radius: 4px;
+
+  --fo-font: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --fo-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fo-line-hi) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--fo-line-hi);
+  border-radius: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
   font-family: var(--fo-font);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--fo-text);
   background: var(--fo-bg);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Skip link: hidden until focused, per CLAUDE.md §22 ---- */
+.mono {
+  font-family: var(--fo-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Skip link: hidden until focused ---- */
 .skip-link {
   position: absolute;
   left: -999px;
   top: 0;
-  background: var(--fo-text);
-  color: #fff;
+  background: var(--fo-teal);
+  color: var(--fo-teal-ink);
+  font-weight: 600;
   padding: var(--fo-space-2) var(--fo-space-3);
   z-index: 100;
 }
@@ -73,160 +125,1609 @@ body {
   top: var(--fo-space-2);
 }
 
+/* ---- Visually hidden, still announced by a screen reader ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- Focus states: strengthened, never removed ---- */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--fo-focus);
+  outline: 3px solid var(--fo-teal);
   outline-offset: 2px;
 }
 
-/* ---- Header / primary navigation ---- */
-.app-header {
-  border-bottom: 1px solid var(--fo-border);
-  background: var(--fo-bg-subtle);
+a {
+  color: var(--fo-teal);
+  transition: color 150ms ease;
 }
 
-.app-header__bar {
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: var(--fo-space-3) var(--fo-space-3);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--fo-space-3);
-}
-
-.app-header__brand {
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--fo-text);
+/* ---- Quiet return navigation ("Back to work queue") — reads as wayfinding, not body copy ---- */
+.back-link {
+  display: inline-block;
+  padding: 4px 0;
+  color: var(--fo-text-2);
+  font-size: 13.5px;
   text-decoration: none;
 }
 
-.app-nav {
+.back-link:hover,
+.back-link:focus-visible {
+  color: var(--fo-teal);
+}
+
+/* ---- Application shell: a persistent left sidebar + workspace, replacing the earlier
+   top-nav-only layout. Three surface tones do the separation work (page --fo-bg, sidebar
+   --fo-surface, the sidebar's own hover/active states one step lighter again) — no shadow, no
+   gradient. The sidebar is `position: sticky` so it stays in view while the workspace scrolls,
+   the way a real application shell behaves rather than a website header that scrolls away. ---- */
+.fo-shell {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--fo-space-3);
-  margin-left: auto;
+  align-items: flex-start;
+  min-height: 100vh;
 }
 
-.app-nav a {
-  color: var(--fo-text);
-  text-decoration: none;
-  padding: var(--fo-space-1) var(--fo-space-1);
-  border-bottom: 2px solid transparent;
+.fo-appmain {
+  flex: 1;
+  min-width: 0;
 }
 
-.app-nav a:hover,
-.app-nav a:focus-visible {
-  border-bottom-color: var(--fo-link);
+.fo-sidebar {
+  flex: 0 0 232px;
+  width: 232px;
+  display: flex;
+  flex-direction: column;
+  background: var(--fo-surface);
+  border-right: 1px solid var(--fo-line);
+  padding: var(--fo-space-5) var(--fo-space-4);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
-.app-header__account {
+.fo-brand {
   display: flex;
   align-items: center;
-  gap: var(--fo-space-2);
-  color: var(--fo-text-muted);
-  font-size: 0.9rem;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--fo-text-hi);
+  padding: 0 var(--fo-space-2);
 }
 
-.app-header__account form {
+.fo-brand span {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Bug fix: the sidebar's own brand mark read as slightly undersized next to the "FlowOps"
+   wordmark beside it. ~20% larger here, same asset/aspect-ratio/teal treatment, same markup — only
+   the rendered size changes. Scoped to the sidebar specifically, not .fo-brand--compact (the
+   smaller mobile top-bar mark), which is unaffected. */
+.fo-sidebar .fo-brand svg {
+  width: 36px;
+  height: 23px;
+}
+
+.fo-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--fo-space-6);
+}
+
+.fo-sidebar__nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border-radius: var(--fo-radius);
+  border-left: 2px solid transparent;
+  color: var(--fo-text-2);
+  text-decoration: none;
+  font-size: 13.5px;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.fo-sidebar__nav a svg {
+  flex-shrink: 0;
+  color: var(--fo-text-3);
+}
+
+.fo-sidebar__nav a:hover {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+}
+
+.fo-sidebar__nav a:hover svg {
+  color: var(--fo-text-hi);
+}
+
+/* The one restrained teal indicator: a left rule plus tinted text, never a filled block. */
+.fo-sidebar__nav a[aria-current="page"] {
+  background: rgba(95, 211, 196, 0.1);
+  border-left-color: var(--fo-teal);
+  color: var(--fo-teal);
+  font-weight: 500;
+}
+
+.fo-sidebar__nav a[aria-current="page"] svg {
+  color: var(--fo-teal);
+}
+
+.fo-sidebar__spacer {
+  flex: 1;
+}
+
+/* ---- Sidebar bottom: Sign out (Step 3) — always here, on both desktop and the mobile off-canvas
+   panel, never in the top-right toolbar. Profile & Settings moved into the identity block above
+   (Platform Administration cleanup) — it no longer needs a second row/style here. ---- */
+.fo-sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--fo-space-4);
+  margin-top: var(--fo-space-4);
+  border-top: 1px solid var(--fo-line-row);
+}
+
+.fo-sidebar__signout button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--fo-radius);
+  background: transparent;
+  color: var(--fo-text-2);
+  font: inherit;
+  font-size: 13.5px;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  height: auto;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.fo-sidebar__signout button svg {
+  flex-shrink: 0;
+  color: var(--fo-text-3);
+}
+
+.fo-sidebar__signout button:hover {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+}
+
+.fo-sidebar__signout button:hover svg {
+  color: var(--fo-text-hi);
+}
+
+.fo-sidebar__signout {
   margin: 0;
 }
 
+/* Phase 11: the top bar was removed entirely (~75% empty on every page, and it duplicated the
+   sidebar's own Profile/Sign out) — the identity block now renders once, in the sidebar footer,
+   above Profile & Settings/Sign out, on both desktop and the mobile off-canvas panel. */
+.fo-sidebar__identity {
+  padding: 0 var(--fo-space-2) var(--fo-space-3);
+  margin-bottom: var(--fo-space-2);
+  border-bottom: 1px solid var(--fo-line-row);
+}
+
+/* Platform Administration cleanup: a real link to Profile & Settings, not a static card — a
+   bordered box holding only an email address read as a disabled input field, with nothing marking
+   it as interactive. Avatar + chevron give it the same "this is a control" affordance every other
+   clickable row in the app already carries (.fo-row-identity's own avatar, "View →"'s arrow). Still
+   deliberately no dropdown menu here (Sign out stays a separate control below, per product
+   decision) — this is plain navigation, so it is a real <a>, not a <button>. */
+.fo-account {
+  display: flex;
+  /* Bug fix: was align-items: center. The role text sits below the email inside
+     .fo-account__body — when that body wraps to more than one line, centering the whole row
+     vertically pulled the avatar and chevron down away from the email's own line, which read as a
+     stray, disconnected line of email text floating above the control. Top-aligning keeps the
+     avatar level with the email regardless of how tall the body underneath it grows. */
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.3;
+  padding: 8px 10px;
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.fo-account:hover {
+  background: var(--fo-surface-2);
+  border-color: var(--fo-line-hi);
+}
+
+/* No custom focus-visible rule here — the sitewide a:focus-visible rule (3px solid var(--fo-teal))
+   already applies to this <a>; a second, different ring style here would be exactly the kind of
+   parallel system this cleanup exists to remove. */
+.fo-account__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fo-surface-2);
+  border: 1px solid var(--fo-line-hi);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--fo-text-2);
+}
+
+.fo-account__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.fo-account__email {
+  color: var(--fo-text-hi);
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ticket Detail badge-fix pass: the role no longer renders as a bordered/tinted chip (it was the
+   one place in the app a chip-shaped badge stood for something other than workflow status —
+   "chips reserved for workflow status only"). Plain dim text instead, matching the same quiet
+   secondary-metadata treatment used everywhere else a role/scope label sits under a name (e.g.
+   .zone-caption). Wraps naturally at this width — a long role name ("Service Desk Manager") has
+   never needed truncation once it isn't fighting a chip's own padding/border for space. */
+.fo-account__role {
+  font-size: 11px;
+  color: var(--fo-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fo-account__chevron {
+  flex-shrink: 0;
+  color: var(--fo-text-3);
+}
+
+/* Phase 19: organization context — compact, native <details> disclosure (no JavaScript at all,
+   per CLAUDE.md §11.1; <details>/<summary> gives full keyboard/focus/screen-reader behavior for
+   free). A single organization renders as plain text with no affordance to open, since there is
+   nothing to switch to. */
+.fo-org-switcher {
+  position: relative;
+  font-size: 13px;
+  color: var(--fo-text-2);
+}
+
+/* A single organization has no affordance to open, but it's still the identity of "where you
+   are" — the same raised-card box the dropdown's own summary gets below, not bare padded text,
+   so it reads as a labelled object rather than disappearing into the sidebar background. */
+.fo-org-switcher--single {
+  padding: 7px 10px;
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Step 1: positioned directly beneath the FlowOps brand, above primary navigation — its own
+   visual group, not squeezed against the logo. */
+.fo-org-switcher--sidebar {
+  margin: var(--fo-space-3) 0 var(--fo-space-5);
+}
+
+.fo-org-switcher--sidebar summary,
+.fo-org-switcher--sidebar.fo-org-switcher--single {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.fo-org-switcher summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 7px 10px;
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fo-org-switcher summary:hover {
+  border-color: var(--fo-text-3);
+}
+
+.fo-org-switcher summary::-webkit-details-marker {
+  display: none;
+}
+
+.fo-org-switcher summary::after {
+  content: " \25BE"; /* ▾ */
+  color: var(--fo-text-3);
+}
+
+.fo-org-switcher summary:focus-visible {
+  outline: 2px solid var(--fo-teal);
+  outline-offset: 2px;
+}
+
+.fo-org-switcher[open] summary {
+  border-color: var(--fo-teal);
+}
+
+.fo-org-switcher ul {
+  list-style: none;
+  margin: var(--fo-space-2) 0 0;
+  padding: var(--fo-space-1);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  background: var(--fo-surface-2);
+  width: 100%;
+  box-sizing: border-box;
+  position: absolute;
+  left: 0;
+  z-index: 20;
+}
+
+.fo-org-switcher li form,
+.fo-org-switcher li span {
+  margin: 0;
+}
+
+.fo-org-switcher li button,
+.fo-org-switcher__current {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--fo-text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: var(--fo-radius);
+  box-sizing: border-box;
+}
+
+.fo-org-switcher li button:hover {
+  background: var(--fo-surface-3, var(--fo-line));
+  color: var(--fo-text-hi);
+}
+
+.fo-org-switcher__current {
+  color: var(--fo-teal);
+  cursor: default;
+  font-weight: 500;
+}
+
+/* ---- Mobile top bar + off-canvas toggle: a plain checkbox-driven pattern, no JavaScript. Both
+   the mobile bar's own label and the full-screen scrim's label are associated with the same
+   checkbox, so either one opens or closes the sidebar. Hidden entirely on desktop, where the
+   sidebar is already always visible. ---- */
+.fo-nav-toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fo-mobile-bar {
+  display: none;
+}
+
+.fo-nav-scrim {
+  display: none;
+}
+
+/* ---- Phase 24A: the shared destructive-action confirmation pattern — a checkbox-driven inline
+   reveal, the same zero-JavaScript "checkbox hack" .fo-nav-toggle-input already uses for the
+   mobile nav panel, applied here to every deactivate/reject/remove action instead of firing on a
+   single click. The checkbox itself is visually hidden but stays in the tab order and remains
+   keyboard-operable (Space toggles it directly, no JS); .confirm-trigger is the visible
+   caution/danger-styled control, a real <label for="..."> — clicking it, or reaching it via
+   keyboard and pressing Space, opens the panel. A second <label> inside the panel, pointing at
+   the same checkbox id, is the Cancel action: since a label click always toggles its checkbox,
+   clicking Cancel closes the panel exactly like clicking the trigger again would, with no bespoke
+   "close" logic and no inline JavaScript (which CSP's script-src 'self' would block anyway).
+   :has() (already used elsewhere — see .field:has(> input[type="checkbox"])) reveals the panel
+   and rings the trigger from one wrapping .confirm container, rather than requiring the checkbox
+   and panel to be literal DOM siblings — which their different visual placement (inline trigger,
+   full-width panel beneath the whole action row) would otherwise rule out. ---- */
+.confirm {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.confirm-toggle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The checkbox itself renders with opacity: 0, so its own outline would be invisible too — this
+   rings the visible trigger instead whenever the underlying checkbox has keyboard focus, using
+   the same teal the sitewide a/button/input focus-visible rule already uses everywhere else. */
+.confirm:has(.confirm-toggle:focus-visible) .confirm-trigger {
+  outline: 3px solid var(--fo-teal);
+  outline-offset: 2px;
+}
+
+.confirm-panel {
+  display: none;
+  margin-top: var(--fo-space-3);
+  padding: var(--fo-space-3) var(--fo-space-4);
+  border: 1px solid var(--fo-line-hi);
+  border-left: 3px solid var(--fo-warn);
+  border-radius: var(--fo-radius);
+  background: rgba(232, 180, 92, 0.06);
+}
+
+.confirm:has(.confirm-toggle:checked) .confirm-panel {
+  display: block;
+}
+
+.confirm-panel__question {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fo-text-hi);
+}
+
+.confirm-panel__detail {
+  margin: 0 0 var(--fo-space-3);
+  font-size: 12.5px;
+  color: var(--fo-text-2);
+  line-height: 1.5;
+  max-width: 56ch;
+}
+
+.confirm-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+}
+
+.confirm-panel__actions form {
+  margin: 0;
+}
+
+/* ---- Responsive: tablet and narrower — the sidebar becomes an off-canvas panel ---- */
+@media (max-width: 900px) {
+  .fo-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+  }
+
+  #fo-nav-toggle:checked ~ .fo-shell .fo-sidebar {
+    transform: translateX(0);
+  }
+
+  .fo-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--fo-space-3);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: 52px;
+    padding: 0 var(--fo-space-4);
+    background: var(--fo-surface);
+    border-bottom: 1px solid var(--fo-line);
+    width: 100%;
+  }
+
+  .fo-nav-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--fo-radius);
+    color: var(--fo-text-2);
+    cursor: pointer;
+  }
+
+  .fo-nav-toggle-btn:hover {
+    background: var(--fo-surface-2);
+    color: var(--fo-text-hi);
+  }
+
+  .fo-brand--compact span {
+    font-size: 14px;
+  }
+
+  #fo-nav-toggle:checked ~ .fo-shell .fo-nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 8, 9, 0.55);
+    z-index: 40;
+    cursor: pointer;
+  }
+
+  .fo-shell {
+    flex-direction: column;
+  }
+
+  .fo-appmain {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ---- Demo banner (site-wide, CLAUDE.md §14) ---- */
+.demo-banner {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-2);
+  border-bottom: 1px solid var(--fo-line);
+  padding: var(--fo-space-2) var(--fo-space-6);
+  font-size: 12.5px;
+  text-align: center;
+}
+
 /* ---- Page shell ---- */
+/* Phase 11: no `margin: 0 auto` here — .fo-appmain is already the exact remaining width beside
+   the sidebar, so centering a narrower max-width inside it opened a dead gutter on wide
+   viewports (the reported "content starts well right of the sidebar"). Left-aligned, with a
+   generous cap only to keep line lengths sane on very wide monitors — not the ~1200px ceiling
+   that was forcing table cells to wrap well before the viewport ran out of room. */
 main {
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: var(--fo-space-4) var(--fo-space-3) var(--fo-space-5);
+  max-width: 1680px;
+  padding: var(--fo-space-6) var(--fo-space-6) var(--fo-space-7);
 }
 
 h1 {
-  font-size: 1.5rem;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  color: var(--fo-text-hi);
   margin: 0 0 var(--fo-space-3);
 }
 
 h2 {
-  font-size: 1.15rem;
-  margin: var(--fo-space-4) 0 var(--fo-space-2);
-  border-bottom: 1px solid var(--fo-border);
-  padding-bottom: var(--fo-space-1);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--fo-text-hi);
+  margin: var(--fo-space-6) 0 var(--fo-space-3);
+  padding-bottom: var(--fo-space-2);
+  border-bottom: 1px solid var(--fo-line);
 }
 
-/* ---- Definition-list detail grids (ticket detail, dashboard KPIs) ---- */
-dl.detail-grid {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--fo-space-1) var(--fo-space-3);
-  margin: 0;
+p {
+  color: var(--fo-text-2);
 }
 
-dl.detail-grid dt {
-  color: var(--fo-text-muted);
-  font-weight: 600;
-}
-
-dl.detail-grid dd {
-  margin: 0;
-}
-
-/* ---- KPI summary ---- */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--fo-space-3);
-  margin: var(--fo-space-2) 0;
-}
-
-.kpi-card {
-  border: 1px solid var(--fo-border);
-  border-radius: var(--fo-radius);
-  padding: var(--fo-space-3);
-}
-
-.kpi-card h3 {
-  margin: 0 0 var(--fo-space-1);
-  font-size: 0.85rem;
+.fo-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--fo-text-muted);
+  color: var(--fo-text-3);
 }
 
-.kpi-card a {
-  color: var(--fo-link);
+.fo-label a {
+  color: inherit;
+  text-decoration: none;
 }
 
-.kpi-card__value {
-  font-size: 1.4rem;
-  font-weight: 700;
+.fo-label a:hover,
+.fo-label a:focus-visible {
+  color: var(--fo-teal);
 }
 
-/* ---- At-risk preview (dashboard) ---- */
-.attention-list {
-  list-style: none;
-  margin: var(--fo-space-2) 0;
-  padding: 0;
-  display: grid;
-  gap: var(--fo-space-2);
+/* Phase 24A (CSP stabilization): Account/Settings' "Danger zone" eyebrow used
+   style="color:var(--fo-danger)" — now a modifier. */
+.fo-label--danger {
+  color: var(--fo-danger);
 }
 
-.attention-list li {
-  border: 1px solid var(--fo-border);
-  border-left: 4px solid var(--fo-danger-border);
-  border-radius: var(--fo-radius);
-  padding: var(--fo-space-2) var(--fo-space-3);
+/* Generic, minimal utility — Phase 24A (CSP stabilization) replaces the one remaining
+   style="margin-top:0" (Accept Invitation's inline org-name heading). Not a new abstraction: a
+   single zero-margin utility is the smallest possible fix for the smallest possible case. */
+.mt-0 {
+  margin-top: 0;
 }
 
-.attention-list__title a {
+/* ---- The FlowOps header primitive: an eyebrow + title (+ context), marked with one small
+   structural rule — not a card, not a background panel. This is the ONE header language used
+   everywhere a page or a page section begins: standalone for the Dashboard's three sections and
+   each Ticket Detail / Create Ticket zone, or as the identity block inside a full .page-header
+   (Work Queue, At-Risk). The 2px teal rule is intentionally small — a marker, not a panel — and
+   spans exactly this block's own height (top/bottom inset 3px), so it reads as "this begins here"
+   rather than a decorative sidebar. ---- */
+.section-head {
+  position: relative;
+  padding-left: var(--fo-space-4);
+  margin-top: var(--fo-space-6);
+}
+
+.section-head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fo-teal);
+}
+
+.section-head h1,
+.section-head h2 {
+  margin-top: 6px;
+}
+
+/* Reset the section-spacing top gap where a container already supplies section rhythm another
+   way: the first thing on a page (nothing above to separate from) and inside .zone (whose own
+   border-top + padding-top already is the section gap — adding this on top would double it). */
+.section-head:first-child,
+.zone > .section-head {
+  margin-top: 0;
+}
+
+/* Phase 11: a bare-title variant — no accent bar, no eyebrow row above it. Used by the six
+   page-level headers (.page-header .section-head) and the dashboard's Attention heading, which
+   dropped their icon-square/eyebrow/underline per the UI refinement pass; .section-head's teal
+   marker stays the default everywhere else (ticket zones, etc.). */
+.section-head--plain {
+  padding-left: 0;
+  margin-top: 0;
+}
+
+.section-head--plain::before {
+  content: none;
+}
+
+.section-head--plain h1,
+.section-head--plain h2 {
+  margin-top: 0;
+}
+
+/* The dashboard Attention heading previously got its own icon-in-a-rounded-square and eyebrow;
+   now it's a bare <h2>, so it needs the same border-bottom suppression .panel__head h2 already
+   gives every other panel heading (a panel's own border already says "this begins here"). */
+.panel--focus > h2 {
+  margin: 0 0 var(--fo-space-4);
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ---- Stat strip: quiet grouping, not a table. Phase 20B moved this strip inside its own
+   .panel — the panel's own border already says "the KPIs begin here," so a second top rule
+   here would be one divider too many. The vertical dividers between stats use the softest line
+   token (--fo-line-row, the same weight attention rows use) so they separate without competing
+   with the values themselves — four numbers you can read in one glance, not four spreadsheet
+   cells. ---- */
+.stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.stat {
+  flex: 1 1 180px;
+  padding: 0 var(--fo-space-6) 0 0;
+}
+
+.stat + .stat {
+  border-left: 1px solid var(--fo-line-row);
+  padding-left: var(--fo-space-6);
+}
+
+.stat__value {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--fo-text-hi);
+  margin-top: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__value a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stat__value a:hover {
+  color: var(--fo-teal);
+}
+
+/* Phase 24A (CSP stabilization): the Overdue KPI's conditional red used to arrive via
+   style="color:var(--fo-danger)" applied only when the count was genuinely > 0 — now a class
+   toggled server-side instead, since the style attribute itself is blocked. */
+.stat__value--danger {
+  color: var(--fo-danger);
+}
+
+.stat__delta {
+  font-size: 12.5px;
+  color: var(--fo-text-3);
+  margin-top: 6px;
+}
+
+/* ---- Platform Administration cleanup: a hairline-divided KPI strip with no icon beside any
+   figure — the design system's own stat-strip rule ("no icon accompanies a number... never a grid
+   of bordered KPI tiles"). Deliberately a distinct class from .stat-strip/.stat above (which stay
+   exactly as they are, icons and all, for the Dashboard and Organization/Team detail pages this
+   cleanup does not touch) rather than redefining a shared class out from under other pages. ---- */
+.kpi-strip {
+  display: flex;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--fo-line-row);
+  border-bottom: 1px solid var(--fo-line-row);
+}
+
+.kpi-strip__item {
+  flex: 1 1 160px;
+  padding: var(--fo-space-4) var(--fo-space-5) var(--fo-space-4) 0;
+  border-left: 1px solid var(--fo-line-row);
+  padding-left: var(--fo-space-5);
+}
+
+.kpi-strip__item:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.kpi-strip__label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fo-text-3);
+  margin-bottom: 7px;
+}
+
+.kpi-strip__value {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--fo-text-hi);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Healthy" earns the identity colour as a genuinely good status word, not decoration — the one
+   exception to "figures only" here, matching the rule's own reasoning (Principle 1). */
+.kpi-strip__value--teal {
+  color: var(--fo-teal);
+}
+
+.kpi-strip__caption {
+  font-size: 11.5px;
+  color: var(--fo-text-3);
+  margin-top: 6px;
+}
+
+/* ---- Platform Administration cleanup: Pending Approvals reuses the at-risk queue's own left-edge
+   urgency-bar convention (spec: "don't invent a page-specific alert style") rather than a bordered
+   alert box. The warn-coloured border only ever renders on a row that exists — the empty state
+   below carries no border at all, the same way an at-risk queue with no signals shows no accent bar. ---- */
+.approval-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-3);
+  padding: 13px var(--fo-space-3) 13px var(--fo-space-4);
+  border-left: 2px solid var(--fo-warn);
+  border-bottom: 1px solid var(--fo-line-row);
+}
+
+.approval-row:last-child {
+  border-bottom: none;
+}
+
+.approval-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-row__org {
+  font-size: 13.5px;
+  color: var(--fo-text);
+  margin-bottom: 3px;
+}
+
+.approval-row__meta {
+  font-size: 11.5px;
+  color: var(--fo-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.approval-row__status {
+  font-size: 12px;
+  color: var(--fo-warn);
+  flex-shrink: 0;
+}
+
+.approval-row__actions {
+  flex-shrink: 0;
+}
+
+/* ---- Platform Administration cleanup: a section heading with no icon square and no repeated
+   "PLATFORM" eyebrow — reuses .section-head--plain (the same bare-title variant Work Queue/At-Risk
+   already established) rather than a page-specific header style. This row variant adds only the
+   "heading left, one action link right" layout a bare <h2> doesn't otherwise have. ---- */
+.section-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fo-space-4);
+}
+
+/* A quiet, scoped caption for "N of M shown" — dimmer than .page-context (which stays as the
+   sitewide subtitle style everywhere else) since this is a secondary scope note, not the section's
+   own description. */
+.zone-caption {
+  font-size: 12px;
+  color: var(--fo-text-3);
+  margin: 0 0 var(--fo-space-3);
+}
+
+/* ---- Platform Administration cleanup: table action links ("View →") sit flush at rest — colour
+   alone marks them interactive, the same restraint the rest of the system already applies to
+   in-row links — and gain an underline only on hover/focus, the conventional "you are about to
+   activate this" signal. ---- */
+.table-action-link {
+  color: var(--fo-teal);
+  text-decoration: none;
+}
+
+.table-action-link:hover,
+.table-action-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* A plain utility for quantity columns that must column-align without switching to the mono
+   typeface — the design system's own "mono rule": identifiers/time get Geist Mono, quantities stay
+   in Geist with tabular figures only. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Phase 11: composed rows — one shared row component for the Dashboard's Attention preview,
+   Work Queue, and At-Risk. A strict column grid forced titles/badges to wrap once real content
+   filled the narrower columns and read as a database viewer; this puts the title first, folds
+   reference/team/assignee/status/timing into one quiet metadata line, and lets a single colour
+   (the left urgency bar) carry the signal that actually matters. Reuses .sev (the severity/priority
+   badge) and .rail (workflow rail) exactly as everywhere else — no parallel colour system for rows. ---- */
+.q-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.q-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--fo-line-row);
+  text-decoration: none;
+  color: inherit;
+  transition: background-color 120ms ease;
+}
+
+.q-row:hover {
+  background: var(--fo-surface);
+}
+
+.panel--focus .q-row:hover {
+  background: var(--fo-surface);
+}
+
+.q-row:focus-visible {
+  outline: 2px solid var(--fo-text-hi);
+  outline-offset: -2px;
+}
+
+.q-list .q-row:last-child {
+  border-bottom: none;
+}
+
+/* Left-edge urgency — transparent unless the row actually needs attention, so a healthy row
+   carries zero colour and a breached/at-risk one is the thing that visually jumps. */
+.q-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.q-row.is-breached::before {
+  background: var(--fo-danger);
+}
+
+.q-row.is-at-risk::before {
+  background: var(--fo-warn);
+}
+
+.q-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.q-title {
+  font-size: 14.5px;
+  color: var(--fo-text);
+  letter-spacing: -0.006em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 5px;
+}
+
+.q-meta {
+  font-size: 12.5px;
+  color: var(--fo-text-3);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.q-ref {
+  font-family: var(--fo-mono);
+  color: var(--fo-text-3);
+  white-space: nowrap;
+}
+
+.q-dot {
+  color: var(--fo-line-hi);
+}
+
+/* The secondary "why" signal already lost the ranking fight to the first one — this only turns
+   down its visual volume within the metadata line, same rule .why-secondary applied before. */
+.q-meta .why-secondary {
+  opacity: 0.7;
+}
+
+/* Fixed-width columns so severity marks and rails line up vertically down the page — the
+   alignment itself is what makes them readable as a pattern rather than unrelated dot clusters. */
+.q-sev-col {
+  width: 78px;
+  flex-shrink: 0;
+}
+
+.q-rail-col {
+  width: 104px;
+  flex-shrink: 0;
+}
+
+.q-sla {
+  width: 116px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.q-sla__state {
+  font-size: 12.5px;
+  display: block;
+  margin-bottom: 3px;
+  color: var(--fo-text-2);
+}
+
+.q-sla__time {
+  font-family: var(--fo-mono);
+  font-size: 11px;
+  color: var(--fo-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.is-breached .q-sla__state {
+  color: var(--fo-danger);
+}
+
+.is-at-risk .q-sla__state {
+  color: var(--fo-warn);
+}
+
+@media (max-width: 900px) {
+  /* Phase 24A (UI/UX stabilization): priority and workflow position used to be display:none
+     below this width — real information loss, not a reflow (an operator on a tablet or phone lost
+     the two fields that actually rank the work). Now every column wraps onto its own line instead
+     of disappearing; nothing in this row is desktop-only. */
+  .q-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .q-sev-col,
+  .q-rail-col,
+  .q-sla {
+    width: auto;
+    flex-shrink: 0;
+  }
+
+  .q-sla {
+    text-align: left;
+  }
+}
+
+/* ---- Severity/priority mark (Work Queue's Priority, At-Risk/Dashboard's top signal severity): a
+   full tinted-background badge with its own border, the same explicit-rgba composition
+   BadgeMarkup.Chip uses elsewhere (background 0.18 alpha, border 0.55 alpha) — one consistent
+   "this is a severity/priority" language across every page it appears on, not a plain colour line
+   beside plain text. The decorative height-bar <i> markup still renders (three call sites) but is
+   hidden here rather than removed from markup, so no view needed a change for this. ---- */
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid;
+  border-radius: var(--fo-radius-chip);
+}
+
+.sev i {
+  display: none;
+}
+
+.sev span {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sev.crit { background: rgba(229, 107, 111, 0.18); border-color: rgba(229, 107, 111, 0.55); }
+.sev.crit span { color: var(--fo-danger); }
+.sev.high { background: rgba(232, 180, 92, 0.18); border-color: rgba(232, 180, 92, 0.55); }
+.sev.high span { color: var(--fo-warn); }
+/* Medium reads as blue, Low as green — distinct from High's amber/Critical's red, and from each
+   other, rather than both fading to the same neutral grey. */
+.sev.med { background: rgba(99, 167, 232, 0.18); border-color: rgba(99, 167, 232, 0.55); }
+.sev.med span { color: var(--fo-info); }
+.sev.low { background: rgba(76, 195, 138, 0.18); border-color: rgba(76, 195, 138, 0.55); }
+.sev.low span { color: var(--fo-ok); }
+
+/* ---- Ticket Detail badge-fix pass: workflow status is now the ONE badge-shaped element left on
+   these pages ("chips reserved for workflow status only") — a solid, high-contrast, neutral pill,
+   not a tinted/bordered chip whose color changed by value. Status doesn't need hue to communicate
+   urgency: the rail and the SLA state already carry that. This badge's job is presence, not alarm,
+   so Open/Assigned/In Progress/Pending/Resolved/Closed all render identically. Used at Ticket
+   Detail's own header, Work Queue rows, and At-Risk rows — one component, three call sites. ---- */
+.status-badge {
+  display: inline-block;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 3px;
+  background: var(--fo-line-row);
+  color: var(--fo-text-hi);
+  border: none;
+  line-height: 1.3;
 }
 
-.attention-list__reason {
-  color: var(--fo-text-muted);
-  font-size: 0.9rem;
+/* Compact variant for a status badge embedded inline within a dense row metadata line (Work
+   Queue, At-Risk) rather than a page header — tighter padding, same shape, same component. */
+.status-badge--compact {
+  padding: 1px 8px;
+  vertical-align: middle;
+}
+
+/* ---- Priority: never a chip — a height-encoded bar plus text, so intensity reads through weight
+   and contrast rather than a fourth colored badge shape competing with workflow status. Only
+   Critical and High spend the system's real alarm colors; Medium/Low get emphasis through
+   size/weight alone, not hue. Used wherever a ticket's own Priority renders (Ticket Detail header,
+   Work Queue rows) — never for attention-signal severity, a deliberately separate concept that
+   keeps its own .sev treatment (see Tickets/AtRisk.cshtml's own comment on why). ---- */
+.severity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.severity__bar {
+  width: 3px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.severity__label {
+  font-size: 14px;
+}
+
+.severity--critical .severity__bar { height: 16px; background: var(--fo-danger); }
+.severity--critical .severity__label { color: var(--fo-danger); font-weight: 500; }
+
+.severity--high .severity__bar { height: 13px; background: var(--fo-warn); }
+.severity--high .severity__label { color: var(--fo-warn); font-weight: 500; }
+
+/* Phase 24A (UI/UX stabilization): both bars were previously distinct hardcoded hexes
+   (#5a6b6e 3.44:1, #3E5457 2.39:1 against --fo-bg) — the latter failed WCAG 1.4.11's 3:1 floor for
+   a meaningful non-text graphic, and since height (not hue) is this component's own rank
+   encoding, there was never a reason for medium/low to differ in colour at all. Both now share
+   --fo-text-3 (4.79:1, an existing token, not a new colour) — the word beside each bar is what
+   still tells medium and low apart in colour (--fo-text bright vs. --fo-text-3 dim), same as before. */
+.severity--medium .severity__bar { height: 12px; background: var(--fo-text-3); }
+.severity--medium .severity__label { color: var(--fo-text); font-weight: 500; }
+
+.severity--low .severity__bar { height: 8px; background: var(--fo-text-3); }
+.severity--low .severity__label { color: var(--fo-text-3); font-weight: 400; }
+
+/* Compact variant for embedding inline within a dense row metadata line (Work Queue) rather than
+   a page header. */
+.severity--compact { gap: 6px; }
+.severity--compact .severity__label { font-size: 12.5px; }
+
+/* ---- SLA state: plain colored text, never a chip — only workflow status gets pill treatment.
+   Used at Ticket Detail's own "SLA status" fact; Work Queue/At-Risk's SLA column was already
+   plain text (see .q-sla__state/.is-breached/.is-at-risk above) and needed no change. ---- */
+.sla-state--met { color: var(--fo-ok); }
+.sla-state--within { color: #8A9A9C; }
+.sla-state--paused { color: var(--fo-info); }
+.sla-state--at-risk { color: var(--fo-warn); }
+.sla-state--breached { color: var(--fo-danger); }
+
+/* Phase 24A (CSP stabilization): the SLA panel's own headline state line used
+   style="font-size:14px;margin-bottom:8px" to read larger than the rest of .panel__meta beneath
+   it — now a modifier, combined with one of the five tone classes above. */
+.sla-state--lede {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+/* The SLA column's remaining/overdue duration, beneath its own badge — the badge alone answers
+   "what state," this answers "how much time," matching the exact "[ Breached ] / 18h over"
+   composition asked for. */
+.fo-sla-duration {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--fo-text-3);
+}
+
+/* ---- Ticket Detail: header identity zone ---- */
+.ticket-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fo-space-2);
+  margin-top: var(--fo-space-2);
+}
+
+.ticket-subtitle {
+  font-size: 13px;
+  color: var(--fo-text-3);
+  margin-left: 4px;
+}
+
+/* Phase 24A (CSP stabilization): Ownership's own "Created ... Last updated" line used
+   style="margin-top:10px" to sit clear of the panel__meta block above it — now a modifier. */
+.ticket-subtitle--panel {
+  margin-top: 10px;
+}
+
+/* ---- Ticket Detail: zone rhythm ---- */
+.zone {
+  padding: var(--fo-space-5) 0;
+  border-top: 1px solid var(--fo-line);
+}
+
+.zone:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* ---- Ticket Detail badge-fix pass: SLA and Ownership as two side-by-side bordered panels
+   (reusing the existing .panel — see its own comment above — rather than a second near-identical
+   card component) instead of two flat stacks of full-width label/value rows. Replaces the former
+   .fact-rows/.fact-row (ownership) and dl.detail-grid (SLA), both now orphaned. ---- */
+.ticket-zone-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--fo-space-4);
+  margin-bottom: var(--fo-space-6);
+}
+
+.panel h3 {
+  font-size: 10.5px;
+  color: var(--fo-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+
+.panel__meta {
+  font-size: 12.5px;
+  color: var(--fo-text-2);
+  line-height: 1.9;
+}
+
+.panel__value {
+  color: var(--fo-text);
+}
+
+.panel__value--muted {
+  color: var(--fo-text-3);
+}
+
+.panel__value.mono {
+  font-family: var(--fo-mono);
+}
+
+/* ---- Ticket Detail: description ---- */
+.ticket-description {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--fo-text);
+  max-width: 72ch;
+  white-space: pre-line;
+}
+
+/* ---- Ticket Detail: activity timeline ---- */
+.timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.tl-entry {
+  display: flex;
+  gap: var(--fo-space-3);
+}
+
+.tl-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+  background: var(--fo-line-hi);
+}
+
+.tl-dot.tl-comment {
+  background: transparent;
+  border: 1.5px solid var(--fo-line-hi);
+  width: 6.5px;
+  height: 6.5px;
+}
+
+.tl-dot.tl-info { background: var(--fo-info); }
+.tl-dot.tl-warn { background: var(--fo-warn); }
+.tl-dot.tl-paused { background: var(--fo-text-3); }
+.tl-dot.tl-resolved { background: var(--fo-teal); }
+
+.tl-line {
+  width: 1.5px;
+  flex: 1;
+  background: var(--fo-line);
+  min-height: 22px;
+}
+
+.tl-body {
+  padding-bottom: var(--fo-space-4);
+  min-width: 0;
+}
+
+.tl-entry:last-child .tl-body {
+  padding-bottom: 0;
+}
+
+.tl-when {
+  font-family: var(--fo-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--fo-text-3);
+}
+
+.tl-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fo-text);
+  margin-top: 2px;
+}
+
+.tl-detail {
+  font-size: 13px;
+  color: var(--fo-text-2);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* ---- The workflow rail (docs/ui/design-system.md §6) ---- */
+.rail {
+  display: flex;
+  align-items: center;
+}
+
+.rail i {
+  flex: 1;
+  height: 1.5px;
+  background: var(--fo-line);
+}
+
+.rail i.done {
+  background: var(--fo-line-hi);
+}
+
+.rail b {
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: block;
+}
+
+.rail b.past {
+  width: 6px;
+  height: 6px;
+  background: var(--fo-line-hi);
+}
+
+.rail b.next {
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--fo-line-hi);
+}
+
+.rail b.now {
+  width: 14px;
+  height: 14px;
+  background: conic-gradient(var(--rail-tone, var(--fo-info)) var(--rail-fill-pct, 100%), var(--rail-fill-bg, #1B2A31) 0);
+}
+
+.rail.lg b.past,
+.rail.lg b.next {
+  width: 9px;
+  height: 9px;
+}
+
+.rail.lg b.now {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--fo-bg);
+}
+
+.rail-healthy b.now { --rail-tone: var(--fo-info); --rail-fill-bg: #1B2A31; }
+.rail-at-risk b.now { --rail-tone: var(--fo-warn); --rail-fill-bg: #22302E; box-shadow: 0 0 0 3px rgba(232, 180, 92, 0.15); }
+.rail-breached b.now { --rail-tone: var(--fo-danger); --rail-fill-bg: var(--fo-danger); box-shadow: 0 0 0 3px rgba(229, 107, 111, 0.18); }
+.rail-resolved b.now { background: var(--fo-teal); box-shadow: none; }
+.rail-paused b.now {
+  background: repeating-linear-gradient(45deg, #718285, #718285 2px, #22302E 2px, #22302E 4px);
+  box-shadow: none;
+}
+
+.rail.lg.rail-at-risk b.now { box-shadow: 0 0 0 5px rgba(232, 180, 92, 0.15); }
+.rail.lg.rail-breached b.now { box-shadow: 0 0 0 5px rgba(229, 107, 111, 0.18); }
+
+/* Ticket Detail badge-fix pass: the rail previously stretched to the zone's full content width —
+   on a wide viewport the connector lines between stops read as sparse rather than a connected
+   path. Capped to a readable expanded-rail width instead of letting it fill whatever container
+   happens to hold it. */
+.ticket-rail-wrap {
+  max-width: 820px;
+  padding: 4px 8px 20px;
+}
+
+.rail-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--fo-text-3);
+}
+
+.rail-labels .on {
+  color: var(--fo-text-hi);
+  font-weight: 500;
+}
+
+/* ---- ADR-0020: first-run workspace setup panel (Dashboard only) — one surface, two zones. Spans
+   the same content width as everything else on the dashboard (no arbitrary max-width) so it reads
+   as part of the workspace, not an isolated bolted-on widget. Markers reuse the existing status
+   iconography (Icons.StatusResolved/StatusOpen — the same done/open marks used elsewhere), never a
+   second checkmark language; the progress bar reuses the dashboard's own thin hbar-track/hbar-fill
+   visual, never a new progress-bar component. Earns its border because it IS a distinct object,
+   the same rule .panel already follows. ---- */
+.setup {
+  display: grid;
+  grid-template-columns: minmax(220px, 34%) 1fr;
+  column-gap: 40px;
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+  padding: 24px 28px;
+  margin-bottom: var(--fo-space-6);
+}
+
+.setup__intro {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.setup__intro .fo-label {
+  margin-bottom: 8px;
+}
+
+.setup__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--fo-text-hi);
+  letter-spacing: -0.01em;
+}
+
+.setup__sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--fo-text-3);
+  line-height: 1.5;
+}
+
+.setup__progress-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fo-text-2);
+}
+
+.setup__progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--fo-surface-2);
+  overflow: hidden;
+}
+
+.setup__progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--fo-teal-dim);
+}
+
+/* True text, not a link/button — there is no dismissal to persist (ADR-0020), so this only says
+   that ignoring the panel for now costs nothing; it is never wired to a "hide" action. */
+.setup__footnote {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--fo-text-3);
+}
+
+.setup__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* marker | content | action — a fixed action column so every button/state label lands on the
+   same right edge regardless of how long a row's title is, never nudged there with margins. */
+.setup__item {
+  display: grid;
+  grid-template-columns: 16px 1fr 112px;
+  align-items: center;
+  column-gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--fo-line-row);
+}
+
+.setup__item:last-child {
+  border-bottom: none;
+}
+
+.setup__marker {
+  display: flex;
+  color: var(--fo-line-hi);
+}
+
+.setup__marker svg {
+  width: 15px;
+  height: 15px;
+}
+
+.setup__item.is-done .setup__marker {
+  color: var(--fo-teal);
+}
+
+.setup__content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setup__label {
+  font-size: 13.5px;
+  color: var(--fo-text);
+}
+
+.setup__item.is-done .setup__label {
+  color: var(--fo-text-3);
+}
+
+.setup__desc {
+  font-size: 12px;
+  color: var(--fo-text-3);
+  line-height: 1.4;
+}
+
+.setup__action {
+  justify-self: end;
+}
+
+.setup__state {
+  font-size: 12px;
+  color: var(--fo-text-3);
+}
+
+/* The three setup-checklist actions (Set up / Invite / Create) share this instead of letting each
+   button's own label length decide its width — every action is identical geometry, landing on the
+   same right edge, never nudged there with per-button margins. */
+.setup__btn {
+  width: 96px;
+  justify-content: center;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .setup {
+    grid-template-columns: 1fr;
+    row-gap: 20px;
+  }
+
+  .setup__footnote {
+    margin-top: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .setup__item {
+    grid-template-columns: 16px 1fr;
+    row-gap: 8px;
+  }
+
+  .setup__action {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 /* ---- Tables ---- */
@@ -241,40 +1742,86 @@ table {
 
 caption {
   text-align: left;
-  color: var(--fo-text-muted);
+  color: var(--fo-text-3);
   padding-bottom: var(--fo-space-2);
-  font-size: 0.9rem;
+  font-size: 13px;
 }
 
 th,
 td {
   text-align: left;
-  padding: var(--fo-space-2);
-  border-bottom: 1px solid var(--fo-border);
+  padding: var(--fo-space-2) var(--fo-space-3);
+  border-bottom: 1px solid var(--fo-line-row);
   vertical-align: top;
+  color: var(--fo-text);
 }
 
 thead th {
-  border-bottom: 2px solid var(--fo-border-strong);
+  border-bottom: 1px solid var(--fo-line);
   white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fo-text-3);
 }
 
-/* ---- Semantic status/priority/SLA/severity tokens ----
-   Always applied alongside the enum's own text (see every .cshtml file) — never a replacement
-   for it, per CLAUDE.md §22's "never by colour alone". */
+/* Restrained row tracking — a hint, not a highlight. Header/caption rows are excluded. */
+tbody tr {
+  transition: background-color 150ms ease;
+}
+
+tbody tr:hover {
+  background: var(--fo-surface);
+}
+
+/* A table inside a .panel already sits on --fo-surface, so the ordinary hover above would be
+   invisible there — one step further, to --fo-surface-2, restores a visible hint. */
+.panel tbody tr:hover {
+  background: var(--fo-surface-2);
+}
+
+/* Supporting columns (Team, Category, Assignee, Created) read one step quieter than the
+   operationally primary ones (Reference, Title, Status, Journey, SLA), which keep the base `td`
+   color. One step, not a fade to near-invisible — still comfortably above AA at this size. */
+td.cell-muted {
+  color: var(--fo-text-2);
+}
+
+/* ---- Component-consolidation cleanup: inline content links sit flush at rest — colour alone
+   marks them interactive, the same restraint .back-link/.table-action-link already apply — and
+   gain an underline only on hover/focus. Scoped to table cells and an explicit .text-link class
+   for prose, rather than changing the base `a` rule: several already-tuned components (sidebar
+   nav, the account control, stat-strip links/labels, .q-row) rely on their own distinct hover
+   treatment, and a blanket change there risked silently altering those instead of fixing the
+   actual bug (unstyled <a> tags with no override at all). ---- */
+a.text-link,
+table a {
+  text-decoration: none;
+}
+
+a.text-link:hover,
+a.text-link:focus-visible,
+table a:hover,
+table a:focus-visible {
+  text-decoration: underline;
+}
+
+/* ---- Status / priority / SLA badges (Work Queue, At-Risk, Ticket Detail — pre-rail pages) ----
+   Always paired with the enum's own text, never a colour-only signal. */
 .badge {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: 0.15rem 0.55rem;
   border: 1px solid transparent;
-  border-radius: var(--fo-radius);
+  border-radius: var(--fo-radius-chip);
   font-size: 0.85rem;
   white-space: nowrap;
 }
 
-.badge-neutral { background: var(--fo-neutral-bg); color: var(--fo-neutral-text); border-color: var(--fo-neutral-border); }
-.badge-info { background: var(--fo-info-bg); color: var(--fo-info-text); border-color: var(--fo-info-border); }
-.badge-warning { background: var(--fo-warning-bg); color: var(--fo-warning-text); border-color: var(--fo-warning-border); }
-.badge-danger { background: var(--fo-danger-bg); color: var(--fo-danger-text); border-color: var(--fo-danger-border); }
+.badge-neutral { background: var(--fo-surface-2); color: var(--fo-text-2); border-color: var(--fo-line-hi); }
+.badge-info { background: rgba(99, 167, 232, 0.1); color: var(--fo-info); border-color: rgba(99, 167, 232, 0.35); }
+.badge-warning { background: rgba(232, 180, 92, 0.1); color: var(--fo-warn); border-color: rgba(232, 180, 92, 0.35); }
+.badge-danger { background: rgba(229, 107, 111, 0.1); color: var(--fo-danger); border-color: rgba(229, 107, 111, 0.35); }
 
 /* ---- Forms ---- */
 form {
@@ -282,14 +1829,22 @@ form {
 }
 
 .field {
-  margin-bottom: var(--fo-space-3);
+  margin-bottom: var(--fo-space-4);
   max-width: 32rem;
 }
 
 .field label {
   display: block;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--fo-text);
   margin-bottom: var(--fo-space-1);
+  font-size: 13.5px;
+}
+
+/* Phase 11: there was previously no visible indication of which fields are required at all. */
+.field-required {
+  color: var(--fo-warn);
+  margin-left: 3px;
 }
 
 input[type="text"],
@@ -299,21 +1854,89 @@ input[type="number"],
 select,
 textarea {
   width: 100%;
-  padding: var(--fo-space-2);
-  border: 1px solid var(--fo-border-strong);
+  height: 38px;
+  padding: 0 var(--fo-space-3);
+  border: 1px solid var(--fo-line-hi);
   border-radius: var(--fo-radius);
   font: inherit;
-  background: var(--fo-bg);
+  font-size: 13.5px;
+  background: var(--fo-surface-2);
   color: var(--fo-text);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+textarea {
+  height: auto;
+  padding: var(--fo-space-2) var(--fo-space-3);
+}
+
+/* A select's height is fixed above so it lines up with a button/input beside it regardless of
+   the browser's own UI-font metrics for its native chrome — the one thing that made selects read
+   as "raw browser controls" next to FlowOps's own inputs and buttons. The native option LIST stays
+   browser-default (CLAUDE.md §11.1 — no JS component to reskin it); only the closed control gets a
+   FlowOps-drawn chevron in place of the OS one, sized and positioned identically everywhere a
+   `<select>` appears (the dashboard filter bar, the Members role selector, and any future one). */
+select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23A7B5B7' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+select:hover {
+  background-color: var(--fo-surface-2);
+}
+
+/* Work management visual refinement: the chevron itself brightens slightly on hover/focus — the
+   same muted-to-bright shift already used elsewhere for "this is interactive" (.back-link,
+   .table-action-link) — rather than only the surrounding control reacting. Same glyph, same
+   position, one color swapped. */
+select:hover,
+select:focus-visible {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23E9EFEF' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+input[type="number"]:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--fo-text-3);
 }
 
 input[type="checkbox"] {
   margin-right: var(--fo-space-1);
 }
 
+/* Work management visual refinement: .field label's own `display: block` (correct for every text
+   input's label-above-field layout) pushed a checkbox's adjacent label onto its own line below the
+   box instead of sitting beside it — every "input[type=checkbox] + label" pair in a .field
+   (Ticket Detail's internal-comment checkbox, Account/Settings' delete confirmation) had the same
+   defect. Scoped to exactly this combination, not .field label generally. */
+.field:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-1);
+}
+
+.field:has(> input[type="checkbox"]) label {
+  display: inline;
+  margin-bottom: 0;
+  font-weight: 400;
+}
+
 .field-validation-error,
 .validation-summary-errors {
-  color: var(--fo-danger-text);
+  color: var(--fo-danger);
+  font-size: 13px;
 }
 
 .validation-summary-errors ul {
@@ -325,76 +1948,1437 @@ input[type="checkbox"] {
   display: none;
 }
 
-/* ---- Buttons ---- */
-button,
-.btn {
-  font: inherit;
-  padding: var(--fo-space-2) var(--fo-space-3);
-  border: 1px solid var(--fo-border-strong);
+/* ---- Shared row-identity primitives: an initials avatar circle + name (Members), a semantic
+   status dot + label (Members' Active/Deactivated column). Small, restrained, reused wherever a
+   table row needs a "who" or a live/inactive state — not a decorative addition. ---- */
+.fo-row-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-3);
+}
+
+.fo-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--fo-surface-2);
+  border: 1px solid var(--fo-line-hi);
+  color: var(--fo-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fo-status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Phase 24A (CSP stabilization): every dot's colour used to arrive via
+   style="background:var(--fo-ok)" etc. — CSP's style-src 'self' has no 'unsafe-inline' and blocks
+   the style attribute outright, so colour is now always one of these five modifier classes
+   instead. Same five tones as everywhere else in the app; nothing new introduced. */
+.fo-status-dot--ok { background: var(--fo-ok); }
+.fo-status-dot--warn { background: var(--fo-warn); }
+.fo-status-dot--danger { background: var(--fo-danger); }
+.fo-status-dot--info { background: var(--fo-info); }
+.fo-status-dot--muted { background: var(--fo-text-3); }
+
+/* ---- Members: role selector + Update button. The select no longer stretches edge-to-edge (the
+   generic form-control `width: 100%` rule made it fight the button for space in a flex row,
+   which is what read as "cramped" — a bounded width plus a real gap gives each control room to
+   breathe). ---- */
+.role-update-form {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-3);
+  margin: 0;
+}
+
+/* ---- Phase 24A: the shared copy-to-clipboard control (invitation link, error reference) — an
+   input a control fights for space with, the same "bounded width, real gap" fix .role-update-form
+   already applies elsewhere. ---- */
+.copy-field {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+}
+
+.copy-field input {
+  flex: 1;
+}
+
+.copy-feedback {
+  display: inline-block;
+  margin-top: var(--fo-space-1);
+  font-size: 12.5px;
+  color: var(--fo-teal);
+  min-height: 1em;
+}
+
+/* ---- Phase 24A: the notice component — "an action occurred / information needs attention,"
+   distinct from .empty-state ("there is no data"), which several pages had been misusing to
+   render success confirmations inside the same dashed box that everywhere else means emptiness.
+   Restrained: a tinted surface at low alpha, a 3px semantic-coloured left rule, no icon, no
+   dashed border, no fill strong enough to compete with the page around it. Same four tones as
+   everywhere else in the app (ok/info/warn/danger) — nothing new introduced. ---- */
+.notice {
+  padding: var(--fo-space-3) var(--fo-space-4);
   border-radius: var(--fo-radius);
-  background: var(--fo-bg-subtle);
+  border: 1px solid;
+  border-left-width: 3px;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--fo-text);
+  margin-bottom: var(--fo-space-4);
+}
+
+.notice--success {
+  background: rgba(76, 195, 138, 0.08);
+  border-color: rgba(76, 195, 138, 0.35);
+  border-left-color: var(--fo-ok);
+}
+
+.notice--info {
+  background: rgba(99, 167, 232, 0.08);
+  border-color: rgba(99, 167, 232, 0.35);
+  border-left-color: var(--fo-info);
+}
+
+.notice--warning {
+  background: rgba(232, 180, 92, 0.08);
+  border-color: rgba(232, 180, 92, 0.35);
+  border-left-color: var(--fo-warn);
+}
+
+.notice--danger {
+  background: rgba(229, 107, 111, 0.08);
+  border-color: rgba(229, 107, 111, 0.35);
+  border-left-color: var(--fo-danger);
+}
+
+.role-update-form__select {
+  width: auto;
+  min-width: 11rem;
+}
+
+/* ---- Team membership (Admin / Teams / one team): two small one-button forms sitting side by
+   side in the same action cell, the same "bounded width, real gap" fix .role-update-form already
+   applies to a control fighting a button for space. ---- */
+.team-member-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+}
+
+.team-member-actions form {
+  margin: 0;
+}
+
+.project-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+}
+
+.project-actions form {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+}
+
+.project-actions__rename input[type="text"] {
+  width: 12rem;
+}
+
+/* Admin's Teams list — a single-column table read as an empty shell (no header worth having,
+   one link per row); a linked row with an avatar and a trailing chevron reads as a real,
+   navigable list instead. Same identity pairing as .fo-row-identity, just clickable end to end. */
+.admin-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-3);
+  padding: var(--fo-space-3) var(--fo-space-2);
+  border-bottom: 1px solid var(--fo-line-row);
+  color: var(--fo-text);
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.admin-list__item:last-child {
+  border-bottom: none;
+}
+
+.admin-list__item:hover,
+.admin-list__item:focus-visible {
+  background: var(--fo-surface-2);
+}
+
+.admin-list__name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.admin-list__item svg {
+  color: var(--fo-text-3);
+  flex-shrink: 0;
+}
+
+/* Lets the "Add member" button sit on the same baseline as the select beside it in a
+   .field-grid row, instead of trailing below the label the select has and the button doesn't. */
+.field--align-bottom {
+  display: flex;
+  align-items: flex-end;
+}
+
+/* ---- Members: a per-row "..." menu (native <details>, no JavaScript) holding the role-update
+   form and Remove — 25 rows x (select + button + button) rendered open at once is what made the
+   page feel heavy; this collapses the two rarely-used controls behind one affordance per row,
+   opened only on demand. Role itself renders as plain text beside it, everywhere, one concept in
+   one presentation, never a live select in some rows and a chip in others. ---- */
+.row-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.row-menu > summary {
+  list-style: none;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--fo-radius);
+  color: var(--fo-text-2);
+}
+
+.row-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.row-menu > summary:hover {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+}
+
+.row-menu > summary:focus-visible {
+  outline: 2px solid var(--fo-teal);
+  outline-offset: 2px;
+}
+
+.row-menu[open] > summary {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+}
+
+.row-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fo-space-3);
+  padding: var(--fo-space-3);
+  min-width: 230px;
+  background: var(--fo-surface-2);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+}
+
+.row-menu__panel .role-update-form {
+  flex-wrap: wrap;
+}
+
+.row-menu__panel .role-update-form__select {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* A locked/demo-protected row has no menu at all — an explicit dim label reads as "this is
+   intentional," where no action buttons at all previously read as broken rendering. */
+.row-locked {
+  color: var(--fo-text-3);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+/* ---- Two-up field layout (Create Ticket's classification group) ---- */
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--fo-space-5);
+}
+
+/* ---- Buttons — ghost by default; exactly one primary action per screen. Two tiers only
+   (primary filled, ghost outlined) — a third tier was considered for "secondary" actions like
+   "At-risk work" and rejected: it would only restate what ghost already communicates next to a
+   primary button, and CLAUDE.md's own review checklist flags an abstraction with no real seam. An
+   <a> can carry either class exactly like a <button>. ---- */
+/* .btn-primary is a standalone class everywhere it's used in markup (never combined with .btn —
+   confirmed by inspection: every <button class="btn-primary"> already got this geometry for free
+   from the bare `button` element selector below, but the one <a class="btn-primary"> did not,
+   since an anchor matches no element-level button rule. That gap — background-color with no
+   padding/border/display — is exactly what rendered as "highlighted text" instead of a button.
+   Listing .btn-primary here, not just .btn, is the actual fix: one shared geometry rule for every
+   control in the family, whichever modifier class it carries. */
+button,
+.btn,
+.btn-primary,
+.btn-caution,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 400;
+  padding: 0 var(--fo-space-4);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  background: transparent;
+  color: var(--fo-text-2);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
 }
 
 button:hover,
 .btn:hover {
-  background: var(--fo-neutral-bg);
+  color: var(--fo-text-hi);
+  border-color: var(--fo-text-3);
 }
 
 .btn-primary {
-  background: var(--fo-link);
-  border-color: var(--fo-link);
-  color: #fff;
+  background: var(--fo-teal);
+  border-color: var(--fo-teal);
+  color: var(--fo-teal-ink);
+  font-weight: 500;
 }
 
 .btn-primary:hover {
-  background: #093a70;
+  background: #4fc0b1;
+  border-color: #4fc0b1;
+  color: var(--fo-teal-ink);
+}
+
+/* Pressed states — a real control responds when you click it, not just when you hover. Colour
+   only, no transform/shift, per the "responsive, not animated" rule. */
+button:active,
+.btn:active {
+  background: var(--fo-surface-2);
+}
+
+.btn-primary:active {
+  background: var(--fo-teal-dim);
+  border-color: var(--fo-teal-dim);
+  color: var(--fo-text-hi);
+}
+
+/* ---- Component-consolidation cleanup: consequential, hard-to-reverse lifecycle actions
+   (deactivate, reject, remove) that are NOT the app's one true destructive delete — so they read
+   as more consequential than a routine .btn without escalating to .btn-danger's alarm tone. Stays
+   outlined at every state, never filled — a warn-toned border, not a big red proceed button. ---- */
+.btn-caution {
+  border-color: var(--fo-warn);
+  color: var(--fo-warn);
+}
+
+.btn-caution:hover {
+  border-color: var(--fo-warn);
+  background: rgba(232, 180, 92, 0.12);
+}
+
+.btn-caution:active {
+  background: rgba(232, 180, 92, 0.2);
+}
+
+/* Phase 17: the one destructive action in the app (account deletion). Restrained, not alarming —
+   an outlined danger tone at rest, filled only on hover/press, consistent with .btn-primary's own
+   "quiet until interacted with" treatment rather than a permanently loud red button. */
+.btn-danger {
+  border-color: var(--fo-danger);
+  color: var(--fo-danger);
+}
+
+.btn-danger:hover {
+  background: var(--fo-danger);
+  border-color: var(--fo-danger);
+  color: var(--fo-text-hi);
+}
+
+.btn-danger:active {
+  background: #c85a5e;
+  border-color: #c85a5e;
+  color: var(--fo-text-hi);
 }
 
 /* ---- Action groups (ticket detail workflow forms) ---- */
 .action-group {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--fo-space-3);
+  gap: var(--fo-space-4);
   align-items: flex-start;
 }
 
 .action-group form {
-  border: 1px solid var(--fo-border);
+  border: 1px solid var(--fo-line);
   border-radius: var(--fo-radius);
-  padding: var(--fo-space-3);
+  padding: var(--fo-space-4);
   min-width: 14rem;
 }
 
 /* ---- Empty states ---- */
 .empty-state {
-  color: var(--fo-text-muted);
-  border: 1px dashed var(--fo-border);
+  color: var(--fo-text-3);
+  border: 1px dashed var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-4);
+}
+
+.empty-state p {
+  margin: 0 0 6px;
+}
+
+.empty-state p:last-child {
+  margin-bottom: 0;
+}
+
+.empty-state__title {
+  color: var(--fo-text-2);
+  font-weight: 500;
+}
+
+/* ---- Search: one compact, quiet control shared by Work Queue, At-Risk, and Members (search-box
+   markup is the shared _SearchBox partial) — a subtle dark surface with a thin FlowOps border,
+   never a prominent SaaS command-palette bar. Sized to sit inline in a page header's flex row
+   next to the title, with room for a useful query without dominating the header. ---- */
+.search-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Phase 24A (UI/UX stabilization): was 34px, 4px shorter than every input/select/button (38px)
+     it sits beside in a page header — one control height across the app. */
+  height: 38px;
+  padding: 0 10px;
+  background: var(--fo-surface-2);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  width: 100%;
+  max-width: 280px;
+  flex-shrink: 0;
+  transition: border-color 150ms ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--fo-teal);
+}
+
+.search-box__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fo-text-3);
+  cursor: pointer;
+}
+
+.search-box__icon:hover {
+  color: var(--fo-text-hi);
+}
+
+.search-box__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.search-box__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--fo-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-box__input:focus {
+  outline: none;
+}
+
+/* Phase 24A (UI/UX stabilization): was --fo-text-3, which measures 4.12:1 against the search
+   box's own --fo-surface-2 ground — below the 4.5:1 AA floor for normal-size text. --fo-text-2
+   (7.82:1 on the same ground) is the next step up the existing text scale, not a new colour. */
+.search-box__input::placeholder {
+  color: var(--fo-text-2);
+}
+
+.search-box__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* ---- Login: low density, centered, the form is the strongest interaction ---- */
+code {
+  font-family: var(--fo-mono);
+  font-size: 0.92em;
+}
+
+.login-shell {
+  max-width: 420px;
+  margin: var(--fo-space-7) auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  margin-bottom: var(--fo-space-6);
+}
+
+.login-wordmark {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fo-text-hi);
+  margin-top: var(--fo-space-2);
+}
+
+.login-tagline {
+  font-size: 13.5px;
+  color: var(--fo-text-3);
+  margin: 0;
+}
+
+.login-card {
+  background: var(--fo-surface);
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+  padding: var(--fo-space-6);
+}
+
+.login-card h1 {
+  font-size: 18px;
+  margin-bottom: var(--fo-space-4);
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: var(--fo-space-2);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* ---- Phase 24A-Extension: post-registration waiting/approved/rejected status card. Reuses
+   .fo-status-dot for the indicator — no second status-colour language. JS toggles which state is
+   shown by adding [hidden]; the rule below makes that reliably win regardless of any other display
+   declaration on the same element. ---- */
+[hidden] {
+  display: none !important;
+}
+
+.approval-status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fo-space-3);
+  margin: var(--fo-space-5) 0;
+  padding: var(--fo-space-4);
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+  background: var(--fo-surface-2);
+}
+
+.approval-status__dot {
+  margin-top: 6px;
+}
+
+.approval-status__title {
+  font-weight: 500;
+  color: var(--fo-text-hi);
+}
+
+.approval-status__detail {
+  font-size: 13px;
+  color: var(--fo-text-2);
+  margin: 4px 0 0;
+}
+
+/* ---- Demo access: secondary to the login card, not a raw debug table ---- */
+.demo-access {
+  margin-top: var(--fo-space-6);
+  padding-top: var(--fo-space-5);
+  border-top: 1px solid var(--fo-line);
+}
+
+.demo-access h2 {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border-bottom: none;
+  margin: 0 0 var(--fo-space-2);
+  padding-bottom: 0;
+  color: var(--fo-text-2);
+}
+
+.demo-access p {
+  font-size: 13px;
+  color: var(--fo-text-3);
+  margin: 0 0 var(--fo-space-3);
+}
+
+/* Bug fix: replaces a 4-column table (Persona/Email/Role/Shows) that forced horizontal scrolling
+   once the "Shows" description was included — the login card itself is a fixed, narrow 420px
+   shell (.login-shell), nowhere near wide enough for that table to render without it. A stacked
+   card per persona instead: every field wraps and stays inside the same width the rest of the
+   login page already uses, at any viewport. */
+.demo-personas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fo-space-3);
+  margin-bottom: var(--fo-space-3);
+}
+
+.demo-persona-card {
+  border: 1px solid var(--fo-line);
   border-radius: var(--fo-radius);
   padding: var(--fo-space-3);
 }
 
+.demo-persona-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fo-space-3);
+  margin-bottom: 6px;
+}
+
+.demo-persona-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fo-text-hi);
+}
+
+.demo-persona-card__role {
+  font-size: 11px;
+  color: var(--fo-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.demo-persona-card__detail {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+
+.demo-persona-card__detail dt {
+  margin: 0;
+  color: var(--fo-text-3);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.demo-persona-card__detail dd {
+  margin: 0;
+  color: var(--fo-text);
+  overflow-wrap: anywhere;
+}
+
+.demo-persona-card__shows {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fo-text-3);
+}
+
+.demo-access .demo-password {
+  margin-top: var(--fo-space-3);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Page header (Work Queue, At-Risk): a .section-head identity block, an optional metadata
+   figure on the same row, actions beneath, and one hairline rule closing the whole thing before
+   the table — a deliberate visual "header ends here" boundary rather than content that just stops. ---- */
+/* Phase 11: no bottom rule and no separate right-aligned display-type stat block — the page's own
+   total is a scope indicator, not a KPI, so it now sits inline next to the h1 as small muted text
+   (.page-header__count) instead of a 28px number in its own zone. */
+.page-header {
+  margin-bottom: var(--fo-space-5);
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+/* Title and its scope metadata ("1 member", "0 need attention") on one row, pushed to opposite
+   ends — real distance, not two words abutting with an 11px gap, which read as an accidental
+   collision rather than a deliberate hierarchy (the title stays the only heading; the count is
+   plain, quiet, unclickable-looking secondary text). */
+.page-header__title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fo-space-4);
+  margin-bottom: 4px;
+}
+
+.page-header__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--fo-space-5);
+  flex-wrap: wrap;
+}
+
+.page-header__count {
+  font-family: var(--fo-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fo-text-3);
+  flex-shrink: 0;
+}
+
+/* ---- Work management visual refinement: a genuinely operational count ("302 tickets", "7 need
+   attention") reads as more than passive scope metadata ("1 member", which keeps
+   .page-header__count exactly as it is above) — one shared treatment, reused identically by Work
+   Queue and At-Risk rather than two page-specific styles for the same idea. The value is
+   noticeably larger and brighter than its trailing label, but still modest next to the Dashboard's
+   own 30px KPI figures — a signal in the header, not a KPI card. ---- */
+.page-header__metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.page-header__metric-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--fo-text-hi);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-header__metric-label {
+  font-size: 13px;
+  color: var(--fo-text-3);
+}
+
+/* An optional right-hand action column (currently Members): search stacked directly above the
+   page's one primary action, sharing a single right edge — replacing two independently-positioned
+   controls (search anchored to the header row, the button anchored to a separate full-width
+   .page-actions row below) that landed at different heights with no shared alignment. */
+.page-header__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--fo-space-3);
+  flex-shrink: 0;
+}
+
+.page-context {
+  font-size: 14px;
+  color: var(--fo-text-2);
+  margin: 0 0 var(--fo-space-3);
+}
+
+/* ---- Component-consolidation cleanup: readable measure for explanatory prose — the Lifecycle
+   descriptions on User/Organization Detail, and the Delete-account explanation, previously ran the
+   full content width (~1300px+) at body text size. Scoped to explanatory copy specifically, never
+   tables or stat strips, which stay full width. ---- */
+.prose {
+  max-width: 720px;
+  line-height: 1.6;
+  color: var(--fo-text-2);
+  font-size: 13.5px;
+}
+
+/* Also used bare (as a <p>, e.g. the Dashboard's "View all at-risk work") — margin is set
+   explicitly here rather than left to the browser's default <p> spacing, so the gap above (tying
+   it to the section it acts on) and below (before whatever comes next) are both deliberate,
+   controlled values instead of an accidental ~1em. */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fo-space-3);
+  margin: var(--fo-space-4) 0 0;
+}
+
+.page-filter-note {
+  font-size: 13px;
+  color: var(--fo-text-3);
+  margin: var(--fo-space-3) 0 0;
+}
+
+/* ---- Pagination: numbered, with disabled states that are never plain clickable text ---- */
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fo-space-3);
+  margin-top: var(--fo-space-4);
+}
+
+/* A top render sits before the table/list it paginates, not after — margin points the other way,
+   and there's no count line here to justify-content: space-between against. */
+.pagination-bar--top {
+  margin-top: 0;
+  margin-bottom: var(--fo-space-4);
+  justify-content: flex-start;
+}
+
+.pagination-count {
+  font-size: 12.5px;
+  color: var(--fo-text-3);
+  margin: 0;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--fo-radius);
+  border: 1px solid transparent;
+  font-size: 13px;
+  color: var(--fo-text-2);
+  text-decoration: none;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+a.page-link:hover,
+a.page-link:focus-visible {
+  color: var(--fo-text-hi);
+  border-color: var(--fo-line-hi);
+}
+
+.page-link.is-current {
+  background: var(--fo-teal);
+  color: var(--fo-teal-ink);
+  font-weight: 500;
+}
+
+.page-link.is-disabled {
+  color: var(--fo-text-3);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.page-ellipsis {
+  color: var(--fo-text-3);
+  padding: 0 2px;
+  font-size: 13px;
+}
+
+/* ---- Phase 20B: dashboard surface hierarchy & grid. The page sits on --fo-bg; each analytical
+   concept gets its own quiet --fo-surface panel (the same tone the nav bar and filter bar already
+   use, so this isn't a new visual language, just applying the existing "raised strip" one more
+   place); Attention — the page's actual operational focus — sits one step higher again on
+   --fo-surface-2, the same tone already reserved for "elevated" chrome like inputs. Three tones,
+   used consistently, is the whole hierarchy — no shadows, no dramatic contrast. ---- */
+.panel {
+  background: var(--fo-surface);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: 8px;
+  padding: var(--fo-space-5) var(--fo-space-6);
+}
+
+.panel--focus {
+  background: var(--fo-surface-2);
+  border-color: var(--fo-line-hi);
+}
+
+/* A quiet heading for a panel that is already visually its own surface — an eyebrow and a title
+   are enough identity; the page-level teal marker (.section-head) is reserved for the page header
+   and Attention, so six identical teal bars don't repeat down the page. */
+.panel__head {
+  margin-bottom: var(--fo-space-4);
+}
+
+.panel__head .fo-label {
+  margin-bottom: 4px;
+}
+
+.panel__head h2 {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  font-size: 16px;
+}
+
+/* Contextual restatement of a panel's own headline number — real data pulled from what's already
+   rendered below it, never a fabricated insight (Step 18 forbids "AI insight" copy). */
+.panel__metric {
+  font-size: 13px;
+  color: var(--fo-text-3);
+  margin: 0 0 var(--fo-space-3);
+}
+
+/* The analytical grid: one full-width KPI panel, a 60/40 trend+status row, an even
+   workload/SLA row, then two more full-width panels — never every section at the same width. */
+.dashboard-grid {
+  display: grid;
+  gap: var(--fo-space-5);
+  margin-top: var(--fo-space-5);
+}
+
+/* align-items: start — deliberately NOT the grid default (stretch). A trend chart and a compact
+   status list, or a single-team workload panel next to a five-row SLA panel, have genuinely
+   different natural heights; stretching the shorter one to match just manufactures empty space
+   inside it. Each panel sizes to its own content instead. */
+.dashboard-row-trend {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--fo-space-5);
+  align-items: start;
+}
+
+.dashboard-row-half {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--fo-space-5);
+  align-items: start;
+}
+
+/* A dedicated tablet breakpoint (wider than the app's usual 768px mobile one, below): two
+   analytical panels side by side need real room, so they drop to one column earlier than
+   everything else does. */
+@media (max-width: 900px) {
+  .dashboard-row-trend,
+  .dashboard-row-half {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Phase 20: dashboard filter bar — a compact control row, not a card grid. Each field is a
+   plain labelled select; the whole thing is one GET form so a filtered view is a normal,
+   bookmarkable URL and works identically with JavaScript disabled (the onchange auto-submit
+   below is progressive enhancement only — the explicit Apply button is the real, always-working
+   affordance). ---- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--fo-space-4);
+  padding: var(--fo-space-3) var(--fo-space-4);
+  margin: var(--fo-space-3) 0 var(--fo-space-5);
+  background: var(--fo-surface);
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+}
+
+.filter-bar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 9rem;
+}
+
+.filter-bar__field label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fo-text-3);
+}
+
+.filter-bar__field select {
+  width: auto;
+  min-width: 10rem;
+}
+
+.filter-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-3);
+  margin-left: auto;
+}
+
+/* ---- Phase 20: ticket volume trend — a single inline SVG polyline, no charting library. The
+   accessible fallback is a real <table> inside <details>, always present in the DOM (not an
+   aria-only duplicate), so it is available to every user, not only assistive technology. ---- */
+.trend-chart {
+  width: 100%;
+  overflow: visible;
+}
+
+.trend-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.trend-chart polyline {
+  fill: none;
+  stroke: var(--fo-teal);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trend-chart .trend-marker {
+  fill: var(--fo-teal);
+}
+
+.trend-chart .trend-baseline {
+  stroke: var(--fo-line);
+  stroke-width: 1;
+}
+
+/* A single quiet interior reference line — softer than the baseline, never a full grid. */
+.trend-chart .trend-gridline {
+  stroke: var(--fo-line-row);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.trend-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--fo-text-3);
+}
+
+.chart-fallback {
+  margin-top: var(--fo-space-3);
+}
+
+.chart-fallback summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--fo-text-3);
+}
+
+.chart-fallback summary:hover,
+.chart-fallback summary:focus-visible {
+  color: var(--fo-teal);
+}
+
+.chart-fallback .table-responsive {
+  margin-top: var(--fo-space-3);
+}
+
+/* ---- Phase 20: horizontal bar charts (status, team workload, SLA breakdown, resolution time) —
+   a labelled row, a track, a filled bar, a value; direct labels, no legend. Bar length is a plain
+   CSS percentage width computed server-side (DashboardCharts.BarPercent), never JavaScript. ---- */
+.hbar-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fo-space-3);
+}
+
+.hbar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 64px;
+  align-items: center;
+  gap: var(--fo-space-3);
+}
+
+.hbar-row__label {
+  font-size: 13.5px;
+  color: var(--fo-text-2);
+}
+
+.hbar-track {
+  height: 8px;
+  background: var(--fo-surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.hbar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* Explicit, per-usage tones (docs/ui/design-system.md's "colour follows meaning" — never a
+   default): a neutral slate for plain distribution charts (status, resolution time), the FlowOps
+   teal reserved for the one chart about capacity/throughput (workload by team), and the same
+   status semantics (good/neutral/warning/danger) the rest of the product already uses for SLA
+   state — so a page with five charts never reads as "five teal bars in a row." */
+/* --fo-text-3, not --fo-line-hi: against the --fo-surface-2 track, the fill needs to read as
+   clearly "the data" rather than a slightly-lighter shade of the same track — magnitude has to be
+   obvious at a glance, not just present under close inspection. */
+.hbar-fill.tone-neutral { background: var(--fo-text-3); }
+.hbar-fill.tone-teal { background: var(--fo-teal-dim); }
+.hbar-fill.tone-danger { background: var(--fo-danger); }
+.hbar-fill.tone-warn { background: var(--fo-warn); }
+.hbar-fill.tone-ok { background: var(--fo-ok); }
+.hbar-fill.tone-info { background: var(--fo-info); }
+.hbar-fill.tone-muted { background: var(--fo-line-hi); }
+
+.hbar-row__value {
+  font-family: var(--fo-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--fo-text);
+  text-align: right;
+}
+
+/* Absence of data in place of a track — a 0%-wide fill on a full-width track looked identical to
+   any other row's track, so "no resolved tickets" and "a real, tiny value" were indistinguishable
+   at a glance. This replaces the bar entirely for that row rather than rendering a fake one. */
+.hbar-row__no-data {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--fo-text-3);
+}
+
 /* ---- Responsive: tablet and narrower ---- */
 @media (max-width: 768px) {
-  .app-header__bar {
+  .panel {
+    padding: var(--fo-space-4);
+  }
+
+  .fo-nav {
+    height: auto;
+    padding: var(--fo-space-3) var(--fo-space-4);
+  }
+
+  .fo-navright {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .ticket-zone-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-strip {
+    flex-direction: column;
+  }
+
+  .stat + .stat {
+    border-left: none;
+    border-top: 1px solid var(--fo-line-row);
+    padding-left: 0;
+    padding-top: var(--fo-space-4);
+  }
+
+  .attn-row {
+    grid-template-columns: 1fr;
+    row-gap: 6px;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rail-labels {
+    font-size: 9.5px;
+  }
+
+  .login-shell {
+    margin-top: var(--fo-space-5);
+  }
+
+  .login-card {
+    padding: var(--fo-space-5);
+  }
+
+  .pagination-bar {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .app-nav {
+  .page-header__top {
+    align-items: stretch;
+  }
+
+  .search-box {
+    max-width: none;
+  }
+
+  .filter-bar {
+    align-items: stretch;
+  }
+
+  .filter-bar__field,
+  .filter-bar__field select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .filter-bar__actions {
     margin-left: 0;
+    width: 100%;
   }
 
-  dl.detail-grid {
-    grid-template-columns: 1fr;
+  .hbar-row {
+    grid-template-columns: 100px 1fr 52px;
+    gap: var(--fo-space-2);
   }
 
-  dl.detail-grid dt {
-    margin-top: var(--fo-space-2);
+  .role-update-form {
+    flex-wrap: wrap;
   }
 
-  .kpi-grid {
-    grid-template-columns: 1fr;
+  .role-update-form__select {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 }
+
+/* ============================================================================================
+   Phase 24A (CSP stabilization) — generated width/fill utilities.
+
+   Content-Security-Policy sets `style-src 'self'` with no 'unsafe-inline', nonce, or hash, which
+   blocks the `style` HTML attribute outright (CSP governs the attribute itself, not just <style>
+   blocks) — so a data-driven proportion (a Dashboard bar's length, the workspace-setup progress
+   bar, the workflow rail's current-stop SLA fill) can no longer be drawn with
+   style="width:37.2%" or style="--rail-fill:0.75". Loosening the policy with 'unsafe-inline' was
+   ruled out deliberately (CLAUDE.md §12/§22, and this phase's own explicit instruction): it would
+   re-admit exactly the class of injected-style attack CSP exists to stop, for every element in
+   the app, forever — a permanent, blast-radius-unbounded trade against a handful of chart bars.
+
+   Instead every data-driven proportion in the app is rounded to the nearest whole percent
+   (imperceptible on any bar/fill in this app — none is wide enough for a fraction of a percent to
+   register visually) and expressed as one of these 101 pre-generated classes, picked server-side
+   (FlowOps.Web.CssWidthClass for widths; _WorkflowRail.cshtml's own rounding for the rail). This
+   is mechanically generated, not hand-authored — the meaning lives in the callers, not here. ---- */
+.w-pct-0 { width: 0%; }
+.w-pct-1 { width: 1%; }
+.w-pct-2 { width: 2%; }
+.w-pct-3 { width: 3%; }
+.w-pct-4 { width: 4%; }
+.w-pct-5 { width: 5%; }
+.w-pct-6 { width: 6%; }
+.w-pct-7 { width: 7%; }
+.w-pct-8 { width: 8%; }
+.w-pct-9 { width: 9%; }
+.w-pct-10 { width: 10%; }
+.w-pct-11 { width: 11%; }
+.w-pct-12 { width: 12%; }
+.w-pct-13 { width: 13%; }
+.w-pct-14 { width: 14%; }
+.w-pct-15 { width: 15%; }
+.w-pct-16 { width: 16%; }
+.w-pct-17 { width: 17%; }
+.w-pct-18 { width: 18%; }
+.w-pct-19 { width: 19%; }
+.w-pct-20 { width: 20%; }
+.w-pct-21 { width: 21%; }
+.w-pct-22 { width: 22%; }
+.w-pct-23 { width: 23%; }
+.w-pct-24 { width: 24%; }
+.w-pct-25 { width: 25%; }
+.w-pct-26 { width: 26%; }
+.w-pct-27 { width: 27%; }
+.w-pct-28 { width: 28%; }
+.w-pct-29 { width: 29%; }
+.w-pct-30 { width: 30%; }
+.w-pct-31 { width: 31%; }
+.w-pct-32 { width: 32%; }
+.w-pct-33 { width: 33%; }
+.w-pct-34 { width: 34%; }
+.w-pct-35 { width: 35%; }
+.w-pct-36 { width: 36%; }
+.w-pct-37 { width: 37%; }
+.w-pct-38 { width: 38%; }
+.w-pct-39 { width: 39%; }
+.w-pct-40 { width: 40%; }
+.w-pct-41 { width: 41%; }
+.w-pct-42 { width: 42%; }
+.w-pct-43 { width: 43%; }
+.w-pct-44 { width: 44%; }
+.w-pct-45 { width: 45%; }
+.w-pct-46 { width: 46%; }
+.w-pct-47 { width: 47%; }
+.w-pct-48 { width: 48%; }
+.w-pct-49 { width: 49%; }
+.w-pct-50 { width: 50%; }
+.w-pct-51 { width: 51%; }
+.w-pct-52 { width: 52%; }
+.w-pct-53 { width: 53%; }
+.w-pct-54 { width: 54%; }
+.w-pct-55 { width: 55%; }
+.w-pct-56 { width: 56%; }
+.w-pct-57 { width: 57%; }
+.w-pct-58 { width: 58%; }
+.w-pct-59 { width: 59%; }
+.w-pct-60 { width: 60%; }
+.w-pct-61 { width: 61%; }
+.w-pct-62 { width: 62%; }
+.w-pct-63 { width: 63%; }
+.w-pct-64 { width: 64%; }
+.w-pct-65 { width: 65%; }
+.w-pct-66 { width: 66%; }
+.w-pct-67 { width: 67%; }
+.w-pct-68 { width: 68%; }
+.w-pct-69 { width: 69%; }
+.w-pct-70 { width: 70%; }
+.w-pct-71 { width: 71%; }
+.w-pct-72 { width: 72%; }
+.w-pct-73 { width: 73%; }
+.w-pct-74 { width: 74%; }
+.w-pct-75 { width: 75%; }
+.w-pct-76 { width: 76%; }
+.w-pct-77 { width: 77%; }
+.w-pct-78 { width: 78%; }
+.w-pct-79 { width: 79%; }
+.w-pct-80 { width: 80%; }
+.w-pct-81 { width: 81%; }
+.w-pct-82 { width: 82%; }
+.w-pct-83 { width: 83%; }
+.w-pct-84 { width: 84%; }
+.w-pct-85 { width: 85%; }
+.w-pct-86 { width: 86%; }
+.w-pct-87 { width: 87%; }
+.w-pct-88 { width: 88%; }
+.w-pct-89 { width: 89%; }
+.w-pct-90 { width: 90%; }
+.w-pct-91 { width: 91%; }
+.w-pct-92 { width: 92%; }
+.w-pct-93 { width: 93%; }
+.w-pct-94 { width: 94%; }
+.w-pct-95 { width: 95%; }
+.w-pct-96 { width: 96%; }
+.w-pct-97 { width: 97%; }
+.w-pct-98 { width: 98%; }
+.w-pct-99 { width: 99%; }
+.w-pct-100 { width: 100%; }
+
+.rail-fill-0 { --rail-fill-pct: 0%; }
+.rail-fill-1 { --rail-fill-pct: 1%; }
+.rail-fill-2 { --rail-fill-pct: 2%; }
+.rail-fill-3 { --rail-fill-pct: 3%; }
+.rail-fill-4 { --rail-fill-pct: 4%; }
+.rail-fill-5 { --rail-fill-pct: 5%; }
+.rail-fill-6 { --rail-fill-pct: 6%; }
+.rail-fill-7 { --rail-fill-pct: 7%; }
+.rail-fill-8 { --rail-fill-pct: 8%; }
+.rail-fill-9 { --rail-fill-pct: 9%; }
+.rail-fill-10 { --rail-fill-pct: 10%; }
+.rail-fill-11 { --rail-fill-pct: 11%; }
+.rail-fill-12 { --rail-fill-pct: 12%; }
+.rail-fill-13 { --rail-fill-pct: 13%; }
+.rail-fill-14 { --rail-fill-pct: 14%; }
+.rail-fill-15 { --rail-fill-pct: 15%; }
+.rail-fill-16 { --rail-fill-pct: 16%; }
+.rail-fill-17 { --rail-fill-pct: 17%; }
+.rail-fill-18 { --rail-fill-pct: 18%; }
+.rail-fill-19 { --rail-fill-pct: 19%; }
+.rail-fill-20 { --rail-fill-pct: 20%; }
+.rail-fill-21 { --rail-fill-pct: 21%; }
+.rail-fill-22 { --rail-fill-pct: 22%; }
+.rail-fill-23 { --rail-fill-pct: 23%; }
+.rail-fill-24 { --rail-fill-pct: 24%; }
+.rail-fill-25 { --rail-fill-pct: 25%; }
+.rail-fill-26 { --rail-fill-pct: 26%; }
+.rail-fill-27 { --rail-fill-pct: 27%; }
+.rail-fill-28 { --rail-fill-pct: 28%; }
+.rail-fill-29 { --rail-fill-pct: 29%; }
+.rail-fill-30 { --rail-fill-pct: 30%; }
+.rail-fill-31 { --rail-fill-pct: 31%; }
+.rail-fill-32 { --rail-fill-pct: 32%; }
+.rail-fill-33 { --rail-fill-pct: 33%; }
+.rail-fill-34 { --rail-fill-pct: 34%; }
+.rail-fill-35 { --rail-fill-pct: 35%; }
+.rail-fill-36 { --rail-fill-pct: 36%; }
+.rail-fill-37 { --rail-fill-pct: 37%; }
+.rail-fill-38 { --rail-fill-pct: 38%; }
+.rail-fill-39 { --rail-fill-pct: 39%; }
+.rail-fill-40 { --rail-fill-pct: 40%; }
+.rail-fill-41 { --rail-fill-pct: 41%; }
+.rail-fill-42 { --rail-fill-pct: 42%; }
+.rail-fill-43 { --rail-fill-pct: 43%; }
+.rail-fill-44 { --rail-fill-pct: 44%; }
+.rail-fill-45 { --rail-fill-pct: 45%; }
+.rail-fill-46 { --rail-fill-pct: 46%; }
+.rail-fill-47 { --rail-fill-pct: 47%; }
+.rail-fill-48 { --rail-fill-pct: 48%; }
+.rail-fill-49 { --rail-fill-pct: 49%; }
+.rail-fill-50 { --rail-fill-pct: 50%; }
+.rail-fill-51 { --rail-fill-pct: 51%; }
+.rail-fill-52 { --rail-fill-pct: 52%; }
+.rail-fill-53 { --rail-fill-pct: 53%; }
+.rail-fill-54 { --rail-fill-pct: 54%; }
+.rail-fill-55 { --rail-fill-pct: 55%; }
+.rail-fill-56 { --rail-fill-pct: 56%; }
+.rail-fill-57 { --rail-fill-pct: 57%; }
+.rail-fill-58 { --rail-fill-pct: 58%; }
+.rail-fill-59 { --rail-fill-pct: 59%; }
+.rail-fill-60 { --rail-fill-pct: 60%; }
+.rail-fill-61 { --rail-fill-pct: 61%; }
+.rail-fill-62 { --rail-fill-pct: 62%; }
+.rail-fill-63 { --rail-fill-pct: 63%; }
+.rail-fill-64 { --rail-fill-pct: 64%; }
+.rail-fill-65 { --rail-fill-pct: 65%; }
+.rail-fill-66 { --rail-fill-pct: 66%; }
+.rail-fill-67 { --rail-fill-pct: 67%; }
+.rail-fill-68 { --rail-fill-pct: 68%; }
+.rail-fill-69 { --rail-fill-pct: 69%; }
+.rail-fill-70 { --rail-fill-pct: 70%; }
+.rail-fill-71 { --rail-fill-pct: 71%; }
+.rail-fill-72 { --rail-fill-pct: 72%; }
+.rail-fill-73 { --rail-fill-pct: 73%; }
+.rail-fill-74 { --rail-fill-pct: 74%; }
+.rail-fill-75 { --rail-fill-pct: 75%; }
+.rail-fill-76 { --rail-fill-pct: 76%; }
+.rail-fill-77 { --rail-fill-pct: 77%; }
+.rail-fill-78 { --rail-fill-pct: 78%; }
+.rail-fill-79 { --rail-fill-pct: 79%; }
+.rail-fill-80 { --rail-fill-pct: 80%; }
+.rail-fill-81 { --rail-fill-pct: 81%; }
+.rail-fill-82 { --rail-fill-pct: 82%; }
+.rail-fill-83 { --rail-fill-pct: 83%; }
+.rail-fill-84 { --rail-fill-pct: 84%; }
+.rail-fill-85 { --rail-fill-pct: 85%; }
+.rail-fill-86 { --rail-fill-pct: 86%; }
+.rail-fill-87 { --rail-fill-pct: 87%; }
+.rail-fill-88 { --rail-fill-pct: 88%; }
+.rail-fill-89 { --rail-fill-pct: 89%; }
+.rail-fill-90 { --rail-fill-pct: 90%; }
+.rail-fill-91 { --rail-fill-pct: 91%; }
+.rail-fill-92 { --rail-fill-pct: 92%; }
+.rail-fill-93 { --rail-fill-pct: 93%; }
+.rail-fill-94 { --rail-fill-pct: 94%; }
+.rail-fill-95 { --rail-fill-pct: 95%; }
+.rail-fill-96 { --rail-fill-pct: 96%; }
+.rail-fill-97 { --rail-fill-pct: 97%; }
+.rail-fill-98 { --rail-fill-pct: 98%; }
+.rail-fill-99 { --rail-fill-pct: 99%; }
+.rail-fill-100 { --rail-fill-pct: 100%; }

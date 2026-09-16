@@ -1,6 +1,7 @@
 using FlowOps.Application.Tests.Persistence;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
@@ -29,7 +30,11 @@ public sealed class CurrentUserAccessorTests
         await using var context = _fixture.CreateContext();
         using var userManager = CreateUserManager(context);
 
-        var team = new Team(0, $"Team-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        var organization = new Organization(0, $"Org-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        context.Add(organization);
+        await context.SaveChangesAsync();
+
+        var team = new Team(0, organization.Id, $"Team-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
         context.Add(team);
         await context.SaveChangesAsync();
 
@@ -37,6 +42,9 @@ public sealed class CurrentUserAccessorTests
         await userManager.CreateAsync(user, "Test-Only-Passw0rd!1");
         await userManager.AddToRoleAsync(user, WellKnownRoles.Agent);
 
+        // Phase 16: role/organization now come from OrganizationMembership, not Identity's own
+        // per-user role assignment (kept above only as the coarse-gate mirror).
+        context.Add(new OrganizationMembership(0, organization.Id, user.Id, UserRole.Agent, DateTimeOffset.UtcNow));
         context.Add(new TeamMember(team.Id, user.Id, isTeamManager: true, DateTimeOffset.UtcNow));
         await context.SaveChangesAsync();
 
@@ -44,6 +52,7 @@ public sealed class CurrentUserAccessorTests
         var currentUser = await accessor.GetCurrentUserAsync(user.Id);
 
         Assert.NotNull(currentUser);
+        Assert.Equal(organization.Id, currentUser.OrganizationId);
         Assert.Equal(UserRole.Agent, currentUser.Role);
         Assert.Contains(team.Id, currentUser.MemberTeamIds);
         Assert.Contains(team.Id, currentUser.ManagedTeamIds); // IsTeamManager: true
@@ -65,8 +74,9 @@ public sealed class CurrentUserAccessorTests
         Assert.Null(currentUser);
     }
 
-    [Fact]
-    public async Task GetCurrentUser_UserWithNoRole_ReturnsNull()
+    [Fact] // Phase 16: role is authoritatively sourced from OrganizationMembership, so a user with
+           // no membership at all returns null regardless of any Identity role assignment.
+    public async Task GetCurrentUser_UserWithNoOrganizationMembership_ReturnsNull()
     {
         await using var context = _fixture.CreateContext();
         using var userManager = CreateUserManager(context);
@@ -78,6 +88,65 @@ public sealed class CurrentUserAccessorTests
         var currentUser = await accessor.GetCurrentUserAsync(user.Id);
 
         Assert.Null(currentUser);
+    }
+
+    [Fact] // Phase 24 (ADR-0023): a membership in a deactivated organization is never resolvable —
+           // this is what makes organization deactivation actually stop ordinary tenant operation.
+    public async Task GetCurrentUser_OnlyMembershipInDeactivatedOrganization_ReturnsNull()
+    {
+        await using var context = _fixture.CreateContext();
+        using var userManager = CreateUserManager(context);
+
+        var organization = new Organization(0, $"Org-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        context.Add(organization);
+        await context.SaveChangesAsync();
+
+        var user = new ApplicationUser { UserName = $"{Guid.NewGuid():N}@test.local", Email = $"{Guid.NewGuid():N}@test.local", DisplayName = "Test Agent", IsActive = true };
+        await userManager.CreateAsync(user, "Test-Only-Passw0rd!1");
+        context.Add(new OrganizationMembership(0, organization.Id, user.Id, UserRole.Admin, DateTimeOffset.UtcNow));
+        await context.SaveChangesAsync();
+
+        organization.Deactivate();
+        await context.SaveChangesAsync();
+
+        var accessor = new CurrentUserAccessor(context, userManager);
+        var currentUser = await accessor.GetCurrentUserAsync(user.Id);
+
+        Assert.Null(currentUser);
+    }
+
+    [Fact] // A user with memberships in both an active and a deactivated organization is still
+           // resolved — into the active one only; the deactivated membership is simply invisible.
+    public async Task GetCurrentUser_OneActiveOneDeactivatedOrganization_ResolvesOnlyTheActiveOne()
+    {
+        await using var context = _fixture.CreateContext();
+        using var userManager = CreateUserManager(context);
+
+        var activeOrg = new Organization(0, $"Active-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        var inactiveOrg = new Organization(0, $"Inactive-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        context.Add(activeOrg);
+        context.Add(inactiveOrg);
+        await context.SaveChangesAsync();
+
+        var user = new ApplicationUser { UserName = $"{Guid.NewGuid():N}@test.local", Email = $"{Guid.NewGuid():N}@test.local", DisplayName = "Multi Org", IsActive = true };
+        await userManager.CreateAsync(user, "Test-Only-Passw0rd!1");
+        context.Add(new OrganizationMembership(0, activeOrg.Id, user.Id, UserRole.Admin, DateTimeOffset.UtcNow));
+        context.Add(new OrganizationMembership(0, inactiveOrg.Id, user.Id, UserRole.Admin, DateTimeOffset.UtcNow));
+        await context.SaveChangesAsync();
+
+        inactiveOrg.Deactivate();
+        await context.SaveChangesAsync();
+
+        var accessor = new CurrentUserAccessor(context, userManager);
+        var currentUser = await accessor.GetCurrentUserAsync(user.Id);
+        var available = await accessor.GetAvailableOrganizationsAsync(user.Id);
+        var switchToInactive = await accessor.TrySwitchOrganizationAsync(user.Id, inactiveOrg.Id);
+
+        Assert.NotNull(currentUser);
+        Assert.Equal(activeOrg.Id, currentUser.OrganizationId);
+        Assert.Single(available);
+        Assert.Equal(activeOrg.Id, available[0].Id);
+        Assert.False(switchToInactive);
     }
 
     [Fact]

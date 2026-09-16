@@ -29,14 +29,16 @@ public sealed partial class TicketSlaPagesTests : IClassFixture<FlowOpsWebApplic
 
         var detail = await detailResponse.Content.ReadAsStringAsync();
 
-        Assert.Contains("SLA status", detail, StringComparison.Ordinal);
+        // Badge-fix pass: SLA state is now a plain <h3>SLA</h3> panel (sla-state text directly
+        // beneath it), not a separately-labelled "SLA status" row.
+        Assert.Contains(">SLA<", detail, StringComparison.Ordinal);
         // Freshly created and well inside its target, so the live branch is Within.
         Assert.Contains("Within", detail, StringComparison.Ordinal);
         // The seeded ticket is High priority: the 480-minute default row (SLA-RULE-02).
         Assert.Contains("480 minutes", detail, StringComparison.Ordinal);
-        Assert.Contains("Paused time", detail, StringComparison.Ordinal);
+        Assert.Contains("Paused", detail, StringComparison.Ordinal);
         Assert.Contains("0 minutes", detail, StringComparison.Ordinal);
-        Assert.Contains("SLA due", detail, StringComparison.Ordinal);
+        Assert.Contains("Due ", detail, StringComparison.Ordinal);
         // Remaining is rendered as a relative duration, e.g. "7h 59m left".
         Assert.Matches(@"\d+[dhm][^<]*left", detail);
 
@@ -46,7 +48,9 @@ public sealed partial class TicketSlaPagesTests : IClassFixture<FlowOpsWebApplic
 
         var queue = await queueResponse.Content.ReadAsStringAsync();
 
-        Assert.Contains("<th scope=\"col\">SLA</th>", queue, StringComparison.Ordinal);
+        // Phase 11: Work Queue rows are composed anchors (.q-row), not a <table> — the SLA state
+        // renders in its own dedicated element rather than a column header.
+        Assert.Contains("q-sla__state", queue, StringComparison.Ordinal);
         Assert.Contains("Within", queue, StringComparison.Ordinal);
         Assert.Matches(@"\d+[dhm][^<]*left", queue);
 

@@ -1,5 +1,7 @@
 using FlowOps.Domain.Catalog;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
+using FlowOps.Domain.Platform;
 using FlowOps.Domain.Sla;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
@@ -26,6 +28,12 @@ public sealed class FlowOpsDbContext : IdentityDbContext<ApplicationUser, Applic
 
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
+    public DbSet<Organization> Organizations => Set<Organization>();
+
+    public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
+
+    public DbSet<Invitation> Invitations => Set<Invitation>();
+
     public DbSet<Team> Teams => Set<Team>();
 
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
@@ -45,6 +53,10 @@ public sealed class FlowOpsDbContext : IdentityDbContext<ApplicationUser, Applic
     /// <summary>Exposed for read-side queries only — writes always go through <see cref="Ticket"/>'s
     /// mutation methods, never inserted/updated/deleted directly (AUDIT-RULE-01).</summary>
     public DbSet<TicketEvent> TicketEvents => Set<TicketEvent>();
+
+    /// <summary>Phase 24 (ADR-0023): append-only, written only by <c>PlatformOrganizationService</c>/
+    /// <c>PlatformUserService</c> alongside the lifecycle mutation itself, never updated/deleted.</summary>
+    public DbSet<PlatformAuditEvent> PlatformAuditEvents => Set<PlatformAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

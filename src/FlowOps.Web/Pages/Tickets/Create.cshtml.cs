@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain;
+using FlowOps.Domain.Directory;
 using FlowOps.Domain.Tickets;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -37,7 +38,16 @@ public sealed class CreateModel : PageModel
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
-    public TicketCreationOptions Options { get; private set; } = new([]);
+    public TicketCreationOptions Options { get; private set; } = new([], []);
+
+    /// <summary>True when the caller has no eligible team+category to file a ticket against yet —
+    /// Phase 22 (PG-3): the form is hidden in favor of an explanatory empty state, rather than
+    /// silently rendering with an empty Category dropdown.</summary>
+    public bool WorkspaceNotReady => Options.Teams.Count == 0;
+
+    /// <summary>Whether the caller can actually perform the setup this empty state points to —
+    /// never shown to a non-Admin, who cannot reach <c>/Admin</c> anyway (CLAUDE.md §6.1).</summary>
+    public bool CanSetUpWorkspace { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -55,6 +65,7 @@ public sealed class CreateModel : PageModel
         }
 
         Options = await _ticketQueryService.GetCreationOptionsAsync(user, cancellationToken);
+        CanSetUpWorkspace = DirectoryAccessPolicy.CanManageTeams(user);
         return Page();
     }
 
@@ -70,6 +81,7 @@ public sealed class CreateModel : PageModel
         // teams/categories could have changed since the form was rendered, and this is also what
         // the page needs to re-render if validation fails below.
         Options = await _ticketQueryService.GetCreationOptionsAsync(user, cancellationToken);
+        CanSetUpWorkspace = DirectoryAccessPolicy.CanManageTeams(user);
 
         if (!ModelState.IsValid)
         {

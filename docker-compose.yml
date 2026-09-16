@@ -41,6 +41,9 @@ services:
       # CLAUDE.md §7.3 / ADR-0007: this container is exactly the case that decision exists for — a
       # freshly created Postgres volume has no schema until something applies it.
       FlowOps__Database__ApplyMigrationsOnStartup: "true"
+      # CLAUDE.md §14: demo seeding, dev-only credential, never reused anywhere else.
+      FlowOps__Demo__Enabled: "true"
+      FlowOps__Demo__PersonaPassword: Demo-Only-Passw0rd!1
       ConnectionStrings__FlowOps: Host=postgres;Port=5432;Database=flowops_dev;Username=flowops;Password=flowops_dev_password
     ports:
       - "8080:8080"

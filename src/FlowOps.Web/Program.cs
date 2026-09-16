@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
+using FlowOps.Application.Accounts;
 using FlowOps.Application.Demo;
+using FlowOps.Application.Organizations;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Attention;
 using FlowOps.Infrastructure.Identity;
@@ -88,6 +90,18 @@ builder.Services
         // ASP.NET Core Identity's own default password-hashing mechanism (PBKDF2) is used as-is
         // (CLAUDE.md §12: "Never hand-roll hashing") — nothing here changes the hasher.
         options.User.RequireUniqueEmail = true;
+
+        // Phase 22 (SEC-1): explicit rather than left to Identity's own defaults (a 6-character
+        // minimum), which is weaker than a reasonable modern baseline for an operations platform.
+        // This only governs *new* passwords (registration, invitation acceptance, password
+        // change) — Identity validates a password against the current options only when it is
+        // set, never re-validates an already-hashed password on login, so no existing user is
+        // silently locked out by this becoming stricter.
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
     })
     .AddEntityFrameworkStores<FlowOpsDbContext>()
     .AddDefaultTokenProviders();
@@ -145,6 +159,16 @@ builder.Services.AddRateLimiter(options =>
         return ValueTask.CompletedTask;
     };
 
+    // CLAUDE.md §12's "5/min/IP" is the real production value and the default here — configurable
+    // only so FlowOpsWebApplicationFactory (Phase 24A) can raise it for its own in-process test
+    // host via UseSetting. Every request a WebApplicationFactory TestServer handles shares one
+    // synthetic remote IP, so once account approval requires an extra, genuine login POST per
+    // registered test fixture (no more auto-sign-in — see AccountService.RegisterAsync), the
+    // existing per-class "stay at or under five sign-ins" budget many Web.Tests classes already
+    // documented would need rewriting around a production security control instead of around test
+    // volume. No appsettings.*.json file sets this key, so every real deployment keeps exactly 5.
+    var loginPermitLimit = builder.Configuration.GetValue<int?>("RateLimiting:Login:PermitLimitPerMinute") ?? 5;
+
     options.AddPolicy("login", httpContext =>
     {
         // A Razor Page is a single endpoint for every verb, so [EnableRateLimiting] on LoginModel
@@ -162,13 +186,19 @@ builder.Services.AddRateLimiter(options =>
 
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 5,
+            PermitLimit = loginPermitLimit,
             Window = TimeSpan.FromMinutes(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 0,
         });
     });
 });
+
+// Phase 19 / ADR-0018: CurrentUserAccessor reads/writes the (Data-Protection-protected) current-
+// organization cookie via IHttpContextAccessor — the standard ASP.NET Core service for this,
+// not a new abstraction. Required so the same class works both from a real request (organization
+// switching) and from Application.Tests' direct construction with no HTTP context at all.
+builder.Services.AddHttpContextAccessor();
 
 // AUTH-RULE-04: resolves the Domain's CurrentUser from the authoritative persistence model —
 // see CurrentUserAccessor's own doc comment for why this is not sourced from cookie claims.
@@ -178,6 +208,24 @@ builder.Services.AddScoped<CurrentUserAccessor>();
 // Application layer from this clock. Registered here because the composition root is the one
 // place CLAUDE.md §4.4 permits the real clock to be named. Tests substitute a fake.
 builder.Services.AddSingleton(TimeProvider.System);
+
+// Phase 17: registration, profile/settings, and account deletion.
+builder.Services.AddScoped<AccountService>();
+
+// Phase 18: organization invitations and member management.
+builder.Services.AddScoped<InvitationService>();
+builder.Services.AddScoped<MembershipService>();
+
+// ADR-0021: Directory/Catalog modules' first real public surface — team and category creation
+// for the Workspace Setup checklist's "set up your first team" step.
+builder.Services.AddScoped<FlowOps.Application.Directory.TeamService>();
+builder.Services.AddScoped<FlowOps.Application.Catalog.CatalogService>();
+
+// Phase 24 (ADR-0023): platform administration — deliberately separate DI registrations from
+// every tenant-scoped service above, since none of them are organization-scoped.
+builder.Services.AddScoped<FlowOps.Application.Platform.PlatformUserAccessor>();
+builder.Services.AddScoped<FlowOps.Application.Platform.PlatformOrganizationService>();
+builder.Services.AddScoped<FlowOps.Application.Platform.PlatformUserService>();
 
 // Phase 5 ticket use cases.
 builder.Services.AddScoped<TicketService>();
@@ -216,19 +264,23 @@ builder.Services.AddRazorPages(options =>
     // health checks, mapped separately below) are reachable anonymously.
     options.Conventions.AuthorizeFolder("/");
     options.Conventions.AllowAnonymousToPage("/Account/Login");
+    options.Conventions.AllowAnonymousToPage("/Account/Register");
+    // Phase 24A: reached immediately after registration, before any session exists — must be
+    // reachable exactly like Register/Login themselves.
+    options.Conventions.AllowAnonymousToPage("/Account/PendingApproval");
+    options.Conventions.AllowAnonymousToPage("/Account/AcceptInvitation");
     options.Conventions.AllowAnonymousToPage("/Account/AccessDenied");
     // Phase 12 (§11.3): the exception-handler landing page — an unhandled exception can happen
     // before authentication even runs, so this must be reachable regardless of session state.
     options.Conventions.AllowAnonymousToPage("/Error");
 
     // AUTH-RULE-01 / §6.1: the coarse gate — "Manage users/teams/categories/SLA" is Admin-only.
-    // This is deliberately the *only* role-restricted folder added in Phase 4; it exists to prove
-    // the coarse-gate mechanism, not to implement admin features (later phases).
-    options.Conventions.AuthorizeFolder("/Admin", "AdminOnly");
+    // ADR-0021: no longer a folder-level RequireRole policy — see that ADR for why the Phase 4
+    // Identity-role-claim gate silently stopped working for every real user once Phase 16 made
+    // OrganizationMembership.Role the sole authority. /Admin now just needs authentication (via
+    // AuthorizeFolder("/") above); Pages/Admin/Index.cshtml.cs does the actual Admin check itself,
+    // the same CurrentUserAccessor + CurrentUser.Role pattern every other role-gated page uses.
 });
-
-builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("AdminOnly", policy => policy.RequireRole(WellKnownRoles.Admin));
 
 builder.Services
     .AddHealthChecks()
@@ -261,6 +313,79 @@ if (args.Contains("init-database"))
         await app.DisposeAsync();
         return 1;
     }
+}
+
+// Phase 24 (ADR-0023): the ONLY way ApplicationUser.IsPlatformAdmin is ever set — no tenant-facing
+// UI, no self-service path, no seeded credential. Requires the same trust tier as running a
+// deployment command or a database migration (Render shell, `docker compose exec`, or local
+// `dotnet run -- grant-platform-admin <email>`), deliberately: platform authority is a
+// high-value boundary (CLAUDE.md's security posture), so granting it must never be reachable from
+// an authenticated HTTP session. Symmetric `revoke-platform-admin` exists so a mistaken grant is
+// never a one-way door recoverable only via raw SQL.
+if (args.Length >= 2 && (args[0] == "grant-platform-admin" || args[0] == "revoke-platform-admin"))
+{
+    var grant = args[0] == "grant-platform-admin";
+    var email = args[1];
+    var cliLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var user = await userManager.FindByEmailAsync(email);
+    if (user is null)
+    {
+        cliLogger.LogCritical("No user found with email {Email}.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    user.IsPlatformAdmin = grant;
+    var result = await userManager.UpdateAsync(user);
+    if (!result.Succeeded)
+    {
+        cliLogger.LogCritical("Failed to update platform-admin status for {Email}: {Errors}", email, string.Join("; ", result.Errors.Select(e => e.Description)));
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    cliLogger.LogInformation("{Email} platform-admin status is now: {IsPlatformAdmin}.", email, grant);
+    await app.DisposeAsync();
+    return 0;
+}
+
+// Phase 24A (ADR-0024): closes the bootstrap gap `grant-platform-admin` alone would otherwise
+// leave — the very first Platform Admin is themselves a self-registered account, which starts
+// Pending exactly like any other (ADR-0024's whole point is that platform authority never implies
+// approval, and vice versa). With no Platform Admin yet able to sign in, nothing could ever approve
+// that first account through the ordinary /Platform/Users workflow — the same trust tier as
+// grant-platform-admin itself (a deployment/shell command, never an HTTP endpoint) is the correct
+// place to break that circularity.
+if (args.Length >= 2 && args[0] == "approve-account")
+{
+    var email = args[1];
+    var cliLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var user = await userManager.FindByEmailAsync(email);
+    if (user is null)
+    {
+        cliLogger.LogCritical("No user found with email {Email}.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    user.RegistrationApprovedAt = TimeProvider.System.GetUtcNow();
+    user.LockoutEnabled = false;
+    user.LockoutEnd = null;
+    var result = await userManager.UpdateAsync(user);
+    if (!result.Succeeded)
+    {
+        cliLogger.LogCritical("Failed to approve account for {Email}: {Errors}", email, string.Join("; ", result.Errors.Select(e => e.Description)));
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    cliLogger.LogInformation("{Email} account is now approved.", email);
+    await app.DisposeAsync();
+    return 0;
 }
 
 // Phase 15 / ADR-0013: must run before anything that reads Request.Scheme/IsHttps — including the
@@ -301,11 +426,16 @@ app.Use(async (context, next) =>
         headers["X-Frame-Options"] = "DENY";
         headers["Permissions-Policy"] =
             "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()";
-        // Written for the application's actual current surface (CLAUDE.md §11.1): no JavaScript
-        // anywhere, no external CDN, local CSS only, no iframes. Tighten further only if that
+        // Written for the application's actual current surface (CLAUDE.md §11.1): minimal
+        // JavaScript, no external CDN, local CSS only, no iframes. Tighten further only if that
         // changes; loosen only with a documented reason — not for hypothetical future features.
+        // font-src 'self' added for the self-hosted Geist/Geist Mono @font-face files under
+        // wwwroot/fonts — no CDN, so this stays same-origin only, consistent with the rule above.
+        // script-src 'self' (Phase 24A-Extension, ADR-0025): permits loading the one self-hosted
+        // script (/js/pending-approval.js) that polls account-approval status — still no inline
+        // script (no 'unsafe-inline'), no CDN, no third-party origin of any kind.
         headers["Content-Security-Policy"] =
-            "default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+            "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
         return Task.CompletedTask;
     });
 

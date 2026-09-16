@@ -1,0 +1,102 @@
+@page
+@model FlowOps.Web.Pages.Platform.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Users</h1>
+                <span class="page-header__count">@Model.Users.TotalCount user@(Model.Users.TotalCount == 1 ? "" : "s")</span>
+            </div>
+            <p class="page-context">Every user on the platform, across every organization.</p>
+        </div>
+        @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search users...", Model.Search))
+    </div>
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Status")); }
+    @{
+        var statusStats = new List<FlowOps.Web.StatStripItem>
+        {
+            new("Pending approval", Model.Summary.Pending.ToString()),
+            new("Active", Model.Summary.Active.ToString()),
+            new("Inactive", Model.Summary.Inactive.ToString()),
+        };
+        await Html.RenderPartialAsync("_StatStrip", statusStats);
+    }
+    @if (Model.Summary.Pending > 0)
+    {
+        <p><a class="text-link" asp-page="/Platform/Users/Pending">Review pending approvals &rarr;</a></p>
+    }
+</div>
+
+@if (Model.Users.TotalCount == 0)
+{
+    @if (!string.IsNullOrWhiteSpace(Model.Search))
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No users found</p>
+            <p>No users matched "@Model.Search".</p>
+            <p><a class="back-link" asp-page="/Platform/Users/Index">Clear search</a></p>
+        </div>
+    }
+    else
+    {
+        <p class="empty-state">No users exist yet.</p>
+    }
+}
+else
+{
+    var usersRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "search", Model.Search } };
+    await Html.RenderPartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Users/Index",
+            Model.Users,
+            usersRouteValues,
+            "Users pagination",
+            FlowOps.Web.PaginationPlacement.Top));
+    <div class="table-responsive">
+        <table>
+            <caption class="sr-only">Users on the platform</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Organizations</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Model.Users.Items)
+                {
+                    <tr>
+                        <td>
+                            <div class="fo-row-identity">
+                                <span class="fo-avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(user.DisplayName)</span>
+                                <a asp-page="/Platform/Users/Details" asp-route-id="@user.UserId">@user.DisplayName</a>
+                            </div>
+                        </td>
+                        <td class="cell-muted">@user.Email</td>
+                        <td>
+                            <span class="fo-status-dot @FlowOps.Web.AccountStatusDisplay.DotClass(user.Status)" aria-hidden="true"></span>
+                            @FlowOps.Web.AccountStatusDisplay.Label(user.Status)
+                        </td>
+                        <td class="cell-muted">@user.OrganizationCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @await Html.PartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Users/Index",
+            Model.Users,
+            usersRouteValues,
+            "Users pagination"))
+}

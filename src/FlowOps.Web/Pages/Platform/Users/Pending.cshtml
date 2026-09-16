@@ -1,0 +1,105 @@
+@page
+@model FlowOps.Web.Pages.Platform.Users.PendingModel
+@{
+    ViewData["Title"] = "Pending accounts";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Pending accounts</h1>
+                <span class="page-header__count">@Model.PendingUsers.TotalCount pending</span>
+            </div>
+            <p class="page-context">Newly registered accounts cannot use FlowOps until approved here.</p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+@if (Model.PendingUsers.TotalCount == 0)
+{
+    <p class="empty-state">No accounts are awaiting approval.</p>
+}
+else
+{
+    await Html.RenderPartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Users/Pending",
+            Model.PendingUsers,
+            new Microsoft.AspNetCore.Routing.RouteValueDictionary(),
+            "Pending accounts pagination",
+            FlowOps.Web.PaginationPlacement.Top));
+    <div class="table-responsive">
+        <table>
+            <caption class="sr-only">Accounts pending platform approval</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Organizations</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Model.PendingUsers.Items)
+                {
+                    <tr>
+                        <td>
+                            <div class="fo-row-identity">
+                                <span class="fo-avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(user.DisplayName)</span>
+                                <a asp-page="/Platform/Users/Details" asp-route-id="@user.UserId">@user.DisplayName</a>
+                            </div>
+                        </td>
+                        <td class="cell-muted">@user.Email</td>
+                        <td class="cell-muted">@user.OrganizationCount</td>
+                        <td>
+                            <div class="project-actions">
+                                <form method="post" asp-page-handler="Approve">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@user.UserId" />
+                                    <button type="submit" class="btn-primary" aria-label="Approve @user.DisplayName">Approve</button>
+                                </form>
+                                @* Phase 24A: rejection is terminal and irreversible (ADR-0025) — confirmed
+                                   before it fires. See flowops.css's own .confirm comment. *@
+                                <div class="confirm">
+                                    <input type="checkbox" id="confirm-reject-@user.UserId" class="confirm-toggle" />
+                                    <label for="confirm-reject-@user.UserId" class="btn-caution confirm-trigger" aria-label="Reject @user.DisplayName">Reject</label>
+                                    <div class="confirm-panel">
+                                        <p class="confirm-panel__question">Reject this account?</p>
+                                        <p class="confirm-panel__detail">
+                                            This permanently rejects @user.DisplayName's pending account. It will
+                                            never gain the ability to sign in, and this cannot be reversed from here.
+                                        </p>
+                                        <div class="confirm-panel__actions">
+                                            <form method="post" asp-page-handler="Reject">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@user.UserId" />
+                                                <button type="submit" class="btn-caution">Yes, reject</button>
+                                            </form>
+                                            <label for="confirm-reject-@user.UserId" class="btn">Cancel</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @await Html.PartialAsync(
+        "_Pagination",
+        FlowOps.Web.PaginationViewModel.For(
+            "/Platform/Users/Pending",
+            Model.PendingUsers,
+            new Microsoft.AspNetCore.Routing.RouteValueDictionary(),
+            "Pending accounts pagination"))
+}
+
+<p><a class="back-link" asp-page="/Platform/Users/Index">&larr; Back to users</a></p>

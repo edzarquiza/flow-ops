@@ -1,0 +1,11 @@
+@model FlowOps.Web.SectionHeadingViewModel
+@* Component-consolidation cleanup: the one panel/section heading used everywhere a card or zone
+   needs a title — no icon square, no uppercase eyebrow repeating the page's own context, both of
+   which had been copy-pasted per page. See SectionHeadingViewModel's own doc comment. *@
+<div class="panel__head">
+    <h2>@Model.Title</h2>
+    @if (Model.Subtitle is not null)
+    {
+        <p class="page-context">@Model.Subtitle</p>
+    }
+</div>

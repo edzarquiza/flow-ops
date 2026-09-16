@@ -1,0 +1,232 @@
+@page
+@model FlowOps.Web.Pages.Platform.IndexModel
+@{
+    ViewData["Title"] = "Platform";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Platform Administration</h1>
+            </div>
+            <p class="page-context">Signed in as @Model.PlatformAdminName — scoped to the whole platform, not one organization.</p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+@* ---- Overview: four figures, hairline-divided, no icon beside any number (design-system.md §8:
+   "No icon accompanies a number — the number is the visual element"). Renders through the shared
+   _StatStrip partial (component-consolidation cleanup) — the same component Organizations Detail
+   and Users now use, rather than a page-specific KPI block. ---- *@
+<div class="zone">
+    <h2 class="section-head section-head--plain">Overview</h2>
+    @{
+        var overviewStats = new List<FlowOps.Web.StatStripItem>
+        {
+            new("Organizations", Model.OrganizationSummary.Total.ToString(), $"{Model.OrganizationSummary.Active} active · {Model.OrganizationSummary.Inactive} inactive"),
+            new("Users", Model.UserSummary.Total.ToString(), $"{Model.UserSummary.Active} active · {Model.UserSummary.Pending} pending · {Model.UserSummary.Inactive} inactive"),
+            new("Tickets", Model.TicketSummary.Total.ToString(), $"{Model.TicketSummary.CreatedInLast30Days} in last 30 days"),
+            new("Platform health", "Healthy", "Database connected", Highlight: true),
+        };
+        await Html.RenderPartialAsync("_StatStrip", overviewStats);
+    }
+</div>
+
+@* ---- Pending Approvals: the page's most operationally important section — approvable directly
+   here, never requiring a click into /Platform/Users first. Reuses the at-risk queue's own
+   left-edge urgency-bar convention rather than a page-specific alert style; the bar only ever
+   renders on a real row — see the empty branch below. ---- *@
+<div class="zone">
+    <div class="section-head-row">
+        <h2 class="section-head section-head--plain">Pending approvals</h2>
+        @if (Model.UserSummary.Pending > Model.PendingAccounts.Count)
+        {
+            <a class="table-action-link" asp-page="/Platform/Users/Pending">View all &rarr;</a>
+        }
+    </div>
+    @if (Model.PendingAccounts.Count == 0)
+    {
+        <p class="empty-state">
+            <span class="fo-status-dot fo-status-dot--ok" aria-hidden="true"></span>
+            All accounts are currently approved.
+        </p>
+    }
+    else
+    {
+        <p class="page-context">New accounts waiting for platform approval.</p>
+        <div class="pending-approvals">
+            @foreach (var pending in Model.PendingAccounts)
+            {
+                <div class="approval-row">
+                    <span class="fo-avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(pending.DisplayName)</span>
+                    <div class="approval-row__main">
+                        <div class="approval-row__org">@(pending.OrganizationName ?? "—")</div>
+                        <div class="approval-row__meta">
+                            @pending.DisplayName · @pending.Email · registered
+                            <time datetime="@pending.RegisteredAt.ToString("O")" title="@pending.RegisteredAt.ToString("O")">@pending.RegisteredAt.ToString("yyyy-MM-dd")</time>
+                        </div>
+                    </div>
+                    <span class="approval-row__status">Pending</span>
+                    <div class="approval-row__actions project-actions">
+                        <form method="post" asp-page-handler="Approve">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@pending.UserId" />
+                            <button type="submit" class="btn-primary" aria-label="Approve account for @pending.DisplayName">Approve</button>
+                        </form>
+                        @* Phase 24A: rejection is terminal and irreversible (ADR-0025) — the highest-
+                           consequence single click in the product, so it gets a confirmation step
+                           rather than firing immediately. See flowops.css's own .confirm comment. *@
+                        <div class="confirm">
+                            <input type="checkbox" id="confirm-reject-@pending.UserId" class="confirm-toggle" />
+                            <label for="confirm-reject-@pending.UserId" class="btn-caution confirm-trigger" aria-label="Reject account for @pending.DisplayName">Reject</label>
+                            <div class="confirm-panel">
+                                <p class="confirm-panel__question">Reject this account?</p>
+                                <p class="confirm-panel__detail">
+                                    This permanently rejects @pending.DisplayName's pending account. It will
+                                    never gain the ability to sign in, and this cannot be reversed from here.
+                                </p>
+                                <div class="confirm-panel__actions">
+                                    <form method="post" asp-page-handler="Reject">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@pending.UserId" />
+                                        <button type="submit" class="btn-caution">Yes, reject</button>
+                                    </form>
+                                    <label for="confirm-reject-@pending.UserId" class="btn">Cancel</label>
+                                </div>
+                            </div>
+                        </div>
+                        <a class="btn" asp-page="/Platform/Users/Details" asp-route-id="@pending.UserId" aria-label="Review account for @pending.DisplayName">Review</a>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@* ---- Organizations: visible immediately, no click-through required — a bounded, priority-ordered
+   subset; full management remains on /Platform/Organizations. A homogeneous record list someone
+   scans and compares, so it stays a strict-column table, unlike Pending Approvals above. ---- *@
+<div class="zone">
+    <div class="section-head-row">
+        <h2 class="section-head section-head--plain">Organizations</h2>
+        <a class="table-action-link" asp-page="/Platform/Organizations/Index">View all &rarr;</a>
+    </div>
+    @if (Model.Organizations.Count == 0)
+    {
+        <p class="empty-state">No organizations exist yet.</p>
+    }
+    else
+    {
+        @if (Model.OrganizationSummary.Total > Model.Organizations.Count)
+        {
+            <p class="zone-caption">@Model.Organizations.Count of @Model.OrganizationSummary.Total organizations shown.</p>
+        }
+        else
+        {
+            <p class="zone-caption">All organizations in this FlowOps instance.</p>
+        }
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Organizations on the platform</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Organization</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Members</th>
+                        <th scope="col">Tickets</th>
+                        <th scope="col">Created</th>
+                        <th scope="col">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var org in Model.Organizations)
+                    {
+                        <tr>
+                            <td>@org.Name</td>
+                            <td>
+                                <span class="fo-status-dot @(org.IsActive ? "fo-status-dot--ok" : "fo-status-dot--muted")" aria-hidden="true"></span>
+                                @(org.IsActive ? "Active" : "Inactive")
+                            </td>
+                            <td class="cell-muted tabular-nums">@org.MemberCount</td>
+                            <td class="cell-muted tabular-nums">@org.TicketCount</td>
+                            <td class="cell-muted"><time datetime="@org.CreatedAt.ToString("O")" title="@org.CreatedAt.ToString("O")">@org.CreatedAt.ToString("yyyy-MM-dd")</time></td>
+                            <td><a class="table-action-link" asp-page="/Platform/Organizations/Details" asp-route-id="@org.OrganizationId" aria-label="View @org.Name">View &rarr;</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@* ---- Users: visible immediately, mirroring Organizations above — the most recently joined
+   accounts, not the full paginated set. ---- *@
+<div class="zone">
+    <div class="section-head-row">
+        <h2 class="section-head section-head--plain">Users</h2>
+        <a class="table-action-link" asp-page="/Platform/Users/Index">View all &rarr;</a>
+    </div>
+    @if (Model.RecentUsers.Count == 0)
+    {
+        <p class="empty-state">No users exist yet.</p>
+    }
+    else
+    {
+        @if (Model.UserSummary.Total > Model.RecentUsers.Count)
+        {
+            <p class="zone-caption">@Model.RecentUsers.Count of @Model.UserSummary.Total users shown — most recently joined.</p>
+        }
+        else
+        {
+            <p class="zone-caption">All registered users in this FlowOps instance.</p>
+        }
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Recently joined users on the platform</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">User</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Organizations</th>
+                        <th scope="col">Joined</th>
+                        <th scope="col">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in Model.RecentUsers)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fo-row-identity">
+                                    <span class="fo-avatar" aria-hidden="true">@FlowOps.Web.InitialsDisplay.From(user.DisplayName)</span>
+                                    <a class="table-action-link" asp-page="/Platform/Users/Details" asp-route-id="@user.UserId">@user.DisplayName</a>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="fo-status-dot @FlowOps.Web.AccountStatusDisplay.DotClass(user.Status)" aria-hidden="true"></span>
+                                @FlowOps.Web.AccountStatusDisplay.Label(user.Status)
+                            </td>
+                            <td class="cell-muted tabular-nums">@user.OrganizationCount</td>
+                            <td class="cell-muted">
+                                @if (user.CreatedAt is { } joinedAt)
+                                {
+                                    <time datetime="@joinedAt.ToString("O")" title="@joinedAt.ToString("O")">@joinedAt.ToString("yyyy-MM-dd")</time>
+                                }
+                                else
+                                {
+                                    <text>—</text>
+                                }
+                            </td>
+                            <td><a class="table-action-link" asp-page="/Platform/Users/Details" asp-route-id="@user.UserId" aria-label="View @user.DisplayName">View &rarr;</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

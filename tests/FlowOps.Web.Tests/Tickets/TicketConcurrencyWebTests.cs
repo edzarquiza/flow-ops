@@ -44,7 +44,7 @@ public sealed class TicketConcurrencyWebTests : IClassFixture<FlowOpsWebApplicat
 
         using var setupScope = _factory.Services.CreateScope();
         var managerId = await TestReferenceData.UserIdAsync(setupScope.ServiceProvider, TestUsers.ManagerEmail);
-        var managerUser = new CurrentUser(managerId, UserRole.Manager, new HashSet<int> { _factory.TeamId }, new HashSet<int> { _factory.TeamId });
+        var managerUser = new CurrentUser(managerId, _factory.OrganizationId, UserRole.Manager, new HashSet<int> { _factory.TeamId }, new HashSet<int> { _factory.TeamId });
 
         // Get the ticket to Assigned — PutOnHold (below) is legal from Assigned or InProgress, but
         // not from the ticket's initial Open status.

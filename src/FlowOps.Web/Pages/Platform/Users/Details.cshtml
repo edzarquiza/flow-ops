@@ -1,0 +1,168 @@
+@page "{id:guid}"
+@model FlowOps.Web.Pages.Platform.Users.DetailsModel
+@{
+    ViewData["Title"] = Model.TargetUser?.DisplayName ?? "User";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>@Model.TargetUser!.DisplayName</h1>
+            </div>
+            <p class="page-context">
+                <span class="fo-status-dot @FlowOps.Web.AccountStatusDisplay.DotClass(Model.TargetUser.Status)" aria-hidden="true"></span>
+                @FlowOps.Web.AccountStatusDisplay.Label(Model.TargetUser.Status) — @Model.TargetUser.Email
+            </p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Organization memberships")); }
+    @if (Model.TargetUser.Memberships.Count == 0)
+    {
+        <p class="empty-state">This user does not belong to any organization.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Organizations @Model.TargetUser.DisplayName belongs to</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Organization</th>
+                        <th scope="col">Role</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var membership in Model.TargetUser.Memberships)
+                    {
+                        <tr>
+                            <td><a asp-page="/Platform/Organizations/Details" asp-route-id="@membership.OrganizationId">@membership.OrganizationName</a></td>
+                            <td class="cell-muted">@membership.Role</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Recent activity")); }
+    @if (Model.RecentActivity.Count == 0)
+    {
+        <p class="empty-state">No platform-administration activity recorded for this user.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Platform-administration activity for @Model.TargetUser.DisplayName</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Event</th>
+                        <th scope="col">Actor</th>
+                        <th scope="col">When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var activity in Model.RecentActivity)
+                    {
+                        <tr>
+                            <td>@activity.EventType</td>
+                            <td>@activity.ActorDisplayName</td>
+                            <td><time datetime="@activity.OccurredAt.ToString("O")" title="@activity.OccurredAt.ToString("O")">@activity.OccurredAt.ToString("yyyy-MM-dd HH:mm")</time></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Lifecycle")); }
+    @switch (Model.TargetUser.Status)
+    {
+        case FlowOps.Domain.Accounts.AccountStatus.Pending:
+            <p class="prose">
+                This account has registered but has not yet been reviewed — it cannot sign in.
+                Approving grants it its first-ever ability to authenticate; rejecting means it never
+                will, without deleting the account, its organization, or its membership.
+            </p>
+            <div class="project-actions">
+                <form method="post" asp-page-handler="Approve">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn-primary">Approve user</button>
+                </form>
+                <div class="confirm">
+                    <input type="checkbox" id="confirm-reject-user" class="confirm-toggle" />
+                    <label for="confirm-reject-user" class="btn-caution confirm-trigger">Reject user</label>
+                    <div class="confirm-panel">
+                        <p class="confirm-panel__question">Reject this account?</p>
+                        <p class="confirm-panel__detail">
+                            This permanently rejects @Model.TargetUser.DisplayName's pending account. It will
+                            never gain the ability to sign in, and this cannot be reversed from here.
+                        </p>
+                        <div class="confirm-panel__actions">
+                            <form method="post" asp-page-handler="Reject">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn-caution">Yes, reject</button>
+                            </form>
+                            <label for="confirm-reject-user" class="btn">Cancel</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            break;
+        case FlowOps.Domain.Accounts.AccountStatus.Active:
+            <p class="prose">
+                Deactivating this user immediately prevents sign-in. Every organization membership,
+                ticket, comment, and historical event they are attributed to remains exactly as it is —
+                nothing is deleted or reassigned. Blocked if this user is the only Admin of any
+                organization. This can be reversed at any time.
+            </p>
+            <div class="confirm">
+                <input type="checkbox" id="confirm-deactivate-user" class="confirm-toggle" />
+                <label for="confirm-deactivate-user" class="btn-caution confirm-trigger">Deactivate user</label>
+                <div class="confirm-panel">
+                    <p class="confirm-panel__question">Deactivate this user?</p>
+                    <p class="confirm-panel__detail">
+                        @Model.TargetUser.DisplayName will immediately lose the ability to sign in. Every
+                        organization membership, ticket, comment, and historical event stays exactly as
+                        it is. This can be reversed at any time.
+                    </p>
+                    <div class="confirm-panel__actions">
+                        <form method="post" asp-page-handler="Deactivate">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn-caution">Yes, deactivate</button>
+                        </form>
+                        <label for="confirm-deactivate-user" class="btn">Cancel</label>
+                    </div>
+                </div>
+            </div>
+            break;
+        case FlowOps.Domain.Accounts.AccountStatus.Inactive:
+            <p class="prose">This user is inactive. Reactivating restores their ability to sign in immediately.</p>
+            <form method="post" asp-page-handler="Reactivate">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn-primary">Reactivate user</button>
+            </form>
+            break;
+        default:
+            <p class="prose">
+                This account was rejected during initial review and never gained the ability to
+                sign in. This is a terminal outcome — the account, its organization, and its
+                membership all remain intact, but rejection cannot be reversed from here.
+            </p>
+            break;
+    }
+</div>
+
+<p><a class="back-link" asp-page="/Platform/Users/Index">&larr; Back to users</a></p>

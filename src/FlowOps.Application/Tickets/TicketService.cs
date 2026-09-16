@@ -64,16 +64,61 @@ public sealed class TicketService
 
         // TICKET-INV-02 — the Domain enforces "category belongs to team" but cannot look the
         // category's team up itself (no I/O in Domain), so that fact is resolved here and passed in.
-        var categoryTeamId = await _dbContext.Categories
+        // Phase 16: the team's organization is resolved in the same query, since a category whose
+        // team belongs to a different organization must be refused exactly like a nonexistent one
+        // (AUTH-RULE-04's non-disclosure pattern) — never disclosed by a different error shape.
+        var categoryTeam = await _dbContext.Categories
             .AsNoTracking()
             .Where(c => c.Id == request.CategoryId)
-            .Select(c => (int?)c.TeamId)
+            .Join(_dbContext.Teams, c => c.TeamId, t => t.Id, (c, t) => new { t.Id, t.OrganizationId, TeamIsActive = t.IsActive, CategoryIsActive = c.IsActive })
             .SingleOrDefaultAsync(cancellationToken);
 
-        if (categoryTeamId is null)
+        if (categoryTeam is null)
         {
             throw new DomainRuleException("TICKET-INV-02", "The selected category does not exist.");
         }
+
+        if (categoryTeam.OrganizationId != user.OrganizationId)
+        {
+            _logger.LogWarning(
+                "Authorization denied: user {ActorUserId} in organization {ActorOrganizationId} attempted to create a ticket against team {TeamId} in a different organization.",
+                user.UserId,
+                user.OrganizationId,
+                categoryTeam.Id);
+            throw new TicketAccessDeniedException("This team is not available to you.");
+        }
+
+        // Phase 22 (ADR-0022): a deactivated team or category can no longer be selected for a
+        // *new* ticket, refused identically to a nonexistent/cross-organization one — existing
+        // tickets already filed against either are completely unaffected, since neither row is
+        // ever touched by deactivation.
+        if (!categoryTeam.TeamIsActive)
+        {
+            throw new TicketAccessDeniedException("This team is not available to you.");
+        }
+
+        if (!categoryTeam.CategoryIsActive)
+        {
+            throw new TicketAccessDeniedException("This category is not available to you.");
+        }
+
+        // Phase 16: a caller-supplied ProjectId must belong to the caller's own organization. Not
+        // found, wrong-organization, and inactive are all refused identically, for the same
+        // non-disclosure reason — a deactivated project (project management phase) is no longer a
+        // valid choice for a *new* ticket, even if the client somehow still submits its id.
+        if (request.ProjectId is { } projectId)
+        {
+            var projectExistsInOrganization = await _dbContext.Projects
+                .AsNoTracking()
+                .AnyAsync(p => p.Id == projectId && p.OrganizationId == user.OrganizationId && p.IsActive, cancellationToken);
+
+            if (!projectExistsInOrganization)
+            {
+                throw new TicketAccessDeniedException("This project is not available to you.");
+            }
+        }
+
+        var categoryTeamId = categoryTeam.Id;
 
         // SLA-RULE-01/03: resolved from configuration and captured onto the ticket at clock start,
         // never referenced live. Four reference rows, so loading them is a trivial read; the
@@ -99,7 +144,7 @@ public sealed class TicketService
             requesterId: user.UserId,
             teamId: request.TeamId,
             categoryId: request.CategoryId,
-            categoryTeamId: categoryTeamId.Value,
+            categoryTeamId: categoryTeamId,
             projectId: request.ProjectId,
             slaTargetMinutes: slaTargetMinutes,
             now: now);
@@ -299,7 +344,14 @@ public sealed class TicketService
         Func<Ticket, DateTimeOffset, CancellationToken, Task> mutate,
         CancellationToken cancellationToken)
     {
-        var ticket = await _dbContext.Tickets.SingleOrDefaultAsync(t => t.Id == ticketId, cancellationToken);
+        // Phase 16: a ticket outside the caller's organization must be indistinguishable from a
+        // ticket that does not exist at all — this is the single load point every workflow
+        // transition (Assign, StartWork, Resolve, Close, Reopen, comment, ...) goes through, so
+        // scoping it here closes the same cross-tenant gap for every one of them at once, exactly
+        // as TicketQueryService.ApplyViewScope closes it for the read side.
+        var ticket = await _dbContext.Tickets
+            .Where(t => _dbContext.Teams.Any(team => team.Id == t.TeamId && team.OrganizationId == user.OrganizationId))
+            .SingleOrDefaultAsync(t => t.Id == ticketId, cancellationToken);
 
         if (ticket is null)
         {

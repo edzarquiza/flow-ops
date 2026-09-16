@@ -23,6 +23,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Phase 19 (ADR-0018): CurrentUserAccessor needs IHttpContextAccessor and
+      IDataProtectionProvider, both part of the ASP.NET Core shared framework rather than a
+      standalone NuGet package. This project stays a plain class library (not
+      Microsoft.NET.Sdk.Web — it has no web pipeline of its own); a FrameworkReference is the
+      standard, Microsoft-documented way for a library to use shared-framework APIs without
+      becoming a web app itself, the same shape Infrastructure already uses for Identity.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Pinned to match FlowOps.Infrastructure exactly — see the note there. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />

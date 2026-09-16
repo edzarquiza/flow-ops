@@ -1,5 +1,6 @@
 using FlowOps.Domain.Catalog;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Sla;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
@@ -34,6 +35,7 @@ public sealed class SchemaIntegrityTests
 
         string[] expected =
         [
+            "organizations", "organization_memberships",
             "teams", "team_members", "categories", "projects",
             "sla_configurations", "tickets", "ticket_comments", "ticket_events",
         ];
@@ -172,7 +174,11 @@ public sealed class SchemaIntegrityTests
 
     private static async Task<(int TeamId, int CategoryId)> SeedTeamAndCategoryAsync(FlowOpsDbContext context)
     {
-        var team = new Team(0, $"Team-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        var organization = new Organization(0, $"Org-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
+        context.Add(organization);
+        await context.SaveChangesAsync();
+
+        var team = new Team(0, organization.Id, $"Team-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
         context.Add(team);
         await context.SaveChangesAsync();
 
