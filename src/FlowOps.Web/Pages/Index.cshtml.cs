@@ -39,6 +39,7 @@ public sealed class IndexModel : PageModel
     private readonly PlatformUserAccessor _platformUserAccessor;
     private readonly AnalyticsQueryService _analyticsQueryService;
     private readonly AttentionQueryService _attentionQueryService;
+    private readonly WorkspaceSetupService _workspaceSetupService;
     private readonly DemoOptions _demoOptions;
 
     public IndexModel(
@@ -46,12 +47,14 @@ public sealed class IndexModel : PageModel
         PlatformUserAccessor platformUserAccessor,
         AnalyticsQueryService analyticsQueryService,
         AttentionQueryService attentionQueryService,
+        WorkspaceSetupService workspaceSetupService,
         DemoOptions demoOptions)
     {
         _currentUserAccessor = currentUserAccessor;
         _platformUserAccessor = platformUserAccessor;
         _analyticsQueryService = analyticsQueryService;
         _attentionQueryService = attentionQueryService;
+        _workspaceSetupService = workspaceSetupService;
         _demoOptions = demoOptions;
     }
 
@@ -132,10 +135,9 @@ public sealed class IndexModel : PageModel
         // running them and discarding the result) avoids paying for a query nobody will ever see
         // the answer to. Only an Admin can act on any setup item, so the check is skipped for
         // everyone else too.
-        var isDemoOrganization = _demoOptions.Enabled && OrganizationName == DemoDataSeeder.OrganizationName;
-        if (user.Role == UserRole.Admin && !isDemoOrganization)
+        if (CanActOnSetup(user))
         {
-            var setupStatus = await _analyticsQueryService.GetWorkspaceSetupStatusAsync(user, cancellationToken);
+            var setupStatus = await _workspaceSetupService.GetWorkspaceSetupStatusAsync(user, cancellationToken);
             SetupStatus = setupStatus.IsComplete ? null : setupStatus;
         }
 
@@ -168,5 +170,35 @@ public sealed class IndexModel : PageModel
         ResolutionByWorkType = await _analyticsQueryService.GetResolutionTimeByWorkTypeAsync(user, Filter, cancellationToken);
 
         return Page();
+    }
+
+    /// <summary>ADR-0020/ADR-0026: only an Admin of a real (non-demo) organization can see or act
+    /// on any setup item — the demo organization is always fully seeded and would fail/skip every
+    /// checklist item on its own merits regardless.</summary>
+    private bool CanActOnSetup(CurrentUser user) =>
+        user.Role == UserRole.Admin && !(_demoOptions.Enabled && OrganizationName == DemoDataSeeder.OrganizationName);
+
+    public async Task<IActionResult> OnPostSkipInviteAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
+        if (user is null || user.Role != UserRole.Admin)
+        {
+            return Forbid();
+        }
+
+        await _workspaceSetupService.SkipInviteStepAsync(user, cancellationToken);
+        return RedirectToPage("/Index");
+    }
+
+    public async Task<IActionResult> OnPostSkipProjectAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
+        if (user is null || user.Role != UserRole.Admin)
+        {
+            return Forbid();
+        }
+
+        await _workspaceSetupService.SkipProjectStepAsync(user, cancellationToken);
+        return RedirectToPage("/Index");
     }
 }

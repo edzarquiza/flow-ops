@@ -16,6 +16,8 @@ public sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organiz
         builder.Property(o => o.Name).IsRequired();
         builder.Property(o => o.CreatedAt).IsRequired();
         builder.Property(o => o.IsActive).IsRequired().HasDefaultValue(true);
+        builder.Property(o => o.InviteStepSkippedAt);
+        builder.Property(o => o.ProjectStepSkippedAt);
 
         // Phase 17: deliberately NOT unique. Two unrelated organizations may share a display name
         // (e.g. two different "Acme Support" registrations) — nothing in the product requires

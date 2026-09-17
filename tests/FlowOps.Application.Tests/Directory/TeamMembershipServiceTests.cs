@@ -95,10 +95,10 @@ public sealed class TeamMembershipServiceTests
         // The invitation created no user and no OrganizationMembership yet, so there is nothing
         // for the invited email to appear as — confirming the eligibility query (real
         // OrganizationMembership + active user) is what excludes this case, not a separate
-        // invitation-aware check. Only the real member (the Admin who sent the invite) is eligible.
+        // invitation-aware check. The only other real member, the Admin who sent the invite, is
+        // already on the team (TeamService.CreateAsync auto-adds its creator), so eligible is empty.
         var eligible = await service.GetEligibleMembersAsync(admin, teamId);
-        var single = Assert.Single(eligible);
-        Assert.Equal(world.AdminId, single.UserId);
+        Assert.Empty(eligible);
     }
 
     [Fact]
@@ -235,8 +235,10 @@ public sealed class TeamMembershipServiceTests
 
         Assert.NotNull(detail);
         Assert.Equal("Service Desk", detail!.TeamName);
-        Assert.Equal(2, detail.Members.Count);
-        Assert.Equal(new[] { "Alice Viewer", "Zed Agent" }, detail.Members.Select(m => m.DisplayName));
+        // 3, not 2: TeamService.CreateAsync now also adds the creating Admin as a team member
+        // ("TM15 Admin") — the fix for the Admin-can't-self-assign-a-ticket-on-their-own-team bug.
+        Assert.Equal(3, detail.Members.Count);
+        Assert.Equal(new[] { "Alice Viewer", "TM15 Admin", "Zed Agent" }, detail.Members.Select(m => m.DisplayName));
         Assert.Equal(UserRole.Viewer, detail.Members[0].OrganizationRole);
     }
 

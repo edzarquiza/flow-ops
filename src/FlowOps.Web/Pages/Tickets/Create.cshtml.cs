@@ -27,12 +27,14 @@ public sealed class CreateModel : PageModel
     private readonly CurrentUserAccessor _currentUserAccessor;
     private readonly TicketQueryService _ticketQueryService;
     private readonly TicketService _ticketService;
+    private readonly WorkspaceSetupService _workspaceSetupService;
 
-    public CreateModel(CurrentUserAccessor currentUserAccessor, TicketQueryService ticketQueryService, TicketService ticketService)
+    public CreateModel(CurrentUserAccessor currentUserAccessor, TicketQueryService ticketQueryService, TicketService ticketService, WorkspaceSetupService workspaceSetupService)
     {
         _currentUserAccessor = currentUserAccessor;
         _ticketQueryService = ticketQueryService;
         _ticketService = ticketService;
+        _workspaceSetupService = workspaceSetupService;
     }
 
     [BindProperty]
@@ -48,6 +50,12 @@ public sealed class CreateModel : PageModel
     /// <summary>Whether the caller can actually perform the setup this empty state points to —
     /// never shown to a non-Admin, who cannot reach <c>/Admin</c> anyway (CLAUDE.md §6.1).</summary>
     public bool CanSetUpWorkspace { get; private set; }
+
+    /// <summary>ADR-0026: non-null only for an Admin once this org already has at least one
+    /// ticket (so this page's own setup step is not what's currently outstanding — a fresh visit
+    /// while filing the org's first ticket never shows this) and another setup step still isn't
+    /// done — see <c>_SetupNextStep.cshtml</c>.</summary>
+    public SetupNextStepViewModel? NextStep { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -66,6 +74,16 @@ public sealed class CreateModel : PageModel
 
         Options = await _ticketQueryService.GetCreationOptionsAsync(user, cancellationToken);
         CanSetUpWorkspace = DirectoryAccessPolicy.CanManageTeams(user);
+
+        if (user.Role == UserRole.Admin)
+        {
+            var status = await _workspaceSetupService.GetWorkspaceSetupStatusAsync(user, cancellationToken);
+            if (SetupSteps.IsStepDone("ticket", status) && SetupSteps.FirstIncomplete(status) is { } next)
+            {
+                NextStep = new SetupNextStepViewModel(next);
+            }
+        }
+
         return Page();
     }
 

@@ -16,9 +16,9 @@ using Xunit;
 namespace FlowOps.Application.Tests.Tickets;
 
 /// <summary>
-/// ADR-0020: the first-run workspace checklist is derived entirely from live data, scoped to the
-/// caller's own organization — no persisted onboarding state to test for staleness, only whether
-/// the three underlying facts (team, active membership, ticket) are read correctly and stay
+/// ADR-0020/ADR-0026: the first-run workspace checklist is derived from live data (team, invite,
+/// project, ticket) plus two persisted skip flags on <see cref="Organization"/> — no persisted
+/// state for anything else, only whether the underlying facts are read correctly and stay
 /// organization-isolated.
 /// </summary>
 [Collection("Postgres")]
@@ -40,7 +40,8 @@ public sealed class WorkspaceSetupStatusTests
         var status = await GetStatusAsync(world);
 
         Assert.False(status.HasTeam);
-        Assert.False(status.HasMultipleActiveMembers);
+        Assert.False(status.HasSentInvitationOrMember);
+        Assert.False(status.HasProject);
         Assert.False(status.HasTicket);
         Assert.False(status.IsComplete);
     }
@@ -55,7 +56,7 @@ public sealed class WorkspaceSetupStatusTests
         var status = await GetStatusAsync(world);
 
         Assert.True(status.HasTeam);
-        Assert.False(status.HasMultipleActiveMembers);
+        Assert.False(status.HasSentInvitationOrMember);
         Assert.False(status.HasTicket);
     }
 
@@ -69,11 +70,13 @@ public sealed class WorkspaceSetupStatusTests
 
         var status = await GetStatusAsync(world);
 
-        Assert.True(status.HasMultipleActiveMembers);
+        Assert.True(status.HasSentInvitationOrMember);
+        Assert.True(status.InviteComplete);
     }
 
-    [Fact] // The open question from the spec: sending an invite alone must not complete this item.
-    public async Task PendingInvitationAlone_DoesNotCompleteInviteItem()
+    [Fact] // ADR-0026: reverses ADR-0020's original rule — sending an invite is now enough on its
+           // own, since that is the Admin's own action, not an outcome the invitee controls.
+    public async Task PendingInvitationAlone_CompletesInviteItem()
     {
         var world = await NewOrganizationAsync("Setup3b");
         var invitations = new InvitationService(world.Context, world.UserManager, world.UserManager.KeyNormalizer, new TicketTestData.FixedTimeProvider(Now));
@@ -83,11 +86,12 @@ public sealed class WorkspaceSetupStatusTests
 
         Assert.True(result.Succeeded);
         var status = await GetStatusAsync(world);
-        Assert.False(status.HasMultipleActiveMembers);
+        Assert.True(status.HasSentInvitationOrMember);
+        Assert.True(status.InviteComplete);
     }
 
-    [Fact] // A deactivated second member does not count as "active."
-    public async Task DeactivatedSecondMember_DoesNotCompleteInviteItem()
+    [Fact] // A deactivated second member, with no invitation ever sent, still does not count.
+    public async Task DeactivatedSecondMemberWithNoInvitationSent_DoesNotCompleteInviteItem()
     {
         var world = await NewOrganizationAsync("Setup3c");
         var secondUserId = await TicketTestData.AddUserAsync(world.Context);
@@ -98,7 +102,61 @@ public sealed class WorkspaceSetupStatusTests
 
         var status = await GetStatusAsync(world);
 
-        Assert.False(status.HasMultipleActiveMembers);
+        Assert.False(status.HasSentInvitationOrMember);
+        Assert.False(status.InviteComplete);
+    }
+
+    [Fact]
+    public async Task OrganizationWithProject_ProjectItemIsComplete()
+    {
+        var world = await NewOrganizationAsync("Setup3d");
+        world.Context.Projects.Add(new Project(0, world.OrganizationId, "A Project", Now));
+        await world.Context.SaveChangesAsync();
+
+        var status = await GetStatusAsync(world);
+
+        Assert.True(status.HasProject);
+        Assert.True(status.ProjectComplete);
+    }
+
+    [Fact]
+    public async Task SkippedInviteStep_CompletesInviteItemWithoutASentInvitation()
+    {
+        var world = await NewOrganizationAsync("Setup3e");
+        var service = new WorkspaceSetupService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var admin = AsCurrentUser(world);
+
+        await service.SkipInviteStepAsync(admin);
+        var status = await service.GetWorkspaceSetupStatusAsync(admin);
+
+        Assert.False(status.HasSentInvitationOrMember);
+        Assert.True(status.InviteStepSkipped);
+        Assert.True(status.InviteComplete);
+    }
+
+    [Fact]
+    public async Task SkippedProjectStep_CompletesProjectItemWithoutAProject()
+    {
+        var world = await NewOrganizationAsync("Setup3f");
+        var service = new WorkspaceSetupService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var admin = AsCurrentUser(world);
+
+        await service.SkipProjectStepAsync(admin);
+        var status = await service.GetWorkspaceSetupStatusAsync(admin);
+
+        Assert.False(status.HasProject);
+        Assert.True(status.ProjectStepSkipped);
+        Assert.True(status.ProjectComplete);
+    }
+
+    [Fact]
+    public async Task NonAdmin_CannotSkipASetupStep()
+    {
+        var world = await NewOrganizationAsync("Setup3g");
+        var service = new WorkspaceSetupService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var viewer = new CurrentUser(world.AdminId, world.OrganizationId, UserRole.Viewer, new HashSet<int>(), new HashSet<int>());
+
+        await Assert.ThrowsAsync<OrganizationAccessDeniedException>(() => service.SkipInviteStepAsync(viewer));
     }
 
     [Fact]
@@ -133,6 +191,7 @@ public sealed class WorkspaceSetupStatusTests
         await world.Context.SaveChangesAsync();
         var category = new Category(0, team.Id, "A Category", WorkType.Incident, Now);
         world.Context.Categories.Add(category);
+        world.Context.Projects.Add(new Project(0, world.OrganizationId, "A Project", Now));
         await world.Context.SaveChangesAsync();
 
         var secondUserId = await TicketTestData.AddUserAsync(world.Context);
@@ -167,15 +226,15 @@ public sealed class WorkspaceSetupStatusTests
         var statusB = await GetStatusAsync(orgB);
 
         Assert.False(statusA.HasTeam);
-        Assert.False(statusA.HasMultipleActiveMembers);
+        Assert.False(statusA.HasSentInvitationOrMember);
         Assert.True(statusB.HasTeam);
-        Assert.True(statusB.HasMultipleActiveMembers);
+        Assert.True(statusB.HasSentInvitationOrMember);
     }
 
     private static async Task<WorkspaceSetupStatus> GetStatusAsync(World world)
     {
         var admin = AsCurrentUser(world);
-        var service = new AnalyticsQueryService(world.Context, TimeProvider.System);
+        var service = new WorkspaceSetupService(world.Context, TimeProvider.System);
         return await service.GetWorkspaceSetupStatusAsync(admin);
     }
 

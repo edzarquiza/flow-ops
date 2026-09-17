@@ -122,6 +122,24 @@
                     <button type="submit" class="btn-primary">Assign to me</button>
                 </form>
             }
+            @if (Model.Actions.AssignToOther && Model.AssignableMembers.Count > 0)
+            {
+                @* Native select + button, no JS — the same "every action works with JavaScript
+                   off" discipline every other form on this page follows. AssignableMembers is
+                   already scoped to the ticket's own team and the caller's own assign authority
+                   (TicketQueryService.GetAssignableTeamMembersAsync); TicketService.AssignAsync
+                   re-checks both independently regardless of what this list offered. *@
+                <form method="post" asp-page-handler="AssignTo" asp-route-id="@Model.Ticket.Id" class="assign-to-form">
+                    <label for="assign-to-select" class="sr-only">Assign to</label>
+                    <select id="assign-to-select" name="assigneeId">
+                        @foreach (var member in Model.AssignableMembers)
+                        {
+                            <option value="@member.UserId">@member.DisplayName</option>
+                        }
+                    </select>
+                    <button type="submit" class="btn">Assign</button>
+                </form>
+            }
             @if (Model.Actions.StartWork)
             {
                 <form method="post" asp-page-handler="StartWork" asp-route-id="@Model.Ticket.Id">

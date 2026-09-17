@@ -229,6 +229,10 @@ public sealed record ProjectOption(int ProjectId, string ProjectName);
 /// </summary>
 public sealed record TicketCreationOptions(IReadOnlyList<TeamOption> Teams, IReadOnlyList<ProjectOption> Projects);
 
+/// <summary>An active member of a ticket's team, offered as an "assign to" choice on Ticket
+/// Details — see <see cref="TicketQueryService.GetAssignableTeamMembersAsync"/>.</summary>
+public sealed record AssignableMember(Guid UserId, string DisplayName);
+
 /// <summary>
 /// SLA Compliance (CLAUDE.md §22), computed over the 90-day reporting window. Counts the
 /// persisted <see cref="Ticket.SlaMet"/> fact directly (SLA-RULE-08) — this is aggregation of an
@@ -354,18 +358,34 @@ public sealed record DashboardSlaBreakdown(int MetCount, int WithinCount, int Pa
 public sealed record DashboardWorkTypeResolution(WorkType WorkType, TimeSpan? Average, int SampleCount);
 
 /// <summary>
-/// First-run workspace setup state (ADR-0020) — three facts derived live from the caller's own
-/// organization, never persisted. "Organization created" is not a field here: it is always true
-/// for an authenticated caller (they are necessarily inside one), so the dashboard renders it as a
-/// given rather than asking this record to state the obvious.
+/// First-run workspace setup state (ADR-0020, invite/project semantics revised by ADR-0026) —
+/// facts derived live from the caller's own organization plus two persisted skip flags on
+/// <see cref="FlowOps.Domain.Organizations.Organization"/> (skipping creates no row of its own, so
+/// it cannot be derived like everything else here). "Organization created" is not a field here: it
+/// is always true for an authenticated caller (they are necessarily inside one), so the dashboard
+/// renders it as a given rather than asking this record to state the obvious.
 /// </summary>
 /// <param name="HasTeam">The organization has at least one team.</param>
-/// <param name="HasMultipleActiveMembers">The organization has more than one active membership —
-/// deliberately "active member exists," not "an invitation was sent": accepting an invitation is
-/// what creates a membership row (see <see cref="FlowOps.Application.Organizations.InvitationService"/>),
-/// so this item only completes once someone has actually joined.</param>
+/// <param name="HasSentInvitationOrMember">ADR-0026: the organization has sent at least one
+/// invitation (regardless of whether it was ever accepted) OR has more than one active membership.
+/// Deliberately reverses ADR-0020's original "must actually accept" rule — the product owner's
+/// explicit call — on the reasoning that the Admin's own action (inviting) is what this item
+/// should reward, not something outside their control (whether the invitee has gotten to it yet).</param>
+/// <param name="InviteStepSkipped">The Admin explicitly skipped this step.</param>
+/// <param name="HasProject">The organization has at least one project.</param>
+/// <param name="ProjectStepSkipped">The Admin explicitly skipped this step.</param>
 /// <param name="HasTicket">The organization has at least one ticket.</param>
-public sealed record WorkspaceSetupStatus(bool HasTeam, bool HasMultipleActiveMembers, bool HasTicket)
+public sealed record WorkspaceSetupStatus(
+    bool HasTeam,
+    bool HasSentInvitationOrMember,
+    bool InviteStepSkipped,
+    bool HasProject,
+    bool ProjectStepSkipped,
+    bool HasTicket)
 {
-    public bool IsComplete => HasTeam && HasMultipleActiveMembers && HasTicket;
+    public bool InviteComplete => HasSentInvitationOrMember || InviteStepSkipped;
+
+    public bool ProjectComplete => HasProject || ProjectStepSkipped;
+
+    public bool IsComplete => HasTeam && InviteComplete && ProjectComplete && HasTicket;
 }

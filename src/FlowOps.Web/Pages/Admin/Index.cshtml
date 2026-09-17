@@ -24,6 +24,8 @@
     await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage));
 }
 
+@await Html.PartialAsync("_SetupNextStep", Model.NextStep)
+
 <div class="zone">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Teams")); }
     @if (Model.Teams.Count == 0)

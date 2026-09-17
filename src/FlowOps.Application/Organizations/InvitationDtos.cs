@@ -2,7 +2,7 @@ using FlowOps.Domain.Tickets;
 
 namespace FlowOps.Application.Organizations;
 
-public sealed record CreateInvitationRequest(string Email, UserRole Role);
+public sealed record CreateInvitationRequest(string Email, UserRole Role, int? TeamId = null);
 
 public enum CreateInvitationOutcome
 {

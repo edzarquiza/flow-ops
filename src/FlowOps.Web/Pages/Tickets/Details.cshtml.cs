@@ -43,6 +43,10 @@ public sealed class DetailsModel : PageModel
     /// <summary>Which workflow actions to offer. A UX affordance only — the service re-decides.</summary>
     public WorkflowAffordances Actions { get; private set; } = new();
 
+    /// <summary>Non-empty only when <see cref="WorkflowAffordances.AssignToOther"/> — the "assign
+    /// to someone else" picker's own data source.</summary>
+    public IReadOnlyList<AssignableMember> AssignableMembers { get; private set; } = [];
+
     [BindProperty]
     public WorkflowInput Input { get; set; } = new();
 
@@ -51,6 +55,13 @@ public sealed class DetailsModel : PageModel
 
     public Task<IActionResult> OnPostAssignAsync(int id, CancellationToken cancellationToken = default) =>
         RunAsync(id, user => _ticketService.AssignAsync(id, user.UserId, user, cancellationToken), cancellationToken);
+
+    /// <summary>"Assign to someone else" — <paramref name="assigneeId"/> is a caller-chosen value,
+    /// same as every other id bound from a form in this app; <c>TicketService.AssignAsync</c>
+    /// re-authorizes and re-validates it independently (TicketAccessPolicy.CanAssign,
+    /// TICKET-INV-03) regardless of what <see cref="AssignableMembers"/> offered.</summary>
+    public Task<IActionResult> OnPostAssignToAsync(int id, Guid assigneeId, CancellationToken cancellationToken = default) =>
+        RunAsync(id, user => _ticketService.AssignAsync(id, assigneeId, user, cancellationToken), cancellationToken);
 
     public Task<IActionResult> OnPostUnassignAsync(int id, CancellationToken cancellationToken = default) =>
         RunAsync(id, user => _ticketService.UnassignAsync(id, user, cancellationToken), cancellationToken);
@@ -144,6 +155,9 @@ public sealed class DetailsModel : PageModel
         Ticket = ticket;
         History = await _ticketQueryService.GetHistoryAsync(id, user, cancellationToken);
         Actions = WorkflowAffordances.For(ticket, user);
+        AssignableMembers = Actions.AssignToOther
+            ? await _ticketQueryService.GetAssignableTeamMembersAsync(user, ticket.TeamId, cancellationToken)
+            : [];
         return Page();
     }
 
@@ -155,6 +169,13 @@ public sealed class DetailsModel : PageModel
     public sealed class WorkflowAffordances
     {
         public bool Assign { get; private init; }
+
+        /// <summary>Offer a picker for a target other than the caller — mirrors
+        /// <see cref="TicketAccessPolicy.CanAssign"/>'s own Admin/Manager branches directly rather
+        /// than calling it with a fake target id (its Agent branch requires the target to equal
+        /// the caller, so evaluating it against an arbitrary "other" id would always answer
+        /// false for Agent regardless of who that other person actually is).</summary>
+        public bool AssignToOther { get; private init; }
 
         public bool Unassign { get; private init; }
 
@@ -188,10 +209,12 @@ public sealed class DetailsModel : PageModel
 
             var canTransition = TicketAccessPolicy.CanTransition(snapshot, user);
             var canSelfAssign = TicketAccessPolicy.CanAssign(snapshot, user, user.UserId);
+            var canAssignOther = user.Role == UserRole.Admin || (user.Role == UserRole.Manager && user.ManagedTeamIds.Contains(ticket.TeamId));
 
             return new WorkflowAffordances
             {
                 Assign = canSelfAssign && ticket.Status == Status.Open,
+                AssignToOther = canAssignOther && ticket.Status == Status.Open,
                 Unassign = canTransition && ticket.Status == Status.Assigned,
                 StartWork = canTransition && ticket.Status == Status.Assigned,
                 PutOnHold = canTransition && ticket.Status is Status.Assigned or Status.InProgress,

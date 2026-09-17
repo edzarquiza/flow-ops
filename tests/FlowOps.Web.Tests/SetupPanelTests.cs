@@ -44,11 +44,12 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
         Assert.Contains("Welcome to", html, StringComparison.Ordinal);
         Assert.Contains("Set up your first team", html, StringComparison.Ordinal);
         Assert.Contains("Invite your team", html, StringComparison.Ordinal);
+        Assert.Contains("Create your first project", html, StringComparison.Ordinal);
         Assert.Contains("Create your first ticket", html, StringComparison.Ordinal);
         // One primary button on the dashboard (the first incomplete step) — never more than one.
         Assert.Equal(1, CountOccurrences(html, "btn-primary"));
-        // All three actions share one geometry class (visual refinement pass) — never per-button sizing.
-        Assert.Equal(3, CountOccurrences(html, "setup__btn"));
+        // All four actions share one geometry class (visual refinement pass) — never per-button sizing.
+        Assert.Equal(4, CountOccurrences(html, "setup__btn"));
     }
 
     [Fact] // ADR-0021: the onboarding action a real Admin actually reaches must not dead-end in
@@ -96,7 +97,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
         var after = await client.GetAsync("/");
         var afterHtml = await after.Content.ReadAsStringAsync();
         Assert.DoesNotContain("Create the team that will handle your organization's work.", afterHtml, StringComparison.Ordinal);
-        Assert.Contains("2 of 4 complete", afterHtml, StringComparison.Ordinal);
+        Assert.Contains("2 of 5 complete", afterHtml, StringComparison.Ordinal);
     }
 
     private static string ExtractAntiForgeryToken(string html)
@@ -140,6 +141,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
             await db.SaveChangesAsync();
             var category = new Category(0, team.Id, $"Complete Category {Guid.NewGuid():N}", WorkType.Incident, DateTimeOffset.UtcNow);
             db.Add(category);
+            db.Add(new Project(0, organizationId, $"Complete Project {Guid.NewGuid():N}", DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
 
             var secondUser = new ApplicationUser
@@ -258,6 +260,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
             await db.SaveChangesAsync();
             var category = new Category(0, team.Id, $"Second Org Category {Guid.NewGuid():N}", WorkType.Incident, DateTimeOffset.UtcNow);
             db.Add(category);
+            db.Add(new Project(0, secondOrganizationId, $"Second Org Project {Guid.NewGuid():N}", DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
             var secondMemberOfSecondOrg = new ApplicationUser
             {

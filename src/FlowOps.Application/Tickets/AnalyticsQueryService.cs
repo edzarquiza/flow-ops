@@ -353,43 +353,6 @@ public sealed class AnalyticsQueryService
     }
 
     /// <summary>
-    /// ADR-0020: first-run workspace setup state — three bounded existence checks scoped to
-    /// <paramref name="user"/>'s own organization, never a loaded collection counted in memory.
-    /// Entirely derived from current data; nothing here is persisted, so this reflects the
-    /// organization's true current state on every call, including immediately after switching
-    /// organizations. Callers should skip calling this at all for a non-Admin or the demo
-    /// organization (see Index.cshtml.cs) rather than pay for three queries nobody will see.
-    /// </summary>
-    public async Task<WorkspaceSetupStatus> GetWorkspaceSetupStatusAsync(CurrentUser user, CancellationToken cancellationToken = default)
-    {
-        var hasTeam = await _dbContext.Teams
-            .AsNoTracking()
-            .AnyAsync(t => t.OrganizationId == user.OrganizationId, cancellationToken);
-
-        // Ticket has no OrganizationId column of its own (it inherits organization transitively
-        // through Team, like Category) — the same join-based boundary ApplyAnalyticsScope/
-        // TicketQueryService.ApplyViewScope already use, not a second definition of it.
-        var hasTicket = await _dbContext.Tickets
-            .AsNoTracking()
-            .Join(_dbContext.Teams, t => t.TeamId, team => team.Id, (t, team) => team.OrganizationId)
-            .AnyAsync(organizationId => organizationId == user.OrganizationId, cancellationToken);
-
-        // "Active" matches the same definition the Members page itself shows (ApplicationUser.IsActive)
-        // — capped with Take(2) before CountAsync, so the database only ever has to find at most two
-        // matching rows regardless of how large the organization is; the caller only needs to know
-        // whether the count exceeds one, never the true count.
-        var activeMemberCount = await _dbContext.OrganizationMemberships
-            .AsNoTracking()
-            .Where(m => m.OrganizationId == user.OrganizationId)
-            .Join(_dbContext.Users, m => m.UserId, u => u.Id, (m, u) => u.IsActive)
-            .Where(isActive => isActive)
-            .Take(2)
-            .CountAsync(cancellationToken);
-
-        return new WorkspaceSetupStatus(hasTeam, activeMemberCount > 1, hasTicket);
-    }
-
-    /// <summary>
     /// AUTH-RULE-02 "Team analytics" row, translated to SQL. Deliberately not
     /// <see cref="TicketQueryService"/>'s <c>ApplyViewScope</c> — see
     /// <see cref="TicketAccessPolicy.GetAnalyticsScope"/> for why Agent needs a narrower shape

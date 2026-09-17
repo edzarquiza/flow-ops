@@ -47,6 +47,22 @@ public sealed class TeamServiceTests
         Assert.Equal(world.OrganizationId, team.OrganizationId);
     }
 
+    [Fact] // The root-cause fix for "Admin can't assign a ticket on their own team to themselves"
+           // (TICKET-INV-03) — the creating Admin must actually be a team member, not merely
+           // authorized to manage it.
+    public async Task CreateAsync_Admin_IsAddedAsAnActiveTeamManagerOfTheNewTeam()
+    {
+        var world = await NewOrganizationAsync("Team1b");
+        var admin = AsCurrentUser(world);
+        var service = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+
+        var result = await service.CreateAsync(admin, "Service Desk");
+
+        var membership = await world.Context.TeamMembers.AsNoTracking()
+            .SingleAsync(m => m.TeamId == result.TeamId && m.UserId == world.AdminId);
+        Assert.True(membership.IsTeamManager);
+    }
+
     [Fact]
     public async Task CreateAsync_DuplicateNameInSameOrganization_Fails()
     {
@@ -244,6 +260,29 @@ public sealed class TeamServiceTests
         Assert.True(category.IsActive);
         var ticket = await world.Context.Tickets.AsNoTracking().SingleAsync(t => t.Id == ticketId);
         Assert.Equal(created.TeamId, ticket.TeamId);
+    }
+
+    [Fact] // End-to-end regression for the reported bug: an Admin who just created a team could
+           // not assign a ticket on it to themselves (TICKET-INV-03), because nothing had ever
+           // added them to TeamMembers. CreateAsync now does, so this must succeed with no
+           // "Add member" step in between.
+    public async Task Admin_CanSelfAssignATicketOnATeamTheyJustCreated()
+    {
+        var world = await NewOrganizationAsync("Team12");
+        var admin = AsCurrentUser(world);
+        var teamService = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var catalogService = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await teamService.CreateAsync(admin, "Service Desk");
+        var categoryResult = await catalogService.CreateCategoryAsync(admin, created.TeamId!.Value, "Incidents", WorkType.Incident);
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var (ticketId, _) = await ticketService.CreateAsync(
+            new CreateTicketRequest("Printer jam", "The printer on the third floor is jammed.", WorkType.Incident, Priority.Medium, created.TeamId.Value, categoryResult.CategoryId!.Value, null),
+            admin);
+
+        await ticketService.AssignAsync(ticketId, world.AdminId, admin);
+
+        var ticket = await world.Context.Tickets.AsNoTracking().SingleAsync(t => t.Id == ticketId);
+        Assert.Equal(world.AdminId, ticket.AssigneeId);
     }
 
     private async Task<Guid> AddOrganizationMemberAsync(World world, string displayName, UserRole role)

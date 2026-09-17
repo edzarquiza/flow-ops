@@ -1,5 +1,6 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
+using FlowOps.Domain.Directory;
 using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
@@ -85,13 +86,27 @@ public sealed class InvitationService
             return CreateInvitationResult.Failed(CreateInvitationOutcome.ActiveInvitationExists, "An active invitation already exists for this email.");
         }
 
+        // ADR-0027: an invited team, if named, must be a real, active team in the inviter's own
+        // organization — the same "team in organization" check CatalogService's category/project
+        // operations already use, never a client-trusted id passed straight through.
+        if (request.TeamId is { } teamId)
+        {
+            var teamInOrganization = await _dbContext.Teams
+                .AsNoTracking()
+                .AnyAsync(t => t.Id == teamId && t.OrganizationId == inviter.OrganizationId && t.IsActive, cancellationToken);
+            if (!teamInOrganization)
+            {
+                return CreateInvitationResult.Failed(CreateInvitationOutcome.ValidationFailed, "This team is not available to you.");
+            }
+        }
+
         // Step 3: 256 bits from the platform's CSPRNG, URL-safe encoded. The raw token is held in
         // a local variable only long enough to hash it and hand it back to the caller once — it is
         // never assigned to any property that could be persisted, logged, or serialized.
         var rawToken = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
         var tokenHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawToken)));
 
-        var invitation = Invitation.Create(inviter.OrganizationId, email, normalizedEmail, tokenHash, request.Role, inviter.UserId, now);
+        var invitation = Invitation.Create(inviter.OrganizationId, email, normalizedEmail, tokenHash, request.Role, inviter.UserId, now, teamId: request.TeamId);
         _dbContext.Invitations.Add(invitation);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -254,6 +269,23 @@ public sealed class InvitationService
         if (!alreadyMember)
         {
             _dbContext.OrganizationMemberships.Add(new OrganizationMembership(0, invitation.OrganizationId, userId, invitation.Role, now));
+        }
+
+        // ADR-0027: root-cause fix for "an invited-and-accepted member can't see the tickets
+        // their team already has" — TicketAccessPolicy.CanView requires actual TeamMembers
+        // membership for every non-Admin role, and until now accepting an invitation only ever
+        // created the OrganizationMembership above, never this. Best-effort, never a hard
+        // acceptance failure: the named team may have been deactivated between invite and
+        // accept, or the caller may already be on it (e.g. re-accepting a second invitation) —
+        // both are silently skipped rather than blocking the membership itself.
+        if (invitation.TeamId is { } teamId)
+        {
+            var teamStillActive = await _dbContext.Teams.AsNoTracking().AnyAsync(t => t.Id == teamId && t.IsActive, cancellationToken);
+            var alreadyTeamMember = await _dbContext.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == teamId && m.UserId == userId, cancellationToken);
+            if (teamStillActive && !alreadyTeamMember)
+            {
+                _dbContext.TeamMembers.Add(new TeamMember(teamId, userId, isTeamManager: false, now));
+            }
         }
 
         try

@@ -31,6 +31,12 @@ public sealed class Invitation
     public string NormalizedInvitedEmail { get; private set; } = string.Empty;
     public string TokenHash { get; private set; } = string.Empty;
     public UserRole Role { get; private set; }
+
+    /// <summary>ADR-0027: the team, if any, this invitation should also add the accepting member
+    /// to (alongside the <see cref="OrganizationMembership"/> acceptance always creates). Optional
+    /// — an Admin/Viewer invitation reasonably has no team.</summary>
+    public int? TeamId { get; private set; }
+
     public Guid InvitedByUserId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
@@ -57,7 +63,8 @@ public sealed class Invitation
         UserRole role,
         Guid invitedByUserId,
         DateTimeOffset now,
-        TimeSpan? lifetime = null)
+        TimeSpan? lifetime = null,
+        int? teamId = null)
     {
         if (string.IsNullOrWhiteSpace(invitedEmail))
         {
@@ -82,6 +89,7 @@ public sealed class Invitation
             NormalizedInvitedEmail = normalizedInvitedEmail,
             TokenHash = tokenHash,
             Role = role,
+            TeamId = teamId,
             InvitedByUserId = invitedByUserId,
             CreatedAt = now,
             ExpiresAt = now + effectiveLifetime,

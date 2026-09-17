@@ -65,10 +65,12 @@ public sealed class TeamMembershipTests : IClassFixture<FlowOpsWebApplicationFac
         var removeResponse = await client.SendAsync(removeRequest);
         Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
         var afterRemoveHtml = await removeResponse.Content.ReadAsStringAsync();
-        // Removed from the team's member table (the only member, so it falls back to the empty
-        // state) — they legitimately reappear in the "add member" dropdown below, since removal
-        // makes them eligible again.
-        Assert.Contains("No members on this team yet", afterRemoveHtml, StringComparison.Ordinal);
+        // Removed from the team's member table — but not empty: TeamService.CreateAsync now also
+        // adds the creating Admin as a team member (ADR-0027), so "TeamMembership Admin1" is still
+        // there even with "Agent One" gone. They legitimately reappear in the "add member" dropdown
+        // below, since removal makes them eligible again.
+        Assert.DoesNotContain("No members on this team yet", afterRemoveHtml, StringComparison.Ordinal);
+        Assert.Contains("TeamMembership Admin1", afterRemoveHtml, StringComparison.Ordinal);
         Assert.Contains("member removed from the team", afterRemoveHtml, StringComparison.OrdinalIgnoreCase);
     }
 

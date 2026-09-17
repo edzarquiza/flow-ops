@@ -1,4 +1,6 @@
+using FlowOps.Application.Organizations;
 using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +47,26 @@ public sealed class TeamService
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>ADR-0027: active team names for the invite form's optional Team picker —
+    /// deliberately gated by <see cref="OrganizationAccessPolicy.CanInvite"/> (Admin or Manager),
+    /// not the Admin-only <see cref="DirectoryAccessPolicy.CanManageTeams"/> <see cref="GetTeamsAsync"/>
+    /// itself uses, since a Manager can already invite and must be able to pick a team while doing
+    /// so. Seeing a team's name grants no management authority over it.</summary>
+    public async Task<IReadOnlyList<TeamListItem>> GetActiveTeamsForInviteAsync(CurrentUser actor, CancellationToken cancellationToken = default)
+    {
+        if (!OrganizationAccessPolicy.CanInvite(actor))
+        {
+            throw new OrganizationAccessDeniedException("This role may not invite members.");
+        }
+
+        return await _dbContext.Teams
+            .AsNoTracking()
+            .Where(t => t.OrganizationId == actor.OrganizationId && t.IsActive)
+            .OrderBy(t => t.Name)
+            .Select(t => new TeamListItem(t.Id, t.Name, t.IsActive))
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>AUTH-RULE-01: Admin-only, scoped to the caller's own organization
     /// (<paramref name="actor"/>.OrganizationId is never client-supplied — resolved server-side by
     /// <c>CurrentUserAccessor</c>, exactly like every other organization-scoped write in this app).</summary>
@@ -74,7 +96,8 @@ public sealed class TeamService
             return CreateTeamResult.Failed("An active team with this name already exists in your organization.");
         }
 
-        var team = new Team(0, actor.OrganizationId, trimmed, _timeProvider.GetUtcNow());
+        var now = _timeProvider.GetUtcNow();
+        var team = new Team(0, actor.OrganizationId, trimmed, now);
         _dbContext.Teams.Add(team);
 
         try
@@ -87,6 +110,14 @@ public sealed class TeamService
             // unique index.
             return CreateTeamResult.Failed("An active team with this name already exists in your organization.");
         }
+
+        // The Admin who sets up a team is, correctly, actually a member of it — without this,
+        // TICKET-INV-03 (an assignee must be an active team member) rejects their own attempt to
+        // assign a ticket on this team to themselves, despite TicketAccessPolicy.CanAssign already
+        // treating Admin as exempt from team scoping for who MAY assign. Manager, matching the
+        // "created it, so effectively manages it" default every other team-manager flag uses.
+        _dbContext.TeamMembers.Add(new TeamMember(team.Id, actor.UserId, isTeamManager: true, now));
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return CreateTeamResult.Success(team.Id);
     }

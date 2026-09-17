@@ -1,3 +1,4 @@
+using FlowOps.Domain.Directory;
 using FlowOps.Domain.Organizations;
 using FlowOps.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,14 @@ public sealed class InvitationConfiguration : IEntityTypeConfiguration<Invitatio
         builder.HasOne<ApplicationUser>()
             .WithMany()
             .HasForeignKey(i => i.InvitedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // ADR-0027: optional — teams are never hard-deleted (only deactivated), so Restrict here
+        // is purely defensive; SetNull would also be safe, but Restrict matches every other FK on
+        // this entity and needs no special handling anywhere else.
+        builder.HasOne<Team>()
+            .WithMany()
+            .HasForeignKey(i => i.TeamId)
             .OnDelete(DeleteBehavior.Restrict);
 
         // Same PostgreSQL xmin optimistic-concurrency token TicketConfiguration already uses

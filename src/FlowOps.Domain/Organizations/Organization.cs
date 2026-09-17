@@ -25,6 +25,15 @@ public sealed class Organization
     public DateTimeOffset CreatedAt { get; }
     public bool IsActive { get; private set; }
 
+    /// <summary>ADR-0026: an Admin explicitly declined the "invite your team" / "create your
+    /// first project" setup steps rather than completing them — recorded here because, unlike
+    /// every other <c>WorkspaceSetupStatus</c> field, "skipped" cannot be derived from any other
+    /// table (skipping creates no row). One-way: there is no "un-skip," since actually doing the
+    /// step later already supersedes the skipped state in the checklist's own display logic.</summary>
+    public DateTimeOffset? InviteStepSkippedAt { get; private set; }
+
+    public DateTimeOffset? ProjectStepSkippedAt { get; private set; }
+
     public Organization(int id, string name, DateTimeOffset createdAt, bool isActive = true)
     {
         Id = id;
@@ -45,4 +54,10 @@ public sealed class Organization
     /// category, project, ticket, comment, and event that existed before deactivation is exactly as
     /// it was, since none of them were ever touched.</summary>
     public void Reactivate() => IsActive = true;
+
+    /// <summary>ADR-0026. A no-op if already skipped (idempotent, matching every other mutation
+    /// command's own tolerance for being re-run).</summary>
+    public void SkipInviteStep(DateTimeOffset now) => InviteStepSkippedAt ??= now;
+
+    public void SkipProjectStep(DateTimeOffset now) => ProjectStepSkippedAt ??= now;
 }

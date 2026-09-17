@@ -1,4 +1,5 @@
 using FlowOps.Application.Accounts;
+using FlowOps.Application.Directory;
 using FlowOps.Application.Organizations;
 using FlowOps.Application.Tests.Persistence;
 using FlowOps.Application.Tests.Tickets;
@@ -428,5 +429,62 @@ public sealed class InvitationServiceTests
         var details = await world.Invitations.GetInvitationDetailsAsync("bogus-token-value");
 
         Assert.Equal(FlowOps.Application.Organizations.InvitationState.NotFound, details.State);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // ADR-0027: inviting into a specific team
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CreateInvitationAsync_WithTeamId_AndAccepting_AddsTeamMembership()
+    {
+        var orgA = await NewOrganizationAsync("Team1A");
+        var orgB = await NewOrganizationAsync("Team1B");
+        var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
+        var teamService = new TeamService(orgA.Context, new TicketTestData.FixedTimeProvider(Now));
+        var team = await teamService.CreateAsync(adminA, "Service Desk");
+        var existingUserEmail = await orgB.UserManager.Users.Where(u => u.Id == orgB.AdminId).Select(u => u.Email).SingleAsync();
+
+        var invite = await orgA.Invitations.CreateInvitationAsync(adminA, new CreateInvitationRequest(existingUserEmail!, UserRole.Agent, team.TeamId));
+        Assert.True(invite.Succeeded);
+
+        var accept = await orgA.Invitations.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
+
+        Assert.Equal(AcceptInvitationOutcome.Success, accept.Outcome);
+        Assert.True(await orgA.Context.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == team.TeamId && m.UserId == orgB.AdminId));
+    }
+
+    [Fact] // Never a client-trusted id — a team from a different organization must be refused.
+    public async Task CreateInvitationAsync_WithTeamIdFromAnotherOrganization_IsRejected()
+    {
+        var orgA = await NewOrganizationAsync("Team2A");
+        var orgB = await NewOrganizationAsync("Team2B");
+        var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
+        var adminB = AsCurrentUser(orgB.AdminId, orgB.OrganizationId, UserRole.Admin);
+        var teamInB = await new TeamService(orgB.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(adminB, "Org B Team");
+
+        var result = await orgA.Invitations.CreateInvitationAsync(adminA, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent, teamInB.TeamId));
+
+        Assert.Equal(CreateInvitationOutcome.ValidationFailed, result.Outcome);
+    }
+
+    [Fact] // The named team may be deactivated between invite and accept — acceptance itself must
+           // still succeed at the organization-membership level, just without the team join.
+    public async Task AcceptForCurrentUserAsync_NamedTeamDeactivatedMeanwhile_StillCreatesMembership()
+    {
+        var orgA = await NewOrganizationAsync("Team3A");
+        var orgB = await NewOrganizationAsync("Team3B");
+        var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
+        var teamService = new TeamService(orgA.Context, new TicketTestData.FixedTimeProvider(Now));
+        var team = await teamService.CreateAsync(adminA, "Service Desk");
+        var existingUserEmail = await orgB.UserManager.Users.Where(u => u.Id == orgB.AdminId).Select(u => u.Email).SingleAsync();
+        var invite = await orgA.Invitations.CreateInvitationAsync(adminA, new CreateInvitationRequest(existingUserEmail!, UserRole.Agent, team.TeamId));
+
+        await teamService.DeactivateAsync(adminA, team.TeamId!.Value);
+        var accept = await orgA.Invitations.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
+
+        Assert.Equal(AcceptInvitationOutcome.Success, accept.Outcome);
+        Assert.False(await orgA.Context.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == team.TeamId && m.UserId == orgB.AdminId));
+        Assert.True(await orgA.Context.OrganizationMemberships.AsNoTracking().AnyAsync(m => m.OrganizationId == orgA.OrganizationId && m.UserId == orgB.AdminId));
     }
 }

@@ -20,6 +20,8 @@
     await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
 }
 
+@await Html.PartialAsync("_SetupNextStep", Model.NextStep)
+
 <div class="zone">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("All projects")); }
     @if (Model.Projects.Count == 0)

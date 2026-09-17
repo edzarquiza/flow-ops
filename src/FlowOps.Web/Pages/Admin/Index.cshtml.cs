@@ -28,12 +28,14 @@ public sealed class IndexModel : PageModel
     private readonly CurrentUserAccessor _currentUserAccessor;
     private readonly TeamService _teamService;
     private readonly CatalogService _catalogService;
+    private readonly WorkspaceSetupService _workspaceSetupService;
 
-    public IndexModel(CurrentUserAccessor currentUserAccessor, TeamService teamService, CatalogService catalogService)
+    public IndexModel(CurrentUserAccessor currentUserAccessor, TeamService teamService, CatalogService catalogService, WorkspaceSetupService workspaceSetupService)
     {
         _currentUserAccessor = currentUserAccessor;
         _teamService = teamService;
         _catalogService = catalogService;
+        _workspaceSetupService = workspaceSetupService;
     }
 
     [BindProperty]
@@ -42,6 +44,10 @@ public sealed class IndexModel : PageModel
     public IReadOnlyList<TeamListItem> Teams { get; private set; } = [];
 
     public string? StatusMessage { get; set; }
+
+    /// <summary>ADR-0026: non-null only once this page's own step (a team exists) is done and
+    /// another setup step still isn't — see <c>_SetupNextStep.cshtml</c>.</summary>
+    public SetupNextStepViewModel? NextStep { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
@@ -52,6 +58,7 @@ public sealed class IndexModel : PageModel
         }
 
         Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+        NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
 
@@ -94,7 +101,23 @@ public sealed class IndexModel : PageModel
         // same lesson the Web-layer team-membership tests caught for Admin/Teams/Details.cshtml.cs.
         Input = new InputModel();
         Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+        NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
+    }
+
+    /// <summary>ADR-0026: only for an Admin, and only once "team" is this org's own state, not a
+    /// still-outstanding step — matches <c>_SetupNextStep.cshtml</c>'s "already done, here's
+    /// what's next" purpose rather than nagging about the very step this page itself is for.</summary>
+    private async Task<SetupNextStepViewModel?> ResolveNextStepAsync(CurrentUser user, CancellationToken cancellationToken)
+    {
+        var status = await _workspaceSetupService.GetWorkspaceSetupStatusAsync(user, cancellationToken);
+        if (!SetupSteps.IsStepDone("team", status))
+        {
+            return null;
+        }
+
+        var next = SetupSteps.FirstIncomplete(status);
+        return next is null ? null : new SetupNextStepViewModel(next);
     }
 
     public sealed class InputModel

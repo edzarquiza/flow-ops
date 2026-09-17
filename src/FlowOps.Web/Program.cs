@@ -258,6 +258,9 @@ builder.Services.AddScoped<AttentionQueryService>();
 // Phase 10 dashboard/analytics read path.
 builder.Services.AddScoped<AnalyticsQueryService>();
 
+// ADR-0020/ADR-0026 first-run workspace setup checklist (read + skip mutations).
+builder.Services.AddScoped<WorkspaceSetupService>();
+
 builder.Services.AddRazorPages(options =>
 {
     // Everything requires authentication by default; only the login/access-denied pages (and

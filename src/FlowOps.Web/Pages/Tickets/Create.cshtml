@@ -30,6 +30,8 @@
 }
 else
 {
+    @await Html.PartialAsync("_SetupNextStep", Model.NextStep)
+
     <div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
 
     <form method="post">

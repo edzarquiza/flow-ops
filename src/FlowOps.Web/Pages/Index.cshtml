@@ -30,26 +30,25 @@
     </div>
 </div>
 
-@* ADR-0020: first-run workspace setup — only non-null for an Admin of a real, incomplete
-   organization (IndexModel.OnGetAsync). Visually refined (no behavior/state change): one surface,
-   two zones (intro+progress / checklist), reusing existing FlowOps vocabulary throughout —
-   Icons.StatusResolved/StatusOpen for done/not-done (the same status marks used everywhere else,
-   not a second iconography), .fo-label for the eyebrow, .hbar-track/.hbar-fill's own thin-bar
-   language for progress. Exactly one action gets .btn-primary — the first incomplete step —
-   keeping the dashboard's one-primary-button rule intact. Every action is a plain link to an
-   existing page, so this works fully with JavaScript disabled. *@
+@* ADR-0020/ADR-0026: first-run workspace setup — only non-null for an Admin of a real, incomplete
+   organization (IndexModel.OnGetAsync). One surface, two zones (intro+progress / checklist),
+   reusing existing FlowOps vocabulary throughout — Icons.StatusResolved/StatusOpen for done/not-
+   done (the same status marks used everywhere else, not a second iconography), .fo-label for the
+   eyebrow, .hbar-track/.hbar-fill's own thin-bar language for progress. Exactly one action gets
+   .btn-primary — the first incomplete step — keeping the dashboard's one-primary-button rule
+   intact. Invite/project are skippable (ADR-0026): a small "Skip" form posts to this same page's
+   own SkipInvite/SkipProject handlers. Every action is a plain link or a same-page POST form, so
+   this works fully with JavaScript disabled. *@
 @if (Model.SetupStatus is { } setup)
 {
-    var incompleteSteps = new List<string>();
-    if (!setup.HasTeam) { incompleteSteps.Add("team"); }
-    if (!setup.HasMultipleActiveMembers) { incompleteSteps.Add("invite"); }
-    if (!setup.HasTicket) { incompleteSteps.Add("ticket"); }
-    var firstIncompleteStep = incompleteSteps.Count > 0 ? incompleteSteps[0] : null;
+    var firstIncompleteStep = FlowOps.Web.SetupSteps.FirstIncomplete(setup)?.Key;
 
     // "Organization created" is always done (IndexModel only renders this section for a real,
-    // already-existing organization) — the +1 accounts for it without a fifth stored flag.
-    var doneCount = 1 + (setup.HasTeam ? 1 : 0) + (setup.HasMultipleActiveMembers ? 1 : 0) + (setup.HasTicket ? 1 : 0);
-    const int totalSteps = 4;
+    // already-existing organization) — the +1 accounts for it without a fifth stored flag. A
+    // skipped step counts toward progress exactly like a done one (InviteComplete/ProjectComplete
+    // are true either way) — skipping is a deliberate resolution of the step, not a gap in it.
+    var doneCount = 1 + (setup.HasTeam ? 1 : 0) + (setup.InviteComplete ? 1 : 0) + (setup.ProjectComplete ? 1 : 0) + (setup.HasTicket ? 1 : 0);
+    const int totalSteps = 5;
     var progressPercent = doneCount * 100 / totalSteps;
 
     <section class="setup" aria-labelledby="setup-heading">
@@ -90,22 +89,60 @@
                     <a class="btn setup__btn setup__action @(firstIncompleteStep == "team" ? "btn-primary" : "")" asp-page="/Admin/Index">Set up</a>
                 }
             </li>
-            <li class="setup__item @(setup.HasMultipleActiveMembers ? "is-done" : "")">
-                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasMultipleActiveMembers ? Icons.StatusResolved : Icons.StatusOpen)</span>
+            <li class="setup__item @(setup.HasSentInvitationOrMember ? "is-done" : "") @(setup.InviteStepSkipped ? "is-skipped" : "")">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasSentInvitationOrMember ? Icons.StatusResolved : Icons.StatusOpen)</span>
                 <div class="setup__content">
                     <span class="setup__label">Invite your team</span>
-                    @if (!setup.HasMultipleActiveMembers)
+                    @if (!setup.HasSentInvitationOrMember && !setup.InviteStepSkipped)
                     {
                         <span class="setup__desc">Bring teammates into the workspace and assign their roles.</span>
                     }
                 </div>
-                @if (setup.HasMultipleActiveMembers)
+                @if (setup.HasSentInvitationOrMember)
                 {
                     <span class="setup__action setup__state">Done</span>
                 }
+                else if (setup.InviteStepSkipped)
+                {
+                    <span class="setup__action setup__state">Skipped</span>
+                }
                 else
                 {
-                    <a class="btn setup__btn setup__action @(firstIncompleteStep == "invite" ? "btn-primary" : "")" asp-page="/Organization/Members">Invite</a>
+                    <div class="setup__action setup__action-group">
+                        <a class="btn setup__btn @(firstIncompleteStep == "invite" ? "btn-primary" : "")" asp-page="/Organization/Members">Invite</a>
+                        <form method="post" asp-page-handler="SkipInvite">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="setup__skip">Skip</button>
+                        </form>
+                    </div>
+                }
+            </li>
+            <li class="setup__item @(setup.HasProject ? "is-done" : "") @(setup.ProjectStepSkipped ? "is-skipped" : "")">
+                <span class="setup__marker" aria-hidden="true">@Html.Raw(setup.HasProject ? Icons.StatusResolved : Icons.StatusOpen)</span>
+                <div class="setup__content">
+                    <span class="setup__label">Create your first project</span>
+                    @if (!setup.HasProject && !setup.ProjectStepSkipped)
+                    {
+                        <span class="setup__desc">Group related work so it's easy to filter and report on.</span>
+                    }
+                </div>
+                @if (setup.HasProject)
+                {
+                    <span class="setup__action setup__state">Done</span>
+                }
+                else if (setup.ProjectStepSkipped)
+                {
+                    <span class="setup__action setup__state">Skipped</span>
+                }
+                else
+                {
+                    <div class="setup__action setup__action-group">
+                        <a class="btn setup__btn @(firstIncompleteStep == "project" ? "btn-primary" : "")" asp-page="/Admin/Projects/Index">Create</a>
+                        <form method="post" asp-page-handler="SkipProject">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="setup__skip">Skip</button>
+                        </form>
+                    </div>
                 }
             </li>
             <li class="setup__item @(setup.HasTicket ? "is-done" : "")">

@@ -86,3 +86,9 @@ short-circuit.
   `WorkspaceSetupStatus?` property; every other dashboard section is unchanged.
 - The "set up your first team" step is currently a dead end in practice (`/Admin` is a placeholder)
   until team management is actually built — a known, accepted gap, not a hidden one.
+
+> **Superseded in part by [ADR-0026](0026-onboarding-skip-and-next-step-navigation.md).** Once
+> real Team/Project management existed, the product owner explicitly reversed this ADR's
+> "invitation must be accepted, not merely sent" rule and added persisted per-organization skip
+> state for the invite/project steps, plus contextual "next step" links on the relevant pages.
+> This ADR's original reasoning is left as-written above for the historical record.

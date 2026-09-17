@@ -25,6 +25,21 @@
     await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage));
 }
 
+@if (Model.CreatedResetLink is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel($"Password-reset link created for {Model.CreatedResetLinkForDisplayName}. Copy the link below and send it to them — FlowOps does not send email. It stops working once they use it."));
+    <div class="field">
+        <label for="reset-link">Password-reset link</label>
+        <div class="copy-field">
+            <input id="reset-link" type="text" readonly value="@Model.CreatedResetLink" />
+            <button type="button" class="btn" data-copy-target="reset-link" data-copy-feedback="reset-link-feedback">Copy</button>
+        </div>
+        <span id="reset-link-feedback" class="copy-feedback" role="status"></span>
+    </div>
+}
+
+@await Html.PartialAsync("_SetupNextStep", Model.NextStep)
+
 <div class="zone">
     @if (Model.Members.Count == 0)
     {
@@ -93,6 +108,18 @@
                                                 </select>
                                                 <button type="submit" class="btn">Update role</button>
                                             </form>
+                                            @if (Model.CallerIsAdmin)
+                                            {
+                                                @* ADR-0027: no email capability exists in this app — the Admin
+                                                   generates a link and sends it out-of-band, the same pattern
+                                                   the invitation flow below already uses. *@
+                                                <form method="post" asp-page-handler="GenerateResetLink">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="targetUserId" value="@member.UserId" />
+                                                    <input type="hidden" name="Search" value="@Model.Search" />
+                                                    <button type="submit" class="btn">Reset password</button>
+                                                </form>
+                                            }
                                             <div class="confirm">
                                                 <input type="checkbox" id="confirm-remove-member-@member.UserId" class="confirm-toggle" />
                                                 <label for="confirm-remove-member-@member.UserId" class="btn-caution confirm-trigger">Remove</label>
@@ -171,12 +198,31 @@
                 </select>
                 <span class="field-validation-error" asp-validation-for="InviteInput.Role"></span>
             </div>
+            @if (Model.InvitableTeams.Count > 0)
+            {
+                @* ADR-0027: optional — accepting adds this team's membership alongside the
+                   organization membership acceptance always creates, which is what actually lets
+                   the new member see that team's tickets (TicketAccessPolicy.CanView requires it
+                   for every non-Admin role). Without picking one here, they join the organization
+                   but no specific team, same as before this feature existed. *@
+                <div class="field">
+                    <label asp-for="InviteInput.TeamId">Team (optional)</label>
+                    <select asp-for="InviteInput.TeamId">
+                        <option value="">No team</option>
+                        @foreach (var team in Model.InvitableTeams)
+                        {
+                            <option value="@team.TeamId">@team.TeamName</option>
+                        }
+                    </select>
+                    <span class="field-validation-error" asp-validation-for="InviteInput.TeamId"></span>
+                </div>
+            }
         </div>
         <button type="submit" class="btn-primary">Create invitation</button>
     </form>
 </div>
 
-@if (Model.CreatedInvitationLink is not null)
+@if (Model.CreatedInvitationLink is not null || Model.CreatedResetLink is not null)
 {
     <script src="~/js/copy-button.js" asp-append-version="true"></script>
 }

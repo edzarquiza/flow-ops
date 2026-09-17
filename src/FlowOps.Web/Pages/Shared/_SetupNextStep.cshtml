@@ -1,0 +1,23 @@
+@model FlowOps.Web.SetupNextStepViewModel?
+@* ADR-0026: rendered by the four setup-related pages (Admin/Index, Organization/Members,
+   Admin/Projects/Index, Tickets/Create) once that page's own step is done and at least one other
+   setup step remains — lets an Admin move straight to the next step instead of returning to the
+   dashboard first. Skip always posts back to Index's own handlers (the one place the mutation
+   lives) and redirects to the dashboard, where the updated checklist is the single source of
+   truth for what's left. *@
+@if (Model is not null)
+{
+    <div class="setup-next">
+        <span class="setup-next__label">Next: @Model.NextStep.Label</span>
+        <div class="setup-next__actions">
+            <a class="btn-primary setup-next__go" asp-page="@Model.NextStep.PageUrl">Go &rarr;</a>
+            @if (Model.NextStep.Skippable)
+            {
+                <form method="post" asp-page="/Index" asp-page-handler="@(Model.NextStep.Key == "invite" ? "SkipInvite" : "SkipProject")" class="setup-next__skip-form">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="setup-next__skip">Skip this step</button>
+                </form>
+            }
+        </div>
+    </div>
+}

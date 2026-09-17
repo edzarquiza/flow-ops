@@ -3,6 +3,7 @@ using System;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FlowOps.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(FlowOpsDbContext))]
-    partial class FlowOpsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916074917_AddOrganizationSetupSkipState")]
+    partial class AddOrganizationSetupSkipState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -223,10 +226,6 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("role");
 
-                    b.Property<int?>("TeamId")
-                        .HasColumnType("integer")
-                        .HasColumnName("team_id");
-
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -244,9 +243,6 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("InvitedByUserId")
                         .HasDatabaseName("ix_invitations_invited_by_user_id");
-
-                    b.HasIndex("TeamId")
-                        .HasDatabaseName("ix_invitations_team_id");
 
                     b.HasIndex("TokenHash")
                         .IsUnique()
@@ -1171,12 +1167,6 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_invitations_organizations_organization_id");
-
-                    b.HasOne("FlowOps.Domain.Directory.Team", null)
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_invitations_teams_team_id");
                 });
 
             modelBuilder.Entity("FlowOps.Domain.Organizations.OrganizationMembership", b =>

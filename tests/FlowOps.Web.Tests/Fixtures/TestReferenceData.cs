@@ -48,6 +48,9 @@ internal static class TestReferenceData
 
         var category = new Category(0, team.Id, CategoryName, WorkType.Incident, DateTimeOffset.UtcNow);
         db.Add(category);
+        // ADR-0026: keeps this shared organization "fully configured" (no workspace-setup panel)
+        // now that the checklist also requires a project.
+        db.Add(new Project(0, organization.Id, "Reference Project", DateTimeOffset.UtcNow));
         await db.SaveChangesAsync();
 
         var adminId = await UserIdAsync(userManager, TestUsers.AdminEmail);

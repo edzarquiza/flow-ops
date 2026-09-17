@@ -454,6 +454,38 @@ public sealed class TicketQueryService
     }
 
     /// <summary>
+    /// The active members of <paramref name="teamId"/> a caller who can assign to someone other
+    /// than themselves (Admin, or a Manager of this specific team — the same two branches
+    /// <see cref="TicketAccessPolicy.CanAssign"/> already grants regardless of target) may choose
+    /// from. Deliberately not gated by the Admin-only <c>DirectoryAccessPolicy.CanManageTeams</c>
+    /// (<see cref="FlowOps.Application.Directory.TeamService.GetTeamDetailAsync"/>'s own gate) — a Manager must reach
+    /// this too, and merely seeing a team's member names grants no team-management authority.
+    /// </summary>
+    public async Task<IReadOnlyList<AssignableMember>> GetAssignableTeamMembersAsync(CurrentUser actor, int teamId, CancellationToken cancellationToken = default)
+    {
+        if (actor.Role != UserRole.Admin && !actor.ManagedTeamIds.Contains(teamId))
+        {
+            throw new TicketAccessDeniedException("This role may not assign tickets on this team.");
+        }
+
+        var teamInOrganization = await _dbContext.Teams
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == teamId && t.OrganizationId == actor.OrganizationId, cancellationToken);
+        if (!teamInOrganization)
+        {
+            throw new TicketAccessDeniedException("This team is not available to you.");
+        }
+
+        return await _dbContext.TeamMembers
+            .AsNoTracking()
+            .Where(m => m.TeamId == teamId)
+            .Join(_dbContext.Users.Where(u => u.IsActive), m => m.UserId, u => u.Id, (_, u) => u)
+            .OrderBy(u => u.DisplayName)
+            .Select(u => new AssignableMember(u.Id, u.DisplayName))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Phase 10: the closed <see cref="TicketQueueFilter"/> set, translated to SQL. Each branch is
     /// the exact predicate its dashboard KPI counts (see <see cref="AnalyticsQueryService"/>) —
     /// applied after <see cref="ApplyViewScope"/>, so a filtered queue can never show a ticket

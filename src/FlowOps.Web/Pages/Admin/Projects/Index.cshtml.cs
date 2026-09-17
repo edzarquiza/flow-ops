@@ -19,11 +19,13 @@ public sealed class IndexModel : PageModel
 {
     private readonly CurrentUserAccessor _currentUserAccessor;
     private readonly CatalogService _catalogService;
+    private readonly WorkspaceSetupService _workspaceSetupService;
 
-    public IndexModel(CurrentUserAccessor currentUserAccessor, CatalogService catalogService)
+    public IndexModel(CurrentUserAccessor currentUserAccessor, CatalogService catalogService, WorkspaceSetupService workspaceSetupService)
     {
         _currentUserAccessor = currentUserAccessor;
         _catalogService = catalogService;
+        _workspaceSetupService = workspaceSetupService;
     }
 
     [BindProperty]
@@ -38,6 +40,10 @@ public sealed class IndexModel : PageModel
     /// <c>result.Error</c> from a failed mutation.</summary>
     public bool StatusIsError { get; set; }
 
+    /// <summary>ADR-0026: non-null only once this page's own step (a project exists) is done and
+    /// another setup step still isn't — see <c>_SetupNextStep.cshtml</c>.</summary>
+    public SetupNextStepViewModel? NextStep { get; private set; }
+
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
         var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
@@ -47,6 +53,7 @@ public sealed class IndexModel : PageModel
         }
 
         Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
 
@@ -78,7 +85,22 @@ public sealed class IndexModel : PageModel
         // Admin/Index.cshtml.cs and Admin/Teams/Details.cshtml.cs already apply.
         CreateInput = new CreateInputModel();
         Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
+    }
+
+    /// <summary>ADR-0026: only once "project" is this org's own state, not a still-outstanding
+    /// step — matches <c>_SetupNextStep.cshtml</c>'s "already done, here's what's next" purpose.</summary>
+    private async Task<SetupNextStepViewModel?> ResolveNextStepAsync(CurrentUser user, CancellationToken cancellationToken)
+    {
+        var status = await _workspaceSetupService.GetWorkspaceSetupStatusAsync(user, cancellationToken);
+        if (!SetupSteps.IsStepDone("project", status))
+        {
+            return null;
+        }
+
+        var next = SetupSteps.FirstIncomplete(status);
+        return next is null ? null : new SetupNextStepViewModel(next);
     }
 
     public async Task<IActionResult> OnPostRenameAsync(int projectId, string name, CancellationToken cancellationToken)

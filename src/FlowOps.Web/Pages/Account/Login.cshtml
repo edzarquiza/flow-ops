@@ -30,6 +30,10 @@
             </div>
             <button type="submit" class="btn-primary login-submit">Sign in</button>
         </form>
+        @* ADR-0027: no self-service reset exists — FlowOps sends no email at all, so there is no
+           "email yourself a reset link" flow to offer. An Admin generates a one-time reset link
+           from Organization/Members and sends it out-of-band instead. *@
+        <p class="ticket-subtitle">Forgot your password? Ask your organization admin for a reset link.</p>
         <p><a class="text-link" asp-page="/Account/Register">Create an account</a></p>
     </div>
 
