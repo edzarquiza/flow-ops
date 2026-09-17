@@ -95,11 +95,22 @@ public sealed class TicketQueryService
     /// search), never a replacement for either. <see langword="null"/>/whitespace is treated as no
     /// search, so an empty box reproduces this method's exact pre-search behavior.
     /// </param>
+    /// <param name="dateField">Phase 25: which date column <paramref name="dateRange"/> is tested
+    /// against. Ignored (no filtering) when <paramref name="dateRange"/> is <see langword="null"/>
+    /// or resolves to <see cref="DateRangeOption.AllTime"/> — defaulting to
+    /// <see cref="QueueDateField.Created"/> otherwise so a caller that only wants "the last 7 days"
+    /// need not also decide a field.</param>
+    /// <param name="dateRange">Phase 25: an additional <c>AND</c> narrowing applied in SQL, after
+    /// <paramref name="filter"/> and before <paramref name="search"/> — the same ordering
+    /// discipline this method's own scope/filter/search comment already documents. A ticket
+    /// outside the caller's scope is never reachable by widening this filter.</param>
     public async Task<PagedResult<TicketListItem>> GetQueueAsync(
         CurrentUser user,
         int pageNumber,
         TicketQueueFilter filter = TicketQueueFilter.None,
         string? search = null,
+        QueueDateField dateField = QueueDateField.Created,
+        DateRangeFilter? dateRange = null,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
@@ -108,9 +119,11 @@ public sealed class TicketQueryService
         }
 
         var normalizedSearch = SearchTermNormalizer.Normalize(search);
+        var now = _timeProvider.GetUtcNow();
 
         var scoped = ApplyViewScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user);
-        scoped = ApplyQueueFilter(scoped, filter, _timeProvider.GetUtcNow());
+        scoped = ApplyQueueFilter(scoped, filter, now);
+        scoped = ApplyDateRangeFilter(scoped, dateField, dateRange, now);
 
         // The requester join exists only to make "Requester" a searchable field (the queue never
         // displayed it before). RequesterId is a required FK, so this INNER JOIN can never exclude
@@ -173,7 +186,6 @@ public sealed class TicketQueryService
 
         // One configuration read for the whole page, not one per row.
         var configurations = await LoadSlaConfigurationsAsync(cancellationToken);
-        var now = _timeProvider.GetUtcNow();
 
         var items = rows
             .Select(r => new TicketListItem(
@@ -235,6 +247,7 @@ public sealed class TicketQueryService
                 AssigneeDisplayName = assignee == null ? null : assignee.DisplayName,
                 ticket.CreatedAt,
                 ticket.UpdatedAt,
+                ticket.PlannedStartDate,
                 ticket.DueDate,
                 Sla = new SlaFacts(
                     ticket.WorkType,
@@ -273,6 +286,7 @@ public sealed class TicketQueryService
             row.AssigneeDisplayName,
             row.CreatedAt,
             row.UpdatedAt,
+            row.PlannedStartDate,
             row.DueDate,
             BuildSlaView(row.Sla, configurations, _timeProvider.GetUtcNow()));
     }
@@ -503,4 +517,32 @@ public sealed class TicketQueryService
                 t.ResolvedAt != null && t.ResolvedAt >= now.AddDays(-AnalyticsQueryService.ReportingWindowDays)),
             _ => throw new ArgumentOutOfRangeException(nameof(filter)),
         };
+
+    /// <summary>
+    /// Phase 25 §10/§13: narrows by whichever column <paramref name="dateField"/> names, over the
+    /// half-open <c>[Start, End)</c> range <see cref="DateRangeFilter.Resolve"/> computes — never
+    /// materialised before filtering (CLAUDE.md §16/§22's ban on in-memory filtering of a query
+    /// that PostgreSQL can evaluate itself). A ticket whose date column is null (an unresolved
+    /// ticket filtered by "Resolved", say) never matches any range but <see cref="DateRangeOption.AllTime"/>.
+    /// </summary>
+    private static IQueryable<Ticket> ApplyDateRangeFilter(
+        IQueryable<Ticket> tickets,
+        QueueDateField dateField,
+        DateRangeFilter? dateRange,
+        DateTimeOffset now)
+    {
+        if (dateRange is null || dateRange.Resolve(now) is not { } range)
+        {
+            return tickets;
+        }
+
+        return dateField switch
+        {
+            QueueDateField.Created => tickets.Where(t => t.CreatedAt >= range.Start && t.CreatedAt < range.End),
+            QueueDateField.PlannedStart => tickets.Where(t => t.PlannedStartDate != null && t.PlannedStartDate >= range.Start && t.PlannedStartDate < range.End),
+            QueueDateField.Due => tickets.Where(t => t.DueDate != null && t.DueDate >= range.Start && t.DueDate < range.End),
+            QueueDateField.Resolved => tickets.Where(t => t.ResolvedAt != null && t.ResolvedAt >= range.Start && t.ResolvedAt < range.End),
+            _ => throw new ArgumentOutOfRangeException(nameof(dateField)),
+        };
+    }
 }

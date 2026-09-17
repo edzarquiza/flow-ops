@@ -38,6 +38,19 @@ public sealed class Ticket
     public int CategoryId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    /// <summary>The date/time the requester expects work to begin — a planning fact, not the
+    /// actual workflow start (there is no distinct "ActualStartedAt"; <see cref="SlaStartedAt"/>
+    /// is the closest actual-timestamp concept, and it means something different: when the SLA
+    /// clock began). Never read by <see cref="FlowOps.Domain.Sla.SlaPolicy"/> or
+    /// <see cref="FlowOps.Domain.Attention.AttentionPolicy"/> (TICKET-INV-11).</summary>
+    public DateTimeOffset? PlannedStartDate { get; private set; }
+
+    /// <summary>The date/time the requester expects the planned work to be completed — a planning
+    /// fact, distinct from <see cref="SlaDueAt"/> (the SLA's own, separately-computed deadline).
+    /// Read by <see cref="FlowOps.Domain.Attention.AttentionPolicy"/>'s <c>Overdue</c> signal and
+    /// <c>TicketQueueFilter.Overdue</c> — both already existed before planned-start-date support
+    /// was added; this property itself is not new.</summary>
     public DateTimeOffset? DueDate { get; private set; }
     public int SlaTargetMinutes { get; private set; }
     public DateTimeOffset SlaStartedAt { get; private set; }
@@ -76,10 +89,13 @@ public sealed class Ticket
         int categoryTeamId,
         int? projectId,
         int slaTargetMinutes,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        DateTimeOffset? plannedStartDate = null,
+        DateTimeOffset? dueDate = null)
     {
         ValidateTitle(title);
         ValidateDescription(description);
+        ValidatePlanningDates(plannedStartDate, dueDate);
 
         if (categoryTeamId != teamId)
         {
@@ -99,6 +115,8 @@ public sealed class Ticket
             ProjectId = projectId,
             CreatedAt = now,
             UpdatedAt = now,
+            PlannedStartDate = plannedStartDate,
+            DueDate = dueDate,
             SlaTargetMinutes = slaTargetMinutes,
             SlaStartedAt = now,
             SlaDueAt = SlaPolicy.CalculateDueDate(now, slaTargetMinutes),
@@ -429,6 +447,16 @@ public sealed class Ticket
         if (string.IsNullOrEmpty(description) || description.Length > MaxDescriptionLength)
         {
             throw new DomainRuleException("TICKET-INV-01", $"Description is required and must be at most {MaxDescriptionLength} characters.");
+        }
+    }
+
+    /// <summary>TICKET-INV-11. Both are optional and independent of each other and of the SLA
+    /// system; the only rule is ordering when both are present.</summary>
+    private static void ValidatePlanningDates(DateTimeOffset? plannedStartDate, DateTimeOffset? dueDate)
+    {
+        if (plannedStartDate is { } start && dueDate is { } due && start > due)
+        {
+            throw new DomainRuleException("TICKET-INV-11", "Planned start date must be on or before the due date.");
         }
     }
 }

@@ -128,6 +128,7 @@ public sealed record TicketDetail(
     string? AssigneeDisplayName,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
+    DateTimeOffset? PlannedStartDate,
     DateTimeOffset? DueDate,
     TicketSlaView Sla);
 
@@ -204,7 +205,9 @@ public sealed record CreateTicketRequest(
     Priority Priority,
     int TeamId,
     int CategoryId,
-    int? ProjectId);
+    int? ProjectId,
+    DateTimeOffset? PlannedStartDate = null,
+    DateTimeOffset? DueDate = null);
 
 /// <summary>
 /// Phase 11: one category a caller may file a ticket against, grouped under its owning
@@ -388,4 +391,129 @@ public sealed record WorkspaceSetupStatus(
     public bool ProjectComplete => HasProject || ProjectStepSkipped;
 
     public bool IsComplete => HasTeam && InviteComplete && ProjectComplete && HasTicket;
+}
+
+/// <summary>
+/// Phase 25: the small, closed set of quick date ranges offered by the Work Queue and At-Risk
+/// date filters — deliberately not a free date picker (CLAUDE.md's ban on unnecessary
+/// abstraction; the same "closed, named set" discipline <see cref="TicketQueueFilter"/> and
+/// <see cref="DashboardFilter.AllowedRangeDays"/> already use). <see cref="Custom"/> is the one
+/// escape hatch, resolved from caller-supplied <c>From</c>/<c>To</c> values instead of a fixed
+/// offset from "now".
+/// </summary>
+public enum DateRangeOption
+{
+    /// <summary>No date filtering — the default, so every existing caller's behavior (no date
+    /// filter existed before Phase 25) is unchanged.</summary>
+    AllTime,
+    Today,
+    ThisWeek,
+    ThisMonth,
+    Last7Days,
+    Last30Days,
+    Last90Days,
+    Custom,
+}
+
+/// <summary>
+/// Phase 25 §10: which date column the Work Queue's date filter narrows by. A closed set of the
+/// only ticket dates with meaningful queue semantics — <c>UpdatedAt</c>/<c>SlaStartedAt</c> etc.
+/// are deliberately excluded, per the instruction not to "automatically add every possible
+/// timestamp."
+/// </summary>
+public enum QueueDateField
+{
+    Created,
+    PlannedStart,
+    Due,
+    Resolved,
+}
+
+/// <summary>
+/// Phase 25 §17: the one small, reusable date-range value both the Work Queue and At-Risk date
+/// filters bind from the query string — never a general reporting abstraction (ADR-0019 already
+/// rejected that for the Dashboard, and this deliberately does not reopen it). Resolution to a
+/// concrete UTC instant range is the one piece of logic worth sharing; which column the range is
+/// tested against is each caller's own decision, not this type's.
+/// </summary>
+/// <param name="Option">The selected quick range, or <see cref="DateRangeOption.Custom"/>.</param>
+/// <param name="From">Only meaningful when <paramref name="Option"/> is <c>Custom</c> — the
+/// caller-supplied start date (date-only; no time-of-day concept exists in this UI).</param>
+/// <param name="To">Only meaningful when <paramref name="Option"/> is <c>Custom</c> — the
+/// caller-supplied end date, inclusive (see <see cref="Resolve"/> for how the inclusive end is
+/// implemented as an exclusive upper bound one day later).</param>
+public sealed record DateRangeFilter(DateRangeOption Option, DateOnly? From, DateOnly? To)
+{
+    public static readonly DateRangeFilter None = new(DateRangeOption.AllTime, null, null);
+
+    /// <summary>
+    /// True only for a <see cref="DateRangeOption.Custom"/> range whose <see cref="From"/> is
+    /// strictly after its <see cref="To"/> — section 12's "Validate: From &lt;= To... Do not
+    /// silently swap dates." The caller (a Web PageModel) is expected to reject the filter with a
+    /// validation message and fall back to <see cref="None"/> rather than ever calling
+    /// <see cref="Resolve"/> on an invalid range.
+    /// </summary>
+    public bool IsInvalidCustomRange => Option == DateRangeOption.Custom && From is { } f && To is { } t && f > t;
+
+    /// <summary>
+    /// Resolves this filter to a half-open UTC instant range <c>[Start, End)</c>, or
+    /// <see langword="null"/> for <see cref="DateRangeOption.AllTime"/> (no filtering at all).
+    /// </summary>
+    /// <remarks>
+    /// Section 13's boundary requirement — a range must never accidentally exclude its own end
+    /// day — is implemented uniformly as an exclusive upper bound one instant past the end of the
+    /// last included day, never <c>timestamp &lt;= endOfDay 00:00</c>. FlowOps has no
+    /// organization/user timezone concept (confirmed by inspection — see the Phase 25
+    /// implementation report); every boundary below is computed in UTC, exactly like every other
+    /// date/time value in this codebase (TICKET-INV-10). <c>Today</c>/<c>ThisWeek</c>/
+    /// <c>ThisMonth</c> are calendar-aligned in UTC; <c>Last7/30/90Days</c> are rolling windows
+    /// from <paramref name="now"/>, matching the existing convention every other "last N days"
+    /// calculation in this codebase already uses (e.g. <c>AnalyticsQueryService.ReportingWindowDays</c>,
+    /// <c>TicketQueueFilter.ResolvedRecently</c>) rather than a calendar-aligned window.
+    /// </remarks>
+    public (DateTimeOffset Start, DateTimeOffset End)? Resolve(DateTimeOffset now)
+    {
+        var today = new DateOnly(now.Year, now.Month, now.Day);
+
+        switch (Option)
+        {
+            case DateRangeOption.AllTime:
+                return null;
+
+            case DateRangeOption.Today:
+                return (StartOfDay(today), StartOfDay(today.AddDays(1)));
+
+            case DateRangeOption.ThisWeek:
+                // Monday-start week, consistent with DateTimeOffset.DayOfWeek where Monday = 1
+                // (Sunday = 0); no ISO-8601 week-numbering library needed for a 7-day span.
+                var daysSinceMonday = ((int)today.DayOfWeek + 6) % 7;
+                var weekStart = today.AddDays(-daysSinceMonday);
+                return (StartOfDay(weekStart), StartOfDay(weekStart.AddDays(7)));
+
+            case DateRangeOption.ThisMonth:
+                var monthStart = new DateOnly(today.Year, today.Month, 1);
+                return (StartOfDay(monthStart), StartOfDay(monthStart.AddMonths(1)));
+
+            case DateRangeOption.Last7Days:
+                return (now.AddDays(-7), now);
+
+            case DateRangeOption.Last30Days:
+                return (now.AddDays(-30), now);
+
+            case DateRangeOption.Last90Days:
+                return (now.AddDays(-90), now);
+
+            case DateRangeOption.Custom when From is { } from && To is { } to && from <= to:
+                return (StartOfDay(from), StartOfDay(to.AddDays(1)));
+
+            // An invalid or incomplete Custom range resolves to "no filter" rather than throwing —
+            // the Web layer is expected to have already rejected it with a validation message
+            // (see IsInvalidCustomRange) before ever reaching here.
+            default:
+                return null;
+        }
+    }
+
+    private static DateTimeOffset StartOfDay(DateOnly day) =>
+        new(day.Year, day.Month, day.Day, 0, 0, 0, TimeSpan.Zero);
 }

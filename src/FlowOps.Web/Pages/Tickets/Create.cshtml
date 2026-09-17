@@ -106,6 +106,26 @@ else
             </div>
         </div>
 
+        @* Phase 25: planning dates — distinct from the SLA section on the detail page, which is
+           computed and never user-set. Both optional; a native datetime-local input needs no JS
+           and degrades cleanly. *@
+        <div class="zone">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("When this is planned")); }
+            <div class="field-grid">
+                <div class="field">
+                    <label asp-for="Input.PlannedStartDate">Planned start (optional)</label>
+                    <input asp-for="Input.PlannedStartDate" type="datetime-local" />
+                    <span class="field-validation-error" asp-validation-for="Input.PlannedStartDate"></span>
+                </div>
+                <div class="field">
+                    <label asp-for="Input.DueDate">Due date (optional)</label>
+                    <input asp-for="Input.DueDate" type="datetime-local" />
+                    <span class="field-validation-error" asp-validation-for="Input.DueDate"></span>
+                </div>
+            </div>
+            <p class="field-hint">Not the SLA deadline — this is your own planning target. Times are UTC.</p>
+        </div>
+
         <button type="submit" class="btn-primary">Create ticket</button>
     </form>
 

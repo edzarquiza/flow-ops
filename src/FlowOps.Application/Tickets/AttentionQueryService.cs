@@ -47,10 +47,23 @@ public sealed class AttentionQueryService
     /// AttentionPolicy would not have flagged, nor change the relative order of what remains.
     /// <see langword="null"/>/whitespace is treated as no search.
     /// </param>
+    /// <param name="dueDateRange">
+    /// Phase 25 §16: At-Risk is an intelligence view, not a ticket-history report — its date
+    /// filter is deliberately narrower than the Work Queue's and offers no field choice. It
+    /// narrows by <c>SlaDueAt</c>, the one date already central to this page's own primary signal
+    /// (SLA breach/at-risk), applied in the same position as <paramref name="search"/>: strictly
+    /// after <see cref="AttentionPolicy.Rank"/>, so it can only narrow an already-eligible,
+    /// already-ranked list, never change which tickets qualify as at-risk or their relative order.
+    /// A candidate flagged solely by Aging/Stalled/Churn/Reopened with an <c>SlaDueAt</c> outside
+    /// the selected range is intentionally excluded by this filter — the same tradeoff a
+    /// "due-date-focused" filter makes on any list mixing due-dated and non-due-dated items; it is
+    /// not a defect in <see cref="AttentionPolicy"/>, which is untouched by this parameter.
+    /// </param>
     public async Task<PagedResult<AttentionListItem>> GetAtRiskAsync(
         CurrentUser user,
         int pageNumber,
         string? search = null,
+        DateRangeFilter? dueDateRange = null,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
@@ -96,14 +109,18 @@ public sealed class AttentionQueryService
             ? ranked
             : await FilterBySearchAsync(ranked, normalizedSearch, cancellationToken);
 
-        var page = searched
+        var dateFiltered = dueDateRange?.Resolve(now) is { } range
+            ? searched.Where(r => r.Ticket.SlaDueAt >= range.Start && r.Ticket.SlaDueAt < range.End).ToList()
+            : searched;
+
+        var page = dateFiltered
             .Skip((pageNumber - 1) * PageSize)
             .Take(PageSize)
             .ToList();
 
         var items = await MapAsync(page, slaConfigurations, now, cancellationToken);
 
-        return new PagedResult<AttentionListItem>(items, pageNumber, PageSize, searched.Count);
+        return new PagedResult<AttentionListItem>(items, pageNumber, PageSize, dateFiltered.Count);
     }
 
     /// <summary>

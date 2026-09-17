@@ -226,7 +226,8 @@ referencing the configuration row. This is a deliberate absence of a relationshi
 | `category_id` | `int` (FK → `categories.id`, `RESTRICT`) | No | `TICKET-INV-02` |
 | `created_at` | `timestamptz` | No | `TICKET-INV-10` |
 | `updated_at` | `timestamptz` | No | `TICKET-INV-10` |
-| `due_date` | `timestamptz` | Yes | Feeds the `Overdue` attention signal |
+| `planned_start_date` | `timestamptz` | Yes | Phase 25: a planning fact, not read by `SlaPolicy`/`AttentionPolicy` (`TICKET-INV-11`) |
+| `due_date` | `timestamptz` | Yes | Feeds the `Overdue` attention signal; also a planning fact, distinct from `sla_due_at` (`TICKET-INV-11`) |
 | `sla_target_minutes` | `int` | No | Captured at clock-start; not a live FK to `sla_configurations` (`SLA-RULE-03`) |
 | `sla_started_at` | `timestamptz` | No | `SLA-RULE-05` |
 | `sla_due_at` | `timestamptz` | No | `SLA-RULE-05`, indexed — see §9 |

@@ -12,6 +12,7 @@
         ["filter"] = Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString(),
     };
 }
+<div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
 <div class="page-header">
     <div class="page-header__top">
         <div class="section-head section-head--plain">
@@ -53,6 +54,56 @@
     }
 </div>
 
+@* Phase 25 §10/§17: the same filter-bar grammar the Dashboard's date filter already uses (plain
+   GET form, Apply button, auto-submit-on-change progressive enhancement) — a second, independent
+   filter dimension from the TicketQueueFilter KPI-links above, so both can be active together
+   (e.g. "Overdue" narrowed further to "Due this week"). *@
+<form method="get" class="filter-bar" aria-label="Date filter" data-autosubmit>
+    <input type="hidden" name="filter" value="@(Model.Filter == TicketQueueFilter.None ? "" : Model.Filter.ToString())" />
+    <input type="hidden" name="search" value="@Model.Search" />
+    <div class="filter-bar__field">
+        <label for="dateField">Date</label>
+        <select id="dateField" name="dateField">
+            <option value="@QueueDateField.Created" selected="@(Model.DateField == QueueDateField.Created)">Created</option>
+            <option value="@QueueDateField.PlannedStart" selected="@(Model.DateField == QueueDateField.PlannedStart)">Planned start</option>
+            <option value="@QueueDateField.Due" selected="@(Model.DateField == QueueDateField.Due)">Due</option>
+            <option value="@QueueDateField.Resolved" selected="@(Model.DateField == QueueDateField.Resolved)">Resolved</option>
+        </select>
+    </div>
+    <div class="filter-bar__field">
+        <label for="range">Range</label>
+        <select id="range" name="range">
+            <option value="@DateRangeOption.AllTime" selected="@(Model.DateRangeOption == DateRangeOption.AllTime)">All time</option>
+            <option value="@DateRangeOption.Today" selected="@(Model.DateRangeOption == DateRangeOption.Today)">Today</option>
+            <option value="@DateRangeOption.ThisWeek" selected="@(Model.DateRangeOption == DateRangeOption.ThisWeek)">This week</option>
+            <option value="@DateRangeOption.ThisMonth" selected="@(Model.DateRangeOption == DateRangeOption.ThisMonth)">This month</option>
+            <option value="@DateRangeOption.Last7Days" selected="@(Model.DateRangeOption == DateRangeOption.Last7Days)">Last 7 days</option>
+            <option value="@DateRangeOption.Last30Days" selected="@(Model.DateRangeOption == DateRangeOption.Last30Days)">Last 30 days</option>
+            <option value="@DateRangeOption.Last90Days" selected="@(Model.DateRangeOption == DateRangeOption.Last90Days)">Last 90 days</option>
+            <option value="@DateRangeOption.Custom" selected="@(Model.DateRangeOption == DateRangeOption.Custom)">Custom range</option>
+        </select>
+    </div>
+    @if (Model.DateRangeOption == DateRangeOption.Custom)
+    {
+        <div class="filter-bar__field">
+            <label for="from">From</label>
+            <input id="from" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="filter-bar__field">
+            <label for="to">To</label>
+            <input id="to" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+    }
+    <div class="filter-bar__actions">
+        <button type="submit" class="btn">Apply</button>
+        @if (Model.HasDateFilter)
+        {
+            <a class="btn" asp-page="/Tickets/Index" asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())" asp-route-search="@Model.Search">Clear dates</a>
+        }
+    </div>
+</form>
+<script src="~/js/dashboard-filters.js" asp-append-version="true"></script>
+
 @* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
    already uses for this exact .q-list/.q-row component — the ticket list is this page's entire
    reason for existing, exactly the kind of "genuinely a distinct object" Principle 3 reserves a
@@ -72,16 +123,26 @@
         else
         {
             <p class="empty-state">
-                @(Model.Filter == TicketQueueFilter.None
-                    ? "No tickets are visible to you right now."
-                    : "No tickets match this filter right now.")
+                @(Model.HasDateFilter
+                    ? "No work matches the selected date range."
+                    : Model.Filter == TicketQueueFilter.None
+                        ? "No tickets are visible to you right now."
+                        : "No tickets match this filter right now.")
             </p>
         }
     </div>
 }
 else
 {
-    var workQueueRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "filter", Model.Filter.ToString() }, { "search", Model.Search } };
+    var workQueueRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary
+    {
+        { "filter", Model.Filter.ToString() },
+        { "search", Model.Search },
+        { "dateField", Model.DateField.ToString() },
+        { "range", Model.DateRangeOption.ToString() },
+        { "from", Model.From?.ToString("yyyy-MM-dd") },
+        { "to", Model.To?.ToString("yyyy-MM-dd") },
+    };
     await Html.RenderPartialAsync(
         "_Pagination",
         FlowOps.Web.PaginationViewModel.For(

@@ -1943,6 +1943,15 @@ form {
   margin-left: 3px;
 }
 
+/* Phase 25: a short explanatory line under a field group — e.g. "times are UTC" — quieter than
+   .page-context (which anchors a whole section), scoped to sit directly under the fields it
+   explains. */
+.field-hint {
+  font-size: 12.5px;
+  color: var(--fo-text-2);
+  margin: calc(-1 * var(--fo-space-2)) 0 0;
+}
+
 input[type="text"],
 input[type="email"],
 input[type="password"],

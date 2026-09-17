@@ -267,6 +267,46 @@ public sealed class TicketServiceTests
         Assert.Equal(userId, afterAssign.AssigneeId);
     }
 
+    [Fact] // Phase 25: both planning dates flow through Create to the persisted row.
+    public async Task CreateAsync_WithPlanningDates_Persists()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, categoryId, userId) = await SeedAsync(context);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        var start = Now.AddDays(1);
+        var due = Now.AddDays(5);
+        var (id, _) = await service.CreateAsync(
+            Request(teamId, categoryId) with { PlannedStartDate = start, DueDate = due },
+            TicketTestData.User(userId, UserRole.Agent, teamId));
+
+        await using var verify = _fixture.CreateContext();
+        var persisted = await verify.Tickets.AsNoTracking().SingleAsync(t => t.Id == id);
+        Assert.Equal(start, persisted.PlannedStartDate);
+        Assert.Equal(due, persisted.DueDate);
+    }
+
+    [Fact] // TICKET-INV-11, surfaced through the Application layer exactly like every other
+           // domain-rule rejection (DomainRuleException propagates unchanged).
+    public async Task CreateAsync_PlannedStartAfterDueDate_IsRejected()
+    {
+        await using var context = _fixture.CreateContext();
+        var (teamId, categoryId, userId) = await SeedAsync(context);
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+
+        var ex = await Assert.ThrowsAsync<DomainRuleException>(() => service.CreateAsync(
+            Request(teamId, categoryId) with { PlannedStartDate = Now.AddDays(5), DueDate = Now.AddDays(1) },
+            TicketTestData.User(userId, UserRole.Agent, teamId)));
+
+        Assert.Equal("TICKET-INV-11", ex.RuleCode);
+
+        // Scoped to this test's own (uniquely-named) team — Application.Tests share one process-
+        // lifetime Organization and Postgres container, so an unscoped global count would also
+        // see every other concurrently-running test's tickets.
+        await using var verify = _fixture.CreateContext();
+        Assert.Equal(0, await verify.Tickets.CountAsync(t => t.TeamId == teamId));
+    }
+
     private static CreateTicketRequest Request(int teamId, int categoryId) =>
         new(
             Title: "Printer on 3rd floor is jammed",

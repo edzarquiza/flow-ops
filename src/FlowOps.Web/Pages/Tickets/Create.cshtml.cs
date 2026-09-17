@@ -128,7 +128,9 @@ public sealed class CreateModel : PageModel
             Input.Priority,
             teamId.Value,
             Input.CategoryId,
-            Input.ProjectId);
+            Input.ProjectId,
+            ToUtc(Input.PlannedStartDate),
+            ToUtc(Input.DueDate));
 
         try
         {
@@ -143,11 +145,23 @@ public sealed class CreateModel : PageModel
         catch (DomainRuleException ex)
         {
             // A domain invariant rejected the input — surfaced as an inline form error rather
-            // than an exception page (CLAUDE.md §11.3/§11.4 tier 3).
+            // than an exception page (CLAUDE.md §11.3/§11.4 tier 3). Covers TICKET-INV-11 (planned
+            // start after due date) the same way it already covers every other invariant here.
             ModelState.AddModelError(string.Empty, ex.Message);
             return Page();
         }
     }
+
+    /// <summary>
+    /// Phase 25 §5: FlowOps has no organization/user timezone concept (confirmed by inspection) —
+    /// every other timestamp in this codebase is UTC (TICKET-INV-10), so a native
+    /// <c>datetime-local</c> input's offset-less value is deliberately treated as a UTC wall-clock
+    /// reading rather than the server's local timezone (the .NET default for an offset-less
+    /// <see cref="DateTimeOffset"/> parse), which would silently depend on where the process
+    /// happens to be deployed. This is a documented limitation, not a full timezone system.
+    /// </summary>
+    private static DateTimeOffset? ToUtc(DateTime? value) =>
+        value is { } v ? new DateTimeOffset(DateTime.SpecifyKind(v, DateTimeKind.Utc)) : null;
 
     public sealed class InputModel
     {
@@ -176,5 +190,19 @@ public sealed class CreateModel : PageModel
 
         [Display(Name = "Project (optional)")]
         public int? ProjectId { get; set; }
+
+        // Phase 25: planning facts, not SLA fields (TICKET-INV-11 is the only rule linking them —
+        // when both are given, start must not be after due). Both optional; TICKET-INV-11's
+        // rejection surfaces as the same inline DomainRuleException-driven error every other
+        // invariant on this page already uses, not a client-side [Compare]-style attribute, since
+        // the comparison needs the actual invariant's wording (and stays correct if it ever
+        // changes) rather than a duplicated one here.
+        [Display(Name = "Planned start (optional)")]
+        [DataType(DataType.DateTime)]
+        public DateTime? PlannedStartDate { get; set; }
+
+        [Display(Name = "Due date (optional)")]
+        [DataType(DataType.DateTime)]
+        public DateTime? DueDate { get; set; }
     }
 }

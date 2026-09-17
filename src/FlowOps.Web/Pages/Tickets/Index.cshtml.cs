@@ -9,6 +9,13 @@ namespace FlowOps.Web.Pages.Tickets;
 /// service, hand the result to the view. The team-visibility scope is applied inside the query
 /// (AUTH-RULE-05) — this page performs no filtering of its own.
 /// </summary>
+/// <remarks>
+/// Phase 25: the date filter (<see cref="DateField"/>/<see cref="DateRangeOption"/>/
+/// <see cref="From"/>/<see cref="To"/>) is bound the same way the Dashboard's own filter bar
+/// already is (<c>[BindProperty(SupportsGet = true)]</c>, ADR-0019's convention) — a plain,
+/// bookmarkable GET, no JavaScript required. An invalid Custom range (From &gt; To) is rejected
+/// with a validation message rather than silently swapped or silently ignored (§12).
+/// </remarks>
 public sealed class IndexModel : PageModel
 {
     private readonly CurrentUserAccessor _currentUserAccessor;
@@ -33,6 +40,25 @@ public sealed class IndexModel : PageModel
     /// carry it into pagination links and the "clear filter" link.</summary>
     public string? Search { get; private set; }
 
+    [BindProperty(SupportsGet = true, Name = "dateField")]
+    public QueueDateField DateField { get; set; } = QueueDateField.Created;
+
+    [BindProperty(SupportsGet = true, Name = "range")]
+    public DateRangeOption DateRangeOption { get; set; } = DateRangeOption.AllTime;
+
+    [BindProperty(SupportsGet = true, Name = "from")]
+    public DateOnly? From { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "to")]
+    public DateOnly? To { get; set; }
+
+    /// <summary>The date filter actually applied — <see langword="null"/> once an invalid Custom
+    /// range has been rejected, so the query never silently applies a range the user did not
+    /// validly request.</summary>
+    public DateRangeFilter? DateRange { get; private set; }
+
+    public bool HasDateFilter => DateRangeOption != DateRangeOption.AllTime;
+
     public async Task<IActionResult> OnGetAsync(
         int pageNumber = 1,
         TicketQueueFilter filter = TicketQueueFilter.None,
@@ -50,7 +76,19 @@ public sealed class IndexModel : PageModel
         CanCreateTicket = Domain.Tickets.TicketAccessPolicy.CanCreate(user);
         Filter = filter;
         Search = search;
-        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, cancellationToken);
+
+        var requestedRange = new DateRangeFilter(DateRangeOption, From, To);
+        if (requestedRange.IsInvalidCustomRange)
+        {
+            ModelState.AddModelError(string.Empty, "The custom date range's start must be on or before its end.");
+            DateRange = null;
+        }
+        else
+        {
+            DateRange = requestedRange;
+        }
+
+        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, DateField, DateRange, cancellationToken);
         return Page();
     }
 }

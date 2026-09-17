@@ -19,6 +19,12 @@
         FlowOps.Domain.Sla.SlaStatus.Breached => "breached",
         _ => "within",
     };
+
+    // Phase 25 §9: due-date overdue is a distinct concept from SLA breach — a ticket can be one,
+    // the other, both, or neither. Never derived from Sla.Status; DueDate/terminal-status only,
+    // the exact condition AttentionPolicy's own Overdue signal already uses.
+    var isTerminal = Model.Ticket.Status is FlowOps.Domain.Tickets.Status.Resolved or FlowOps.Domain.Tickets.Status.Closed;
+    var isOverdue = !isTerminal && Model.Ticket.DueDate is { } due && due < DateTimeOffset.UtcNow;
 }
 
 <div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
@@ -72,6 +78,22 @@
             @if (Model.Ticket.DueDate is { } dueDate)
             {
                 <span class="panel__value"><time datetime="@dueDate.ToString("O")" title="@dueDate.ToString("u")">@dueDate.ToString("yyyy-MM-dd HH:mm")</time></span>
+                @if (isOverdue)
+                {
+                    @* Phase 25 §9: distinct from SLA breach — this is the planning due date, never
+                       derived from Sla.Status, and shown even when SLA itself is still healthy. *@
+                    <span class="badge badge-danger" title="Overdue — this is the planning due date, not the SLA deadline">Overdue</span>
+                }
+            }
+            else
+            {
+                <span class="panel__value panel__value--muted">Not set</span>
+            }
+            <br>
+            Planned start
+            @if (Model.Ticket.PlannedStartDate is { } plannedStart)
+            {
+                <span class="panel__value"><time datetime="@plannedStart.ToString("O")" title="@plannedStart.ToString("u")">@plannedStart.ToString("yyyy-MM-dd HH:mm")</time></span>
             }
             else
             {

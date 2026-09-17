@@ -1,10 +1,12 @@
 @page
+@using FlowOps.Application.Tickets
 @using FlowOps.Domain.Attention
 @using FlowOps.Domain.Tickets
 @model FlowOps.Web.Pages.Tickets.AtRiskModel
 @{
     ViewData["Title"] = "At-risk work";
 }
+<div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
 <div class="page-header">
     <div class="page-header__top">
         <div class="section-head section-head--plain">
@@ -21,6 +23,45 @@
     </div>
     <p class="page-actions"><a class="back-link" asp-page="/Tickets/Index">&larr; Work queue</a></p>
 </div>
+
+@* Phase 25 §16: narrower than the Work Queue's date filter by design — one quick-range selector,
+   always narrowing by SLA due date (the field genuinely relevant to an intelligence/attention
+   view), no field choice. See AttentionQueryService.GetAtRiskAsync's own doc comment. *@
+<form method="get" class="filter-bar" aria-label="Date filter" data-autosubmit>
+    <input type="hidden" name="search" value="@Model.Search" />
+    <div class="filter-bar__field">
+        <label for="range">Due within</label>
+        <select id="range" name="range">
+            <option value="@DateRangeOption.AllTime" selected="@(Model.DateRangeOption == DateRangeOption.AllTime)">Any time</option>
+            <option value="@DateRangeOption.Today" selected="@(Model.DateRangeOption == DateRangeOption.Today)">Today</option>
+            <option value="@DateRangeOption.ThisWeek" selected="@(Model.DateRangeOption == DateRangeOption.ThisWeek)">This week</option>
+            <option value="@DateRangeOption.ThisMonth" selected="@(Model.DateRangeOption == DateRangeOption.ThisMonth)">This month</option>
+            <option value="@DateRangeOption.Last7Days" selected="@(Model.DateRangeOption == DateRangeOption.Last7Days)">Last 7 days</option>
+            <option value="@DateRangeOption.Last30Days" selected="@(Model.DateRangeOption == DateRangeOption.Last30Days)">Last 30 days</option>
+            <option value="@DateRangeOption.Last90Days" selected="@(Model.DateRangeOption == DateRangeOption.Last90Days)">Last 90 days</option>
+            <option value="@DateRangeOption.Custom" selected="@(Model.DateRangeOption == DateRangeOption.Custom)">Custom range</option>
+        </select>
+    </div>
+    @if (Model.DateRangeOption == DateRangeOption.Custom)
+    {
+        <div class="filter-bar__field">
+            <label for="from">From</label>
+            <input id="from" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="filter-bar__field">
+            <label for="to">To</label>
+            <input id="to" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+    }
+    <div class="filter-bar__actions">
+        <button type="submit" class="btn">Apply</button>
+        @if (Model.HasDateFilter)
+        {
+            <a class="btn" asp-page="/Tickets/AtRisk" asp-route-search="@Model.Search">Clear dates</a>
+        }
+    </div>
+</form>
+<script src="~/js/dashboard-filters.js" asp-append-version="true"></script>
 
 @* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
    already uses for this exact .q-list/.q-row component. Pagination stays outside the panel
@@ -39,13 +80,21 @@
         else
         {
             @* A useful empty state, not a blank panel (CLAUDE.md §22). *@
-            <p class="empty-state">No work is at risk right now.</p>
+            <p class="empty-state">
+                @(Model.HasDateFilter ? "No work matches the selected date range." : "No work is at risk right now.")
+            </p>
         }
     </div>
 }
 else
 {
-    var atRiskRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary { { "search", Model.Search } };
+    var atRiskRouteValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary
+    {
+        { "search", Model.Search },
+        { "range", Model.DateRangeOption.ToString() },
+        { "from", Model.From?.ToString("yyyy-MM-dd") },
+        { "to", Model.To?.ToString("yyyy-MM-dd") },
+    };
     await Html.RenderPartialAsync(
         "_Pagination",
         FlowOps.Web.PaginationViewModel.For(

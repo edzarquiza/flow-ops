@@ -147,7 +147,9 @@ public sealed class TicketService
             categoryTeamId: categoryTeamId,
             projectId: request.ProjectId,
             slaTargetMinutes: slaTargetMinutes,
-            now: now);
+            now: now,
+            plannedStartDate: request.PlannedStartDate,
+            dueDate: request.DueDate);
 
         _dbContext.Tickets.Add(ticket);
         await _dbContext.SaveChangesAsync(cancellationToken);

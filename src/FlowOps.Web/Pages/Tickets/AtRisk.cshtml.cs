@@ -10,6 +10,12 @@ namespace FlowOps.Web.Pages.Tickets;
 /// detects nothing and ranks nothing; <see cref="FlowOps.Domain.Attention.AttentionPolicy"/> owns
 /// both, and the caller's team scope is applied inside the query (AUTH-RULE-05).
 /// </summary>
+/// <remarks>
+/// Phase 25 §16: the date filter here is deliberately narrower than the Work Queue's — a single
+/// quick-range selector with no field choice, always narrowing by SLA due date (see
+/// <see cref="AttentionQueryService.GetAtRiskAsync"/>'s own doc comment for why). This is an
+/// intelligence view, not a ticket-history report.
+/// </remarks>
 public sealed class AtRiskModel : PageModel
 {
     private readonly CurrentUserAccessor _currentUserAccessor;
@@ -28,6 +34,19 @@ public sealed class AtRiskModel : PageModel
     /// carry it into pagination links and the "clear search" link.</summary>
     public string? Search { get; private set; }
 
+    [BindProperty(SupportsGet = true, Name = "range")]
+    public DateRangeOption DateRangeOption { get; set; } = DateRangeOption.AllTime;
+
+    [BindProperty(SupportsGet = true, Name = "from")]
+    public DateOnly? From { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "to")]
+    public DateOnly? To { get; set; }
+
+    public DateRangeFilter? DateRange { get; private set; }
+
+    public bool HasDateFilter => DateRangeOption != DateRangeOption.AllTime;
+
     public async Task<IActionResult> OnGetAsync(int pageNumber = 1, string? search = null, CancellationToken cancellationToken = default)
     {
         var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
@@ -37,7 +56,19 @@ public sealed class AtRiskModel : PageModel
         }
 
         Search = search;
-        Queue = await _attentionQueryService.GetAtRiskAsync(user, pageNumber, search, cancellationToken);
+
+        var requestedRange = new DateRangeFilter(DateRangeOption, From, To);
+        if (requestedRange.IsInvalidCustomRange)
+        {
+            ModelState.AddModelError(string.Empty, "The custom date range's start must be on or before its end.");
+            DateRange = null;
+        }
+        else
+        {
+            DateRange = requestedRange;
+        }
+
+        Queue = await _attentionQueryService.GetAtRiskAsync(user, pageNumber, search, DateRange, cancellationToken);
         return Page();
     }
 }

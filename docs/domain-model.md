@@ -65,6 +65,7 @@ split or clarified, it gains a new ID rather than silently changing meaning unde
 | `TICKET-INV-08` | Assignment, priority, category, and **team** changes are rejected on tickets in `Resolved` or `Closed` status. (Team added by project-owner decision: resolved/closed tickets are completed historical work, and a team change afterward would corrupt historical ownership and team performance reporting.) | Ticket aggregate |
 | `TICKET-INV-09` | Every state-changing method on `Ticket` appends exactly one `TicketEvent`; adding a comment appends one too. | Ticket aggregate |
 | `TICKET-INV-10` | All timestamps are UTC. `TimeProvider` is injected wherever time is needed; `DateTime.UtcNow` is banned outside composition roots and seeders. | Ticket aggregate (domain-wide, via injected `TimeProvider`) |
+| `TICKET-INV-11` | `PlannedStartDate` and `DueDate` are independent, optional planning facts, not SLA fields — `SlaPolicy`/`AttentionPolicy` never read `PlannedStartDate`, and `DueDate`'s only reader outside display is `AttentionPolicy`'s pre-existing `Overdue` signal (unchanged by this rule). The only constraint: when both are set, `PlannedStartDate <= DueDate`. | Ticket aggregate |
 
 ## 4. Workflow state machine (`TICKET-WF`)
 
@@ -218,7 +219,7 @@ independent enforcement layer, per CLAUDE.md §7.4 ("Application code is not the
 |---|---:|---|
 | `TICKET-ENT` | 5 | `TICKET-ENT-01`–`05` |
 | `TICKET-ENUM` | 4 | `TICKET-ENUM-01`–`04` |
-| `TICKET-INV` | 10 | `TICKET-INV-01`–`10` |
+| `TICKET-INV` | 11 | `TICKET-INV-01`–`11` |
 | `TICKET-WF` | 13 | `TICKET-WF-01`–`13` |
 | `AUTH-RULE` | 11 | `AUTH-RULE-01`–`11` |
 | `SLA-RULE` | 12 | `SLA-RULE-01`–`12` |
