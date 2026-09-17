@@ -5,10 +5,10 @@
 }
 <div class="login-shell">
     <div class="login-brand">
-        @* The same FlowOps mark used in the app header (_Layout.cshtml) — two crossing flow
-           strokes, the brand's own visual metaphor. Not a separate asset: reused verbatim from
+        @* The same FlowOps mark used in the app header (_Layout.cshtml) — a ring with one wave
+           crossing it, the brand's own visual metaphor. Not a separate asset: reused verbatim from
            FlowOps.Web.Icons so Login and the authenticated app share one identity. *@
-        @Html.Raw(FlowOps.Web.Icons.FlowMarkLarge)
+        @Html.Raw(FlowOps.Web.Icons.BrandMark(40))
         <div class="login-wordmark">FlowOps</div>
         <p class="login-tagline">Operations in flow.</p>
     </div>

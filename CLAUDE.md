@@ -720,6 +720,11 @@ an information-dense, form-and-table business application; this is what Razor Pa
   remaining" tick, account-approval status polling). Every page must work with JS disabled,
   degrading to full-page posts (or, for polling, to a manual reload showing the same server-rendered
   current state).
+  - **Exception (ADR-0028):** a custom-styled dropdown/select component may use JavaScript, since
+    no CSS-only technique can restyle a native `<select>` popup to match the app's theme. Every
+    such component must still degrade to a plain, fully functional native `<select>` with
+    JavaScript disabled — never broken, only less styled. This is the one deliberate carve-out;
+    it does not extend to forms, workflow actions, or confirmations, which stay zero-JS.
 - CSS: locally hosted Bootstrap 5 + `flowops.css` with design tokens for status/priority/SLA colour
   semantics. **No CDN links** (CSP, offline dev, availability). **No Node build step.**
 - Charts: Chart.js, locally hosted, data supplied as a JSON payload from the PageModel. Maximum four

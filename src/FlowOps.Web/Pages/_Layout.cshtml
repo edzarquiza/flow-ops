@@ -41,6 +41,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>@(string.IsNullOrEmpty(pageTitle) ? "FlowOps" : $"{pageTitle} — FlowOps")</title>
     <link rel="icon" type="image/svg+xml" href="~/favicon.svg" />
+    @* Brand-mark-integration pass: evergreen browsers use the SVG above directly; these two are
+       for the cases that can't — iOS's home-screen icon has no SVG support at all, and a 32×32 PNG
+       covers any browser old enough to predate SVG favicon support. Both are one-time exported
+       raster copies of the same favicon.svg geometry, not a second design. *@
+    <link rel="icon" type="image/png" sizes="32x32" href="~/favicon-32.png" />
+    <link rel="apple-touch-icon" href="~/apple-touch-icon.png" />
     <link rel="stylesheet" href="~/flowops.css" asp-append-version="true" />
 </head>
 <body>
@@ -68,13 +74,13 @@
         <div class="fo-shell">
             <div class="fo-mobile-bar">
                 <label for="fo-nav-toggle" class="fo-nav-toggle-btn" aria-label="Toggle navigation">@Html.Raw(Icons.Menu)</label>
-                <a class="fo-brand fo-brand--compact" asp-page="/Index">@Html.Raw(Icons.FlowMarkSmall)<span>FlowOps</span></a>
+                <a class="fo-brand fo-brand--compact" asp-page="/Index">@Html.Raw(Icons.BrandMark(20))<span>FlowOps</span></a>
             </div>
             <label for="fo-nav-toggle" class="fo-nav-scrim" aria-hidden="true"></label>
 
             <aside class="fo-sidebar" aria-label="Primary">
                 <a class="fo-brand" asp-page="/Index">
-                    @Html.Raw(Icons.FlowMark)
+                    @Html.Raw(Icons.BrandMark())
                     <span>FlowOps</span>
                 </a>
 
@@ -221,5 +227,9 @@
             @RenderBody()
         </main>
     }
+    @* ADR-0028: the one JS-required UI enhancement on the site — themed dropdowns. Loaded
+       unconditionally (every page, both branches above) since selects appear throughout the app;
+       every select still works as a plain native control if this never runs. *@
+    <script src="~/js/custom-select.js" asp-append-version="true"></script>
 </body>
 </html>

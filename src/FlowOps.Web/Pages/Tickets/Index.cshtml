@@ -53,24 +53,31 @@
     }
 </div>
 
+@* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
+   already uses for this exact .q-list/.q-row component — the ticket list is this page's entire
+   reason for existing, exactly the kind of "genuinely a distinct object" Principle 3 reserves a
+   border for, and it was the one place still rendering the shared row component bare. Pagination
+   stays outside the panel (navigation chrome, not the list surface itself). *@
 @if (Model.Queue.TotalCount == 0)
 {
-    @if (!string.IsNullOrWhiteSpace(Model.Search))
-    {
-        <div class="empty-state">
-            <p class="empty-state__title">No tickets found</p>
-            <p>No tickets matched "@Model.Search".</p>
-            <p><a class="back-link" asp-page="/Tickets/Index" asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())">Clear search</a></p>
-        </div>
-    }
-    else
-    {
-        <p class="empty-state">
-            @(Model.Filter == TicketQueueFilter.None
-                ? "No tickets are visible to you right now."
-                : "No tickets match this filter right now.")
-        </p>
-    }
+    <div class="panel panel--focus">
+        @if (!string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <div class="empty-state">
+                <p class="empty-state__title">No tickets found</p>
+                <p>No tickets matched "@Model.Search".</p>
+                <p><a class="back-link" asp-page="/Tickets/Index" asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())">Clear search</a></p>
+            </div>
+        }
+        else
+        {
+            <p class="empty-state">
+                @(Model.Filter == TicketQueueFilter.None
+                    ? "No tickets are visible to you right now."
+                    : "No tickets match this filter right now.")
+            </p>
+        }
+    </div>
 }
 else
 {
@@ -89,41 +96,43 @@ else
        row); it stays available as a future filter rather than a repeated column. Each row is a
        single <a>, so keyboard navigation and middle-click both still work; the rail is decorative
        reinforcement here (status is already a word in .q-meta), so it's aria-hidden. *@
-    <div class="q-list">
-        @foreach (var ticket in Model.Queue.Items)
-        {
-            var slaText = ticket.Sla.Status.ToString();
-            var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
-            var severityClass = ticket.Priority.ToString().ToLowerInvariant();
-            <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
-                <div class="q-main">
-                    <div class="q-title">@ticket.Title</div>
-                    <div class="q-meta">
-                        <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                        <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                        <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                        <span class="status-badge status-badge--compact">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                        <span class="mono" title="@ticket.CreatedAt.ToString("u")">@FlowOps.Web.SlaDisplay.Format(DateTimeOffset.UtcNow - ticket.CreatedAt) ago</span>
+    <div class="panel panel--focus">
+        <div class="q-list">
+            @foreach (var ticket in Model.Queue.Items)
+            {
+                var slaText = ticket.Sla.Status.ToString();
+                var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
+                var severityClass = ticket.Priority.ToString().ToLowerInvariant();
+                <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                    <div class="q-main">
+                        <div class="q-title">@ticket.Title</div>
+                        <div class="q-meta">
+                            <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(ticket.Status)">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                            <span class="mono" title="@ticket.CreatedAt.ToString("u")">@FlowOps.Web.SlaDisplay.Format(DateTimeOffset.UtcNow - ticket.CreatedAt) ago</span>
+                        </div>
                     </div>
-                </div>
-                <div class="q-sev-col">
-                    <div class="severity severity--compact severity--@severityClass">
-                        <i class="severity__bar" aria-hidden="true"></i>
-                        <span class="severity__label">@ticket.Priority</span>
+                    <div class="q-sev-col">
+                        <div class="severity severity--compact severity--@severityClass">
+                            <i class="severity__bar" aria-hidden="true"></i>
+                            <span class="severity__label">@ticket.Priority</span>
+                        </div>
                     </div>
-                </div>
-                <div class="q-rail-col" aria-hidden="true">
-                    @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
-                </div>
-                <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
-                    <span class="q-sla__state">@ticket.Sla.Status</span>
-                    @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
-                    {
-                        <span class="q-sla__time">@remaining</span>
-                    }
-                </div>
-            </a>
-        }
+                    <div class="q-rail-col" aria-hidden="true">
+                        @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                    </div>
+                    <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
+                        <span class="q-sla__state">@ticket.Sla.Status</span>
+                        @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                        {
+                            <span class="q-sla__time">@remaining</span>
+                        }
+                    </div>
+                </a>
+            }
+        </div>
     </div>
 
     @await Html.PartialAsync(

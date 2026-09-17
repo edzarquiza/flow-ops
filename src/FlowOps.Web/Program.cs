@@ -506,8 +506,15 @@ app.Use(async (context, next) =>
         // script-src 'self' (Phase 24A-Extension, ADR-0025): permits loading the one self-hosted
         // script (/js/pending-approval.js) that polls account-approval status — still no inline
         // script (no 'unsafe-inline'), no CDN, no third-party origin of any kind.
+        // img-src 'self' (ADR-0028): with no img-src, default-src 'none' silently blocked every
+        // image on the site, including the select-dropdown chevron's `data:` URI background —
+        // discovered only because it had genuinely never rendered in a real browser. Same-origin
+        // only (never 'unsafe-inline', never a data:/wildcard source), for two real static SVG
+        // files under wwwroot/img; the JS-enhanced dropdown trigger itself needs no image at all
+        // (a drawn CSS border-corner instead) — this only serves the plain <select> a JS-disabled
+        // visitor still sees.
         headers["Content-Security-Policy"] =
-            "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
         return Task.CompletedTask;
     });
 

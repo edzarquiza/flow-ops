@@ -9,7 +9,10 @@
         <div class="section-head section-head--plain">
             <div class="page-header__title-row">
                 <h1>Members</h1>
-                <span class="page-header__count">@Model.Members.Count member@(Model.Members.Count == 1 ? "" : "s")</span>
+                <div class="page-header__metric">
+                    <span class="page-header__metric-value">@Model.Members.Count</span>
+                    <span class="page-header__metric-label">member@(Model.Members.Count == 1 ? "" : "s")</span>
+                </div>
             </div>
             <p class="page-context">People and access in this organization.</p>
         </div>
@@ -40,7 +43,9 @@
 
 @await Html.PartialAsync("_SetupNextStep", Model.NextStep)
 
-<div class="zone">
+@* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
+   list already uses — this table is the page's entire reason for existing. *@
+<div class="panel panel--focus">
     @if (Model.Members.Count == 0)
     {
         @if (!string.IsNullOrWhiteSpace(Model.Search))

@@ -33,20 +33,24 @@
     }
 </div>
 
+@* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
+   list already uses. Pagination stays outside the panel (navigation chrome, not the list surface). *@
 @if (Model.Users.TotalCount == 0)
 {
-    @if (!string.IsNullOrWhiteSpace(Model.Search))
-    {
-        <div class="empty-state">
-            <p class="empty-state__title">No users found</p>
-            <p>No users matched "@Model.Search".</p>
-            <p><a class="back-link" asp-page="/Platform/Users/Index">Clear search</a></p>
-        </div>
-    }
-    else
-    {
-        <p class="empty-state">No users exist yet.</p>
-    }
+    <div class="panel panel--focus">
+        @if (!string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <div class="empty-state">
+                <p class="empty-state__title">No users found</p>
+                <p>No users matched "@Model.Search".</p>
+                <p><a class="back-link" asp-page="/Platform/Users/Index">Clear search</a></p>
+            </div>
+        }
+        else
+        {
+            <p class="empty-state">No users exist yet.</p>
+        }
+    </div>
 }
 else
 {
@@ -59,6 +63,7 @@ else
             usersRouteValues,
             "Users pagination",
             FlowOps.Web.PaginationPlacement.Top));
+    <div class="panel panel--focus">
     <div class="table-responsive">
         <table>
             <caption class="sr-only">Users on the platform</caption>
@@ -90,6 +95,7 @@ else
                 }
             </tbody>
         </table>
+    </div>
     </div>
 
     @await Html.PartialAsync(

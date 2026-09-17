@@ -61,7 +61,10 @@
     }
 </div>
 
-<div class="zone">
+@* Visual-consistency pass: .panel (not the brighter --focus variant, reserved for a page's one
+   primary list) — this page has two distinct tables, matching how Ticket Detail's own SLA/
+   Ownership facts each get a plain .panel rather than competing for the brighter surface. *@
+<div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Members")); }
     @if (Model.Team.Members.Count == 0)
     {
@@ -152,7 +155,7 @@
     }
 </div>
 
-<div class="zone">
+<div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Categories")); }
     @if (Model.Categories.Count == 0)
     {

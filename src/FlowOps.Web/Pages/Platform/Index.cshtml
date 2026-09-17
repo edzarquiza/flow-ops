@@ -40,8 +40,9 @@
 @* ---- Pending Approvals: the page's most operationally important section — approvable directly
    here, never requiring a click into /Platform/Users first. Reuses the at-risk queue's own
    left-edge urgency-bar convention rather than a page-specific alert style; the bar only ever
-   renders on a real row — see the empty branch below. ---- *@
-<div class="zone">
+   renders on a real row — see the empty branch below. Visual-consistency pass: .panel--focus, the
+   same surface the dashboard's own "What needs attention" uses for its equivalently-primary role. ---- *@
+<div class="panel panel--focus">
     <div class="section-head-row">
         <h2 class="section-head section-head--plain">Pending approvals</h2>
         @if (Model.UserSummary.Pending > Model.PendingAccounts.Count)
@@ -111,7 +112,9 @@
 @* ---- Organizations: visible immediately, no click-through required — a bounded, priority-ordered
    subset; full management remains on /Platform/Organizations. A homogeneous record list someone
    scans and compares, so it stays a strict-column table, unlike Pending Approvals above. ---- *@
-<div class="zone">
+@* Visual-consistency pass: .panel, matching Ticket Detail's own SLA/Ownership treatment (not
+   .panel--focus, reserved for a page's one primary list — this homepage has two bounded lists). *@
+<div class="panel">
     <div class="section-head-row">
         <h2 class="section-head section-head--plain">Organizations</h2>
         <a class="table-action-link" asp-page="/Platform/Organizations/Index">View all &rarr;</a>
@@ -166,7 +169,7 @@
 
 @* ---- Users: visible immediately, mirroring Organizations above — the most recently joined
    accounts, not the full paginated set. ---- *@
-<div class="zone">
+<div class="panel">
     <div class="section-head-row">
         <h2 class="section-head section-head--plain">Users</h2>
         <a class="table-action-link" asp-page="/Platform/Users/Index">View all &rarr;</a>

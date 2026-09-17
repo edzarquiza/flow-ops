@@ -20,9 +20,13 @@
     await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
 }
 
+@* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
+   list already uses. Pagination stays outside the panel (navigation chrome, not the list surface). *@
 @if (Model.PendingUsers.TotalCount == 0)
 {
-    <p class="empty-state">No accounts are awaiting approval.</p>
+    <div class="panel panel--focus">
+        <p class="empty-state">No accounts are awaiting approval.</p>
+    </div>
 }
 else
 {
@@ -34,6 +38,7 @@ else
             new Microsoft.AspNetCore.Routing.RouteValueDictionary(),
             "Pending accounts pagination",
             FlowOps.Web.PaginationPlacement.Top));
+    <div class="panel panel--focus">
     <div class="table-responsive">
         <table>
             <caption class="sr-only">Accounts pending platform approval</caption>
@@ -91,6 +96,7 @@ else
                 }
             </tbody>
         </table>
+    </div>
     </div>
 
     @await Html.PartialAsync(

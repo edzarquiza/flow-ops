@@ -15,26 +15,18 @@ public static class Icons
     private const string A = "aria-hidden=\"true\" focusable=\"false\"";
     private const string S = "fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"";
 
-    // ---- The FlowOps brand mark: two crossing wave strokes — FLOW as the literal geometry,
-    // never a gradient photograph of water. The front wave (bright teal) and back wave (dimmer
-    // teal) cross once at the midpoint, reading as one continuous current rather than two
-    // unrelated lines. Flat two-tone, no gradient — recognizable from 24px up to a full wordmark. ----
+    // ---- The FlowOps brand mark: a ring with one wave crossing it — a single continuous current
+    // held inside a boundary, replacing the earlier two-crossing-wave mark (brand-mark-integration
+    // pass). CSS-driven, not hardcoded hex: colour comes from --fo-teal via the .brand-mark__ring/
+    // .brand-mark__wave classes below, the same tokenisation rule every other themed element in
+    // the app follows. One method, not a const per size — the 24×24 viewBox scales cleanly by
+    // changing only the width/height attributes, never the path geometry. ----
 
-    /// <summary>The full-size mark, ~32×20 — sidebar/login size.</summary>
-    public const string FlowMark = "<svg width=\"30\" height=\"19\" viewBox=\"0 0 32 20\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M2 15c4-8 8-8 12-4s8 4 12-4\" fill=\"none\" stroke=\"#0F766E\" stroke-width=\"2.6\" stroke-linecap=\"round\" /><path d=\"M2 7c4 8 8 8 12 4s8-4 12 4\" fill=\"none\" stroke=\"#5FD3C4\" stroke-width=\"2.6\" stroke-linecap=\"round\" /></svg>";
-
-    /// <summary>The same mark at a smaller, single-tone size — mobile top bar / tight spaces.</summary>
-    public const string FlowMarkSmall = "<svg width=\"22\" height=\"14\" viewBox=\"0 0 32 20\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M2 15c4-8 8-8 12-4s8 4 12-4\" fill=\"none\" stroke=\"#0F766E\" stroke-width=\"3\" stroke-linecap=\"round\" /><path d=\"M2 7c4 8 8 8 12 4s8-4 12 4\" fill=\"none\" stroke=\"#5FD3C4\" stroke-width=\"3\" stroke-linecap=\"round\" /></svg>";
-
-    /// <summary>The same mark, larger — Login/Register's own brand block, where it stands alone
-    /// above the wordmark rather than beside it.</summary>
-    public const string FlowMarkLarge = "<svg width=\"46\" height=\"29\" viewBox=\"0 0 32 20\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M2 15c4-8 8-8 12-4s8 4 12-4\" fill=\"none\" stroke=\"#0F766E\" stroke-width=\"2.6\" stroke-linecap=\"round\" /><path d=\"M2 7c4 8 8 8 12 4s8-4 12 4\" fill=\"none\" stroke=\"#5FD3C4\" stroke-width=\"2.6\" stroke-linecap=\"round\" /></svg>";
-
-    /// <summary>The icon-only mark on its own tinted tile — app-icon/favicon scale, and anywhere
-    /// the mark must read with no adjacent wordmark at all. The identical geometry is duplicated
-    /// as a standalone file at wwwroot/favicon.svg (a browser favicon must be a real static asset,
-    /// not an inline Razor string) — if this mark ever changes, update both.</summary>
-    public const string FlowMarkTile = "<svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"0.5\" y=\"0.5\" width=\"31\" height=\"31\" rx=\"7\" fill=\"#0D1719\" stroke=\"#243638\" /><path d=\"M6 20c3-6 6-6 9-3s6 3 9-3\" fill=\"none\" stroke=\"#0F766E\" stroke-width=\"2.4\" stroke-linecap=\"round\" /><path d=\"M6 12c3 6 6 6 9 3s6-3 9 3\" fill=\"none\" stroke=\"#5FD3C4\" stroke-width=\"2.4\" stroke-linecap=\"round\" /></svg>";
+    /// <summary>The brand mark at any size — sidebar (the default 24, matching every nav icon's
+    /// own size), Login/Register's larger standalone block, or the mobile top bar's smaller one.
+    /// Always paired with the visible "FlowOps" wordmark beside it, hence aria-hidden.</summary>
+    public static string BrandMark(int size = 24) =>
+        $"<svg class=\"brand-mark\" width=\"{size}\" height=\"{size}\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><circle class=\"brand-mark__ring\" cx=\"12\" cy=\"12\" r=\"9.5\" fill=\"none\"></circle><path class=\"brand-mark__wave\" d=\"M4.5,12 Q8.25,5 12,12 T19.5,12\" fill=\"none\"></path></svg>";
 
     // ---- Primary navigation ----
 

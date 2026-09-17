@@ -22,7 +22,10 @@
     await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
 }
 
-<div class="zone">
+@* Visual-consistency pass: .panel, matching Ticket Detail's own SLA/Ownership treatment for
+   several distinct fact tables on one detail page (not .panel--focus, reserved for a page's one
+   primary list). *@
+<div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Organization memberships")); }
     @if (Model.TargetUser.Memberships.Count == 0)
     {
@@ -53,7 +56,7 @@
     }
 </div>
 
-<div class="zone">
+<div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Recent activity")); }
     @if (Model.RecentActivity.Count == 0)
     {

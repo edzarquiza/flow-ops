@@ -280,13 +280,15 @@ No zebra striping. Below 900px, columns wrap onto their own lines rather than di
 priority and workflow position are operationally meaningful on a tablet or phone too, not
 desktop-only decoration.
 
-**Status badge — `.status-badge`.** A solid, high-contrast, neutral pill (`--fo-line-row` fill,
-`--fo-text-hi` text, no border) — the one badge-shaped element left in the app, and deliberately
-colourless: Open/Assigned/In Progress/Pending/Resolved/Closed all render identically, because the
-rail and the SLA state already carry urgency, and a badge's job here is presence, not alarm. Used
-at Ticket Detail's own header, and inline (`.status-badge--compact`, tighter padding) within Work
-Queue/At-Risk row metadata. Chips (a tinted, bordered badge) no longer exist anywhere in the
-product for status, priority, or SLA state — see the next two entries.
+**Status badge — `.status-badge`.** A soft tinted-and-bordered pill, one tone per status
+(`StatusBadgeDisplay.Tone`/`CssClass`): Open — muted grey, Assigned — info blue, In Progress —
+warn amber, Pending — violet, Resolved — teal (matching the workflow rail's own resolved-stop
+colour), Closed — ok green. A deliberate reversal of an earlier "deliberately colourless" pass, at
+the product owner's explicit request that the six labels read as visibly distinct rather than
+collapsed onto one neutral shape. Danger (red) is never one of the six — it stays reserved for
+real Priority/SLA urgency alone (Principle 1/2), so a status label can never be mistaken for an
+alert. Used at Ticket Detail's own header, and inline (`.status-badge--compact`, tighter padding)
+within Work Queue/At-Risk row metadata.
 
 **Priority — never a badge, always `.severity`.** A height-encoded bar (`.severity__bar`, 3px
 wide) plus the word (`.severity__label`, 14px/500) beside it — see §7. Used wherever a ticket's own
@@ -387,9 +389,11 @@ icons, no second icon family, no emoji.
 Each was either tried and rejected during exploration, or would flatten what makes the system
 recognisable.
 
-- Tinted, bordered chip badges for status, priority, or SLA state — tried, then retired app-wide in
-  favour of `.status-badge` (solid neutral), `.severity` (height-encoded bar), and plain coloured
-  text, respectively (§8). The single most cloned dashboard pattern, and the system's own past.
+- Tinted, bordered chip badges for priority or SLA state — tried, then retired app-wide in favour
+  of `.severity` (height-encoded bar) and plain coloured text, respectively (§8). The single most
+  cloned dashboard pattern, and the system's own past. Status *does* use a tinted/bordered pill
+  again (`.status-badge--*`, §8) — a later, deliberate reversal specifically for status, not a
+  return to chips generally; priority and SLA state keep their own non-chip treatments unchanged.
 - Cards with a coloured left-border accent stripe
 - A grid of bordered KPI tiles, especially with an icon beside each number
 - A generic percentage-filled progress bar for SLA — the rail's current stop carries that
@@ -523,14 +527,42 @@ the sections above and the interaction-state/notice/confirmation entries in §8.
 .sev.low  i { height:6px;   background:var(--fo-line-hi); } .sev.low  span { color:var(--fo-text-3); }
 ```
 
-**Brand mark** (three nodes: open → in work → resolved):
+**Brand mark** (a ring with one wave crossing it — one continuous current held inside a boundary).
+Defined once, as `Icons.BrandMark(int size = 24)` in `src/FlowOps.Web/Icons.cs`, never duplicated
+inline; every call site (sidebar, mobile top bar, Login/Register/Accept Invitation/Pending
+Approval/Reset Password) renders this exact markup, scaled only by the `width`/`height`
+attributes — the `viewBox` and path geometry never change:
 
 ```html
-<svg width="30" height="20" viewBox="0 0 30 20" aria-hidden="true">
-  <circle cx="3" cy="16" r="2.2" stroke="#34494B" stroke-width="1.5" fill="none"/>
-  <line x1="5.6" y1="14.6" x2="12.6" y2="10.8" stroke="#34494B" stroke-width="1.4"/>
-  <circle cx="14.6" cy="9.6" r="2.8" fill="#0F766E"/>
-  <line x1="17.6" y1="8" x2="23.8" y2="4.2" stroke="#34494B" stroke-width="1.4"/>
-  <circle cx="26" cy="3" r="3.2" fill="#5FD3C4"/>
+<svg class="brand-mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <circle class="brand-mark__ring" cx="12" cy="12" r="9.5" fill="none"></circle>
+  <path class="brand-mark__wave" d="M4.5,12 Q8.25,5 12,12 T19.5,12" fill="none"></path>
 </svg>
 ```
+
+```css
+.brand-mark { flex-shrink: 0; }
+.brand-mark__ring { stroke: var(--fo-teal); stroke-width: 1.3; }
+.brand-mark__wave { stroke: var(--fo-teal); stroke-width: 1.9; stroke-linecap: round; }
+```
+
+Colour comes from `--fo-teal`, never a hardcoded hex — this is a CSS-driven mark like everything
+else in the app, so it re-themes if the token ever does.
+
+**Favicon** (`wwwroot/favicon.svg`) is a deliberately separate pass, not a scaled copy of the mark
+above. At true 16–32px render size, the 1.3/1.9px strokes above are close to sub-pixel and blur;
+the favicon uses the same geometry at thicker, hand-tuned weights instead:
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="9.3" stroke="#5FD3C4" stroke-width="2" fill="none"/>
+  <path d="M4.5,12 Q8.25,5 12,12 T19.5,12" stroke="#5FD3C4" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+</svg>
+```
+
+Its `#5FD3C4` is a **deliberate, documented exception** to "colour comes from a token, never a
+hardcoded hex": this file is a standalone static asset the browser loads directly via
+`<link rel="icon">`, with no access to the app's CSS custom properties at all — a literal value is
+the only value it *can* hold. `apple-touch-icon.png` (180×180, iOS home-screen — no SVG support)
+and `favicon-32.png` (32×32, pre-SVG-favicon browsers) are one-time raster exports of this same
+geometry, regenerated by hand if the mark ever changes rather than an automated build step.

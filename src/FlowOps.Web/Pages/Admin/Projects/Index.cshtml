@@ -22,7 +22,9 @@
 
 @await Html.PartialAsync("_SetupNextStep", Model.NextStep)
 
-<div class="zone">
+@* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
+   list already uses — this table is the page's entire reason for existing. *@
+<div class="panel panel--focus">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("All projects")); }
     @if (Model.Projects.Count == 0)
     {

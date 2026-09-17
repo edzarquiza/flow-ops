@@ -5,10 +5,11 @@
 @{
     ViewData["Title"] = $"{Model.Ticket.Reference} — {Model.Ticket.Title}";
 
-    // Badge-fix pass: status is a solid neutral .status-badge (no color variant by value — the
-    // rail and SLA state already carry urgency), priority is the height-encoded .severity mark,
-    // never a chip. "Chip" is reserved for nothing on this page anymore.
+    // Visual-refresh pass: status now carries its own tone (StatusBadgeDisplay), reversing the
+    // earlier neutral-pill decision — priority stays the height-encoded .severity mark, never a
+    // chip; "chip" is still reserved for nothing on this page.
     var severityClass = Model.Ticket.Priority.ToString().ToLowerInvariant();
+    var statusClass = FlowOps.Web.StatusBadgeDisplay.CssClass(Model.Ticket.Status);
     var slaStateClass = Model.Ticket.Sla.Status switch
     {
         FlowOps.Domain.Sla.SlaStatus.Met => "met",
@@ -36,7 +37,7 @@
         </div>
     </div>
     <div class="ticket-chips">
-        <span class="status-badge">@FlowOps.Web.WorkflowRail.Label(Model.Ticket.Status)</span>
+        <span class="status-badge @statusClass">@FlowOps.Web.WorkflowRail.Label(Model.Ticket.Status)</span>
         <div class="severity severity--@severityClass">
             <i class="severity__bar" aria-hidden="true"></i>
             <span class="severity__label">@Model.Ticket.Priority priority</span>
@@ -114,8 +115,13 @@
         @* Each form posts to its own named handler; antiforgery is on by default for Razor
            Pages forms and is deliberately not disabled (CLAUDE.md §12). Exactly one primary
            (teal) action per state — Assign/StartWork/Resolve/Close are mutually exclusive by
-           status, so at most one ever renders at a time; everything else stays a ghost button. *@
-        <div class="action-group">
+           status, so at most one ever renders at a time; everything else stays a ghost button.
+           One flat row, matching the dashboard's own restrained "one row of controls" grammar
+           (.page-actions/.setup__action) — an action that needs more input (Put on hold/Resolve/
+           Reopen) stays exactly one button tall in the row via .reveal, a neutral zero-JS
+           expander (the same checkbox-hack .confirm already uses for destructive actions), rather
+           than permanently occupying a differently-sized boxed form next to plain buttons. *@
+        <div class="workflow-actions">
             @if (Model.Actions.Assign)
             {
                 <form method="post" asp-page-handler="Assign" asp-route-id="@Model.Ticket.Id">
@@ -154,14 +160,23 @@
             }
             @if (Model.Actions.PutOnHold)
             {
-                <form method="post" asp-page-handler="PutOnHold" asp-route-id="@Model.Ticket.Id">
-                    <div class="field">
-                        <label asp-for="Input.PendingReason">Reason for putting on hold</label>
-                        <input asp-for="Input.PendingReason" aria-describedby="hold-error" />
-                        <span id="hold-error" class="field-validation-error" asp-validation-for="Input.PendingReason"></span>
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-hold" class="reveal-toggle" />
+                    <label for="reveal-hold" class="btn reveal-trigger">Put on hold</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="PutOnHold" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label asp-for="Input.PendingReason">Reason for putting on hold</label>
+                                <input asp-for="Input.PendingReason" aria-describedby="hold-error" />
+                                <span id="hold-error" class="field-validation-error" asp-validation-for="Input.PendingReason"></span>
+                            </div>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn-primary">Put on hold</button>
+                                <label for="reveal-hold" class="btn">Cancel</label>
+                            </div>
+                        </form>
                     </div>
-                    <button type="submit" class="btn">Put on hold</button>
-                </form>
+                </div>
             }
             @if (Model.Actions.Resume)
             {
@@ -171,23 +186,32 @@
             }
             @if (Model.Actions.Resolve)
             {
-                <form method="post" asp-page-handler="Resolve" asp-route-id="@Model.Ticket.Id">
-                    <div class="field">
-                        <label asp-for="Input.ResolutionCode">Resolution</label>
-                        <select asp-for="Input.ResolutionCode">
-                            @foreach (var resolution in Enum.GetValues<Resolution>())
-                            {
-                                <option value="@resolution">@FlowOps.Web.ResolutionDisplay.ToDisplayName(resolution)</option>
-                            }
-                        </select>
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-resolve" class="reveal-toggle" />
+                    <label for="reveal-resolve" class="btn-primary reveal-trigger">Resolve</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="Resolve" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label asp-for="Input.ResolutionCode">Resolution</label>
+                                <select asp-for="Input.ResolutionCode">
+                                    @foreach (var resolution in Enum.GetValues<Resolution>())
+                                    {
+                                        <option value="@resolution">@FlowOps.Web.ResolutionDisplay.ToDisplayName(resolution)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label asp-for="Input.ResolutionNotes">Resolution notes</label>
+                                <textarea asp-for="Input.ResolutionNotes" rows="3" aria-describedby="resolve-error"></textarea>
+                                <span id="resolve-error" class="field-validation-error" asp-validation-for="Input.ResolutionNotes"></span>
+                            </div>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn-primary">Resolve</button>
+                                <label for="reveal-resolve" class="btn">Cancel</label>
+                            </div>
+                        </form>
                     </div>
-                    <div class="field">
-                        <label asp-for="Input.ResolutionNotes">Resolution notes</label>
-                        <textarea asp-for="Input.ResolutionNotes" rows="3" aria-describedby="resolve-error"></textarea>
-                        <span id="resolve-error" class="field-validation-error" asp-validation-for="Input.ResolutionNotes"></span>
-                    </div>
-                    <button type="submit" class="btn-primary">Resolve</button>
-                </form>
+                </div>
             }
             @if (Model.Actions.Close)
             {
@@ -197,14 +221,23 @@
             }
             @if (Model.Actions.Reopen)
             {
-                <form method="post" asp-page-handler="Reopen" asp-route-id="@Model.Ticket.Id">
-                    <div class="field">
-                        <label asp-for="Input.ReopenReason">Reason for reopening</label>
-                        <input asp-for="Input.ReopenReason" aria-describedby="reopen-error" />
-                        <span id="reopen-error" class="field-validation-error" asp-validation-for="Input.ReopenReason"></span>
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-reopen" class="reveal-toggle" />
+                    <label for="reveal-reopen" class="btn reveal-trigger">Reopen</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="Reopen" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label asp-for="Input.ReopenReason">Reason for reopening</label>
+                                <input asp-for="Input.ReopenReason" aria-describedby="reopen-error" />
+                                <span id="reopen-error" class="field-validation-error" asp-validation-for="Input.ReopenReason"></span>
+                            </div>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn">Reopen</button>
+                                <label for="reveal-reopen" class="btn">Cancel</label>
+                            </div>
+                        </form>
                     </div>
-                    <button type="submit" class="btn">Reopen</button>
-                </form>
+                </div>
             }
         </div>
     }
