@@ -1956,6 +1956,8 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
 select,
 textarea {
   width: 100%;
@@ -1968,6 +1970,40 @@ textarea {
   background: var(--fo-surface-2);
   color: var(--fo-text);
   transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+/* Phase 25 follow-up: date/datetime-local inputs (Create Ticket's planning dates, the Work
+   Queue/At-Risk custom-range filters) previously fell through to raw browser chrome — wrong
+   height, no border, a jarring light control on FlowOps's dark surfaces. The day-grid POPUP
+   itself stays native/OS-drawn (CSS has no reach into it — same constraint documented for
+   <select>'s option list, CLAUDE.md §11.1); only the closed field is brought in line with every
+   other input. `:root`'s existing `color-scheme: dark` (set once, sitewide) is what keeps the
+   popup itself dark-themed rather than a jarring white panel — nothing more is needed for that. */
+input[type="date"],
+input[type="datetime-local"] {
+  cursor: text;
+}
+
+input[type="date"]:hover,
+input[type="datetime-local"]:hover {
+  border-color: var(--fo-line);
+}
+
+/* The calendar-icon trigger is the one sub-part of these inputs Chromium exposes to CSS at all
+   (Firefox/Safari draw it as part of the control with no separate hook — this rule is additive
+   polish there, never required for usability). Quietened to match the select chevron's own
+   resting opacity, brightening on hover exactly like it does. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 150ms ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }
 
 textarea {

@@ -172,7 +172,7 @@ else
                             <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
                             <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
                             <span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(ticket.Status)">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span class="mono" title="@ticket.CreatedAt.ToString("u")">@FlowOps.Web.SlaDisplay.Format(DateTimeOffset.UtcNow - ticket.CreatedAt) ago</span>
+                            <time class="mono" datetime="@ticket.CreatedAt.ToString("O")" title="@ticket.CreatedAt.ToString("u")">@FlowOps.Web.SlaDisplay.Format(DateTimeOffset.UtcNow - ticket.CreatedAt) ago &middot; @ticket.CreatedAt.ToString("MMM d, yyyy")</time>
                         </div>
                     </div>
                     <div class="q-sev-col">
