@@ -1,5 +1,6 @@
 using FlowOps.Application.Demo;
 using FlowOps.Application.Organizations;
+using FlowOps.Domain.Accounts;
 using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
 using FlowOps.Infrastructure.Identity;
@@ -105,6 +106,43 @@ public sealed class AccountService
             await transaction.CommitAsync(cancellationToken);
             return RegistrationResult.Success(user.Id, organization.Id);
         });
+    }
+
+    /// <summary>
+    /// Phase 29C: the user's saved appearance. One primary-key lookup, safe to call on every page
+    /// render. An unknown user id yields the default (<see cref="AppearancePreference.Dark"/>); a stored
+    /// value that is not one of the three names is a data-integrity error and surfaces as one (the
+    /// column also has a database check, so it cannot be written through the application).
+    /// </summary>
+    public async Task<AppearancePreference> GetAppearanceAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var stored = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => (AppearancePreference?)u.Appearance)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return stored ?? AppearancePreference.Dark;
+    }
+
+    /// <summary>
+    /// Saves the caller's own appearance. Personal and harmless, so it is deliberately not gated by
+    /// <see cref="DemoProtectionPolicy"/> (demo personas may try both themes) and touches nothing
+    /// about authorization. Returns <see langword="false"/> for a value that is not a defined
+    /// preference or for an unknown user, changing nothing.
+    /// </summary>
+    public async Task<bool> SetAppearanceAsync(Guid userId, AppearancePreference appearance, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(appearance))
+        {
+            return false;
+        }
+
+        var updated = await _dbContext.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.Appearance, appearance), cancellationToken);
+
+        return updated == 1;
     }
 
     /// <summary>Updates only the caller's own <see cref="ApplicationUser.DisplayName"/>. Never

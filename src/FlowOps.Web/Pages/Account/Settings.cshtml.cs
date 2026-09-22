@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FlowOps.Application.Accounts;
 using FlowOps.Application.Demo;
+using FlowOps.Domain.Accounts;
 using FlowOps.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -43,10 +44,21 @@ public sealed class SettingsModel : PageModel
     [BindProperty]
     public bool ConfirmDelete { get; set; }
 
+    /// <summary>Phase 29C: the option chosen in the Appearance form (its exact name: System, Light or Dark).</summary>
+    [BindProperty]
+    public string? Appearance { get; set; }
+
+    /// <summary>The user's saved appearance, used to pre-select the radio and as the preview's reset point.</summary>
+    public AppearancePreference CurrentAppearance { get; private set; } = AppearancePreference.Dark;
+
     public string CurrentEmail { get; private set; } = string.Empty;
 
     public string CurrentDisplayName { get; private set; } = string.Empty;
 
+    /// <summary>The confirmation shown after a save. It must survive the redirect that follows every
+    /// successful POST, so it is TempData — as a plain property it was lost on that redirect and no
+    /// confirmation ever appeared (found while adding Appearance, whose "saved" feedback depends on it).</summary>
+    [TempData]
     public string? StatusMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync()
@@ -59,6 +71,30 @@ public sealed class SettingsModel : PageModel
 
         LoadFromUser(user);
         return Page();
+    }
+
+    /// <summary>Saves the caller's own appearance. Only the three defined names are accepted (an
+    /// exact match — not a number, not another casing); anything else changes nothing.</summary>
+    public async Task<IActionResult> OnPostSetAppearanceAsync(CancellationToken cancellationToken)
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        ModelState.Clear();
+        if (Appearance is null
+            || !Enum.GetNames<AppearancePreference>().Contains(Appearance, StringComparer.Ordinal)
+            || !await _accountService.SetAppearanceAsync(user.Id, Enum.Parse<AppearancePreference>(Appearance), cancellationToken))
+        {
+            ModelState.AddModelError(string.Empty, "Choose System, Light or Dark.");
+            LoadFromUser(user);
+            return Page();
+        }
+
+        StatusMessage = "Appearance saved.";
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostUpdateNameAsync(CancellationToken cancellationToken)
@@ -242,6 +278,7 @@ public sealed class SettingsModel : PageModel
         CurrentEmail = user.Email ?? string.Empty;
         CurrentDisplayName = user.DisplayName;
         NameInput.FullName = user.DisplayName;
+        CurrentAppearance = user.Appearance;
     }
 
     public sealed class NameInputModel

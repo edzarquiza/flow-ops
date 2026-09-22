@@ -1,9 +1,13 @@
+@using System.Security.Claims
+@using FlowOps.Application.Accounts
 @using FlowOps.Application.Demo
+@using FlowOps.Domain.Accounts
 @using FlowOps.Application.Platform
 @using FlowOps.Application.Tickets
 @inject DemoOptions DemoOptions
 @inject CurrentUserAccessor CurrentUserAccessor
 @inject PlatformUserAccessor PlatformUserAccessor
+@inject AccountService AccountService
 @{
     var pageTitle = ViewData["Title"] as string;
     var isAuthenticated = User.Identity?.IsAuthenticated == true;
@@ -30,12 +34,24 @@
         : null;
     var current = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
 
+    // Phase 29C: the saved appearance is rendered straight into <html data-theme="...">, so the right
+    // theme is present on the first byte (no flash, no script, nothing for the CSP to object to).
+    // "system" is resolved by CSS itself (prefers-color-scheme), so it follows the OS live. Anonymous
+    // pages (login, register, invitation) are always dark.
+    var appearance = AppearancePreference.Dark;
+    if (isAuthenticated && Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var appearanceUserId))
+    {
+        appearance = await AccountService.GetAppearanceAsync(appearanceUserId);
+    }
+
+    var theme = appearance.ToString().ToLowerInvariant();
+
     // Rendered twice (desktop top-right toolbar, mobile sidebar) via the shared _IdentityBlock
     // partial — see that partial's own doc comment for why.
     var identity = new AccountAreaViewModel(currentUser, User.Identity?.Name ?? string.Empty, availableOrganizations, currentOrganizationName);
 }
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="@theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -143,6 +159,13 @@
                             @Html.Raw(Icons.Create)
                             <span>Create Ticket</span>
                         </a>
+                        @* ADR-0029: project planning (board, ticket list, sprints). Open to every
+                           organization member — what a caller sees inside is ordinary ticket
+                           visibility, and every action is re-authorized server-side. *@
+                        <a asp-page="/Projects/Index" aria-current="@(current.StartsWith("/Projects", StringComparison.Ordinal) ? "page" : null)">
+                            @Html.Raw(Icons.Project)
+                            <span>Projects</span>
+                        </a>
                     }
                     @* Phase 18: member management is Admin/Manager-only (ORG-RULE-11) — hidden for
                        everyone else as an affordance; Members.cshtml.cs re-checks server-side
@@ -231,5 +254,6 @@
        unconditionally (every page, both branches above) since selects appear throughout the app;
        every select still works as a plain native control if this never runs. *@
     <script src="~/js/custom-select.js" asp-append-version="true"></script>
+    <script src="~/js/row-menu.js" asp-append-version="true"></script>
 </body>
 </html>

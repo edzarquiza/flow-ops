@@ -53,6 +53,13 @@ public sealed class MembersModel : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
 
+    /// <summary>Phase 29C: a view choice (<c>?showInactive=true</c>), off by default. It only hides or shows
+    /// rows the caller may already see; it changes no lifecycle state and no authorization.</summary>
+    [BindProperty(SupportsGet = true, Name = "showInactive")]
+    public bool ShowInactive { get; set; }
+
+    public int HiddenInactiveCount { get; private set; }
+
     public IReadOnlyList<MemberListItem> Members { get; private set; } = [];
 
     public IReadOnlyList<UserRole> AssignableRoles { get; private set; } = [];
@@ -91,7 +98,7 @@ public sealed class MembersModel : PageModel
 
         try
         {
-            Members = await _membershipService.GetMembersAsync(user, Search, cancellationToken);
+            Members = ApplyInactiveFilter(await _membershipService.GetMembersAsync(user, Search, cancellationToken));
         }
         catch (OrganizationAccessDeniedException)
         {
@@ -255,7 +262,7 @@ public sealed class MembersModel : PageModel
 
     private async Task ReloadAsync(CurrentUser user, CancellationToken cancellationToken)
     {
-        Members = await _membershipService.GetMembersAsync(user, Search, cancellationToken);
+        Members = ApplyInactiveFilter(await _membershipService.GetMembersAsync(user, Search, cancellationToken));
         AssignableRoles = ComputeAssignableRoles(user);
         InvitableTeams = await GetInvitableTeamsAsync(user, cancellationToken);
         CallerIsAdmin = user.Role == UserRole.Admin;
@@ -287,6 +294,12 @@ public sealed class MembersModel : PageModel
 
         var next = SetupSteps.FirstIncomplete(status);
         return next is null ? null : new SetupNextStepViewModel(next);
+    }
+
+    private IReadOnlyList<MemberListItem> ApplyInactiveFilter(IReadOnlyList<MemberListItem> all)
+    {
+        HiddenInactiveCount = ShowInactive ? 0 : all.Count(x => !x.IsActive);
+        return ShowInactive ? all : all.Where(x => x.IsActive).ToList();
     }
 
     private static IReadOnlyList<UserRole> ComputeAssignableRoles(CurrentUser user) =>

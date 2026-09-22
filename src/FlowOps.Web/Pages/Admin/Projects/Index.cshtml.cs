@@ -31,6 +31,13 @@ public sealed class IndexModel : PageModel
     [BindProperty]
     public CreateInputModel CreateInput { get; set; } = new();
 
+    /// <summary>Phase 29C: a view choice (<c>?showInactive=true</c>), off by default. It only hides or shows
+    /// rows the caller may already see; it changes no lifecycle state and no authorization.</summary>
+    [BindProperty(SupportsGet = true, Name = "showInactive")]
+    public bool ShowInactive { get; set; }
+
+    public int HiddenInactiveCount { get; private set; }
+
     public IReadOnlyList<ProjectListItem> Projects { get; private set; } = [];
 
     public string? StatusMessage { get; set; }
@@ -52,7 +59,7 @@ public sealed class IndexModel : PageModel
             return Forbid();
         }
 
-        Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
@@ -67,7 +74,7 @@ public sealed class IndexModel : PageModel
 
         if (!ModelState.IsValid)
         {
-            Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+            Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
             return Page();
         }
 
@@ -75,7 +82,7 @@ public sealed class IndexModel : PageModel
         if (!result.Succeeded)
         {
             ModelState.AddModelError(nameof(CreateInput.Name), result.Error!);
-            Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+            Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
             return Page();
         }
 
@@ -84,7 +91,7 @@ public sealed class IndexModel : PageModel
         // and StatusMessage (a plain property, not TempData) would not survive it — the same lesson
         // Admin/Index.cshtml.cs and Admin/Teams/Details.cshtml.cs already apply.
         CreateInput = new CreateInputModel();
-        Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
@@ -124,7 +131,7 @@ public sealed class IndexModel : PageModel
             return Forbid();
         }
 
-        Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
         return Page();
     }
 
@@ -147,8 +154,14 @@ public sealed class IndexModel : PageModel
             return Forbid();
         }
 
-        Projects = await _catalogService.GetProjectsAsync(user, cancellationToken);
+        Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
         return Page();
+    }
+
+    private IReadOnlyList<ProjectListItem> ApplyInactiveFilter(IReadOnlyList<ProjectListItem> all)
+    {
+        HiddenInactiveCount = ShowInactive ? 0 : all.Count(x => !x.IsActive);
+        return ShowInactive ? all : all.Where(x => x.IsActive).ToList();
     }
 
     public sealed class CreateInputModel

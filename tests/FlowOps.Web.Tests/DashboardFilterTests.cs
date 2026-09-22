@@ -39,7 +39,7 @@ public sealed class DashboardFilterTests : IClassFixture<FlowOpsWebApplicationFa
         Assert.Contains("Ticket volume over time", defaultHtml, StringComparison.Ordinal);
         Assert.Contains("Tickets by status", defaultHtml, StringComparison.Ordinal);
         Assert.Contains("Workload by team", defaultHtml, StringComparison.Ordinal);
-        Assert.Contains("SLA performance", defaultHtml, StringComparison.Ordinal);
+        Assert.Contains("Deadline status", defaultHtml, StringComparison.Ordinal);
         Assert.Contains("Average resolution time", defaultHtml, StringComparison.Ordinal);
         Assert.Contains("<option value=\"90\" selected=\"selected\">", defaultHtml, StringComparison.Ordinal);
 

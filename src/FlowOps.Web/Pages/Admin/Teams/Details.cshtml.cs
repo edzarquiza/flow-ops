@@ -32,6 +32,13 @@ public sealed class DetailsModel : PageModel
 
     public IReadOnlyList<EligibleMemberOption> EligibleMembers { get; private set; } = [];
 
+    /// <summary>Phase 29C: a view choice (<c>?showInactive=true</c>), off by default. It only hides or shows
+    /// rows the caller may already see; it changes no lifecycle state and no authorization.</summary>
+    [BindProperty(SupportsGet = true, Name = "showInactive")]
+    public bool ShowInactive { get; set; }
+
+    public int HiddenInactiveCount { get; private set; }
+
     public IReadOnlyList<CategoryListItem> Categories { get; private set; } = [];
 
     [BindProperty]
@@ -312,7 +319,9 @@ public sealed class DetailsModel : PageModel
         }
 
         EligibleMembers = await _teamService.GetEligibleMembersAsync(user, id, cancellationToken);
-        Categories = await _catalogService.GetCategoriesForTeamAsync(user, id, cancellationToken);
+        var allCategories = await _catalogService.GetCategoriesForTeamAsync(user, id, cancellationToken);
+        HiddenInactiveCount = ShowInactive ? 0 : allCategories.Count(c => !c.IsActive);
+        Categories = ShowInactive ? allCategories : allCategories.Where(c => c.IsActive).ToList();
         return true;
     }
 

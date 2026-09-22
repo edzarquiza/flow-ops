@@ -5,6 +5,8 @@ using FlowOps.Domain.Tickets;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace FlowOps.Web.Pages.Tickets;
 
@@ -123,8 +125,11 @@ public sealed class DetailsModel : PageModel
         catch (DomainRuleException ex)
         {
             // An illegal transition or a missing required field — the user's problem to fix, not
-            // an unhandled exception page. The rule code is shown so the message is traceable.
-            ModelState.AddModelError(string.Empty, $"{ex.Message} ({ex.RuleCode})");
+            // an unhandled exception page. The message is shown as-is; the rule code is not part of
+            // it (developer-facing) and goes to the log so a rejection stays traceable.
+            HttpContext.RequestServices.GetRequiredService<ILogger<DetailsModel>>()
+                .LogInformation("Ticket {TicketId} action rejected by rule {RuleCode}: {Message}", id, ex.RuleCode, ex.Message);
+            ModelState.AddModelError(string.Empty, ex.Message);
             return await LoadOrNotFoundAsync(id, cancellationToken);
         }
         catch (DbUpdateConcurrencyException)

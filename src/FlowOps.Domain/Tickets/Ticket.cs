@@ -35,6 +35,16 @@ public sealed class Ticket
     public Guid? AssigneeId { get; private set; }
     public int TeamId { get; private set; }
     public int? ProjectId { get; private set; }
+
+    /// <summary>The sprint this ticket is planned into, if any (ADR-0029). Planning position only —
+    /// never read by workflow, SLA, or attention logic. A ticket has at most one sprint by
+    /// construction; the history of moves is in <see cref="TicketEventType.SprintChanged"/> events.</summary>
+    public int? SprintId { get; private set; }
+
+    /// <summary>True while the ticket is "selected for the sprint but not yet pulled onto the board"
+    /// (the board's Backlog column). A planning flag, not a status: it never changes
+    /// <see cref="Status"/> and is meaningless when <see cref="SprintId"/> is null.</summary>
+    public bool SprintBacklog { get; private set; }
     public int CategoryId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -365,6 +375,72 @@ public sealed class Ticket
         var oldDueDate = DueDate;
         DueDate = newDueDate;
         AppendEvent(TicketEventType.DueDateChanged, actorUserId, now, field: nameof(DueDate), oldValue: oldDueDate?.ToString("O"), newValue: newDueDate?.ToString("O"), note: null);
+    }
+
+    /// <summary>
+    /// TICKET-INV-12/13 (ADR-0029). Moves the ticket into <paramref name="sprintId"/> (or out of any
+    /// sprint when null). Status, assignee, SLA, and dates are untouched. The caller (Application)
+    /// resolves what the Domain cannot look up: that the sprint exists in this ticket's project and
+    /// <paramref name="sprintAcceptsTickets"/> (not completed). A move to the sprint the ticket is
+    /// already in changes nothing and appends no event.
+    /// </summary>
+    public void MoveToSprint(int? sprintId, bool sprintAcceptsTickets, Guid actorUserId, DateTimeOffset now)
+    {
+        RequireNotTerminal("TICKET-INV-12", nameof(MoveToSprint));
+
+        if (sprintId == SprintId)
+        {
+            return;
+        }
+
+        if (sprintId is not null)
+        {
+            if (ProjectId is null)
+            {
+                throw new DomainRuleException("TICKET-INV-13", "Only a ticket that belongs to a project can be planned into a sprint.");
+            }
+
+            if (!sprintAcceptsTickets)
+            {
+                throw new DomainRuleException("SPRINT-INV-04", "A completed or cancelled sprint no longer accepts tickets.");
+            }
+        }
+
+        var previous = SprintId;
+        SprintId = sprintId;
+        SprintBacklog = sprintId is not null;
+        AppendEvent(TicketEventType.SprintChanged, actorUserId, now, field: nameof(SprintId), oldValue: previous?.ToString(), newValue: sprintId?.ToString(), note: null);
+    }
+
+    /// <summary>TICKET-INV-12/13. Takes the ticket out of the sprint backlog and onto the board's
+    /// status columns. Status is untouched — the board column then follows the real status.</summary>
+    public void PullFromSprintBacklog(Guid actorUserId, DateTimeOffset now)
+    {
+        RequireNotTerminal("TICKET-INV-12", nameof(PullFromSprintBacklog));
+
+        if (SprintId is null || !SprintBacklog)
+        {
+            throw new DomainRuleException("TICKET-INV-13", "Only a ticket in a sprint's backlog can be pulled onto the board.");
+        }
+
+        SprintBacklog = false;
+        AppendEvent(TicketEventType.SprintChanged, actorUserId, now, field: nameof(SprintBacklog), oldValue: bool.TrueString, newValue: bool.FalseString, note: null);
+    }
+
+    /// <summary>TICKET-INV-12/13 (ADR-0030). The inverse of <see cref="PullFromSprintBacklog"/>: puts a
+    /// ticket that has not started work (Open/Assigned) back into its sprint's backlog. A planning
+    /// position only — status is untouched, and a ticket already in progress cannot "un-start".</summary>
+    public void ReturnToSprintBacklog(Guid actorUserId, DateTimeOffset now)
+    {
+        RequireNotTerminal("TICKET-INV-12", nameof(ReturnToSprintBacklog));
+
+        if (SprintId is null || SprintBacklog || Status is not (Status.Open or Status.Assigned))
+        {
+            throw new DomainRuleException("TICKET-INV-13", "Only an Open or Assigned ticket that is on a sprint's board can be returned to the sprint backlog.");
+        }
+
+        SprintBacklog = true;
+        AppendEvent(TicketEventType.SprintChanged, actorUserId, now, field: nameof(SprintBacklog), oldValue: bool.FalseString, newValue: bool.TrueString, note: null);
     }
 
     /// <summary>TICKET-ENT-05 / TICKET-INV-09.</summary>

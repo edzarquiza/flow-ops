@@ -146,8 +146,8 @@ else
                     <div class="q-rail-col" aria-hidden="true">
                         @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
                     </div>
-                    <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
-                        <span class="q-sla__state">@ticket.Sla.Status</span>
+                    <div class="q-sla" title="Deadline @ticket.Sla.DueAt.ToString("u")">
+                        <span class="q-sla__state">@FlowOps.Web.SlaDisplay.StatusLabel(ticket.Sla.Status)</span>
                         @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
                         {
                             <span class="q-sla__time">@remaining</span>

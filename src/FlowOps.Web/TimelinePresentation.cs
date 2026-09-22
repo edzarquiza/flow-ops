@@ -48,3 +48,86 @@ public enum TimelineTone
     Resolved,
     Comment,
 }
+
+/// <summary>
+/// Plain-language title and detail for an audit-history entry. Presentation only: the audit record
+/// keeps its technical event types and stored values; ids are resolved to names by the query
+/// (<see cref="TicketTimelineEntry.OldDisplay"/>/<see cref="TicketTimelineEntry.NewDisplay"/>), and
+/// anything unresolved falls back to a neutral word rather than a raw id.
+/// </summary>
+public static class TimelineDisplay
+{
+    public static string Title(TicketTimelineEntry entry)
+    {
+        if (entry.Kind == TicketTimelineEntryKind.Comment)
+        {
+            return entry.IsInternal == true ? "Internal comment" : "Comment";
+        }
+
+        return entry.EventType switch
+        {
+            TicketEventType.Created => "Created",
+            TicketEventType.Assigned => "Assigned",
+            TicketEventType.Reassigned => "Reassigned",
+            TicketEventType.Unassigned => "Unassigned",
+            TicketEventType.StatusChanged => "Status changed",
+            TicketEventType.PriorityChanged => "Priority changed",
+            TicketEventType.CategoryChanged => "Category changed",
+            TicketEventType.TeamChanged => "Team changed",
+            TicketEventType.DueDateChanged => "Due date changed",
+            TicketEventType.SlaRecalculated => "Deadline recalculated",
+            TicketEventType.PutOnHold => "Put on hold",
+            TicketEventType.Resumed => "Resumed",
+            TicketEventType.Resolved => "Resolved",
+            TicketEventType.Reopened => "Reopened",
+            TicketEventType.Closed => "Closed",
+            TicketEventType.CommentAdded => "Comment added",
+            TicketEventType.SprintChanged => SprintTitle(entry),
+            _ => "Updated",
+        };
+    }
+
+    public static string? Detail(TicketTimelineEntry entry)
+    {
+        if (entry.Kind == TicketTimelineEntryKind.Comment)
+        {
+            return entry.Body;
+        }
+
+        var note = string.IsNullOrWhiteSpace(entry.Note) ? null : entry.Note;
+        return entry.EventType switch
+        {
+            TicketEventType.Assigned => $"To {entry.NewDisplay ?? "a team member"}",
+            TicketEventType.Reassigned => $"{entry.OldDisplay ?? "Unassigned"} → {entry.NewDisplay ?? "a team member"}",
+            TicketEventType.Unassigned => entry.OldDisplay is null ? null : $"Was {entry.OldDisplay}",
+            TicketEventType.StatusChanged => $"{StatusName(entry.OldValue)} → {StatusName(entry.NewValue)}",
+            TicketEventType.PriorityChanged => $"{entry.OldValue ?? "—"} → {entry.NewValue ?? "—"}",
+            TicketEventType.CategoryChanged => $"{entry.OldDisplay ?? "Unknown"} → {entry.NewDisplay ?? "Unknown"}",
+            TicketEventType.TeamChanged => $"{entry.OldDisplay ?? "Unknown"} → {entry.NewDisplay ?? "Unknown"}",
+            TicketEventType.DueDateChanged => $"{DateText(entry.OldValue)} → {DateText(entry.NewValue)}",
+            TicketEventType.SprintChanged when entry.Field == "SprintId" => $"{entry.OldDisplay ?? "No sprint"} → {entry.NewDisplay ?? "No sprint"}",
+            _ => note,
+        };
+    }
+
+    private static string SprintTitle(TicketTimelineEntry entry)
+    {
+        if (entry.Field == "SprintBacklog")
+        {
+            // Planned for the sprint (flag true) versus pulled onto the board, into Open (flag false).
+            return string.Equals(entry.NewValue, bool.TrueString, StringComparison.OrdinalIgnoreCase)
+                ? "Moved back to planned"
+                : "Moved to Open";
+        }
+
+        return entry.NewDisplay is { } name ? $"Moved to {name}" : "Moved out of sprint";
+    }
+
+    private static string StatusName(string? value) =>
+        Enum.TryParse<Status>(value, out var status) ? WorkflowRail.Label(status) : "—";
+
+    private static string DateText(string? value) =>
+        DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)
+            ? date.ToString("MMM d, yyyy HH:mm")
+            : "Not set";
+}

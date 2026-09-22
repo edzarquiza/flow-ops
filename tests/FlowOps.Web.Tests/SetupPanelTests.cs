@@ -119,7 +119,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
         var response = await client.GetAsync("/");
         var html = await response.Content.ReadAsStringAsync();
 
-        Assert.Contains("No data yet", html, StringComparison.Ordinal);
+        Assert.Contains("No resolved tickets yet", html, StringComparison.Ordinal);
         Assert.DoesNotContain(">100%<", html, StringComparison.Ordinal);
         Assert.DoesNotContain(">NaN<", html, StringComparison.Ordinal);
     }

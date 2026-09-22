@@ -91,7 +91,7 @@ public sealed class TicketPagesTests : IClassFixture<FlowOpsWebApplicationFactor
         var queueResponse = await client.GetAsync("/Tickets");
         Assert.Equal(HttpStatusCode.OK, queueResponse.StatusCode);
         Assert.Contains(
-            "No tickets are visible to you right now",
+            "No active work right now",
             await queueResponse.Content.ReadAsStringAsync(),
             StringComparison.Ordinal);
     }

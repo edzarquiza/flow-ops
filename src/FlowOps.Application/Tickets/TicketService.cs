@@ -309,6 +309,157 @@ public sealed class TicketService
             cancellationToken);
 
     /// <summary>
+    /// ADR-0029: plans the ticket into a sprint, or out of any sprint when <paramref name="sprintId"/>
+    /// is null. Same load-authorize-mutate-save shape as every transition (org-scoped ticket load,
+    /// <see cref="TicketAccessPolicy.CanPlan"/>, one audit event, xmin concurrency). The sprint must
+    /// belong to the ticket's own project and the caller's organization — a sprint id from another
+    /// project or organization is refused exactly like a missing one — and must not be completed.
+    /// Status, assignee, SLA, and dates are never touched.
+    /// </summary>
+    public Task MoveToSprintAsync(int ticketId, int? sprintId, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "planned into a sprint",
+            TicketAccessPolicy.CanPlan,
+            async (ticket, now, ct) =>
+            {
+                var acceptsTickets = true;
+                if (sprintId is { } id)
+                {
+                    var projectId = ticket.ProjectId;
+                    var status = await _dbContext.Sprints
+                        .AsNoTracking()
+                        .Where(s => s.Id == id
+                            && s.ProjectId == projectId
+                            && _dbContext.Projects.Any(p => p.Id == s.ProjectId && p.OrganizationId == user.OrganizationId))
+                        .Select(s => (FlowOps.Domain.Planning.SprintStatus?)s.Status)
+                        .SingleOrDefaultAsync(ct);
+
+                    if (status is null)
+                    {
+                        throw new TicketAccessDeniedException("This sprint is not available to you.");
+                    }
+
+                    acceptsTickets = status is FlowOps.Domain.Planning.SprintStatus.Planned or FlowOps.Domain.Planning.SprintStatus.Active;
+                }
+
+                ticket.MoveToSprint(sprintId, acceptsTickets, user.UserId, now);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// ADR-0030: a drag on the sprint board. <see cref="BoardMovePlanner"/> turns (status, backlog flag,
+    /// target column) into the existing operations that realize it — pull/return backlog, assign,
+    /// start work, resume, hold, resolve, reopen — and each one is authorized with the same
+    /// <see cref="TicketAccessPolicy"/> call and validated by the same <see cref="Ticket"/> method its
+    /// explicit action uses. Nothing sets a status directly; an illegal drag is rejected with the
+    /// planner's message (or the domain's own rule) and leaves the ticket untouched, because the
+    /// whole move is one load-authorize-mutate-save (a rejected step aborts before any save).
+    /// </summary>
+    public Task MoveOnBoardAsync(int ticketId, FlowOps.Application.Planning.BoardColumnKey target, FlowOps.Application.Planning.BoardMoveInput input, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "moved on the sprint board",
+            (_, _) => true, // CanView already passed; each step below authorizes with its own policy
+            async (ticket, now, ct) =>
+            {
+                if (ticket.SprintId is null)
+                {
+                    throw new DomainRuleException("BOARD-MOVE", "This ticket is not on a sprint board.");
+                }
+
+                var plan = FlowOps.Application.Planning.BoardMovePlanner.Plan(ticket.Status, ticket.SprintBacklog, target);
+                if (!plan.IsAllowed)
+                {
+                    throw new DomainRuleException("BOARD-MOVE", plan.Rejection!);
+                }
+
+                TicketAuthorizationSnapshot Snapshot() => new(ticket.Id, ticket.TeamId, ticket.RequesterId, ticket.AssigneeId, ticket.Status);
+
+                void Require(bool allowed)
+                {
+                    if (!allowed)
+                    {
+                        _logger.LogWarning("Authorization denied: user {ActorUserId} attempted a board move on ticket {TicketId}.", user.UserId, ticket.Id);
+                        throw new TicketAccessDeniedException("This ticket is not available to you.");
+                    }
+                }
+
+                foreach (var step in plan.Steps)
+                {
+                    switch (step)
+                    {
+                        case FlowOps.Application.Planning.BoardStep.PullFromBacklog:
+                            Require(TicketAccessPolicy.CanPlan(Snapshot(), user));
+                            ticket.PullFromSprintBacklog(user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.ClearBacklogFlagIfPermitted:
+                            if (ticket.SprintBacklog && TicketAccessPolicy.CanPlan(Snapshot(), user))
+                            {
+                                ticket.PullFromSprintBacklog(user.UserId, now);
+                            }
+
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.ReturnToBacklog:
+                            Require(TicketAccessPolicy.CanPlan(Snapshot(), user));
+                            ticket.ReturnToSprintBacklog(user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.AssignToCaller:
+                            Require(TicketAccessPolicy.CanAssign(Snapshot(), user, user.UserId));
+                            ticket.Assign(user.UserId, await IsActiveTeamMemberAsync(ticket.TeamId, user.UserId, ct), user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.StartWork:
+                            Require(TicketAccessPolicy.CanTransition(Snapshot(), user));
+                            ticket.StartWork(new TicketActor(user.UserId, user.Role), now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.StartWorkIfAssigned:
+                            if (ticket.Status == Status.Assigned)
+                            {
+                                Require(TicketAccessPolicy.CanTransition(Snapshot(), user));
+                                ticket.StartWork(new TicketActor(user.UserId, user.Role), now);
+                            }
+
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.Resume:
+                            Require(TicketAccessPolicy.CanTransition(Snapshot(), user));
+                            ticket.Resume(user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.PutOnHold:
+                            Require(TicketAccessPolicy.CanTransition(Snapshot(), user));
+                            ticket.PutOnHold(input.Reason ?? string.Empty, user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.Resolve:
+                            Require(TicketAccessPolicy.CanTransition(Snapshot(), user));
+                            ticket.Resolve(input.ResolutionCode ?? Resolution.Fixed, input.ResolutionNotes ?? string.Empty, user.UserId, now);
+                            break;
+                        case FlowOps.Application.Planning.BoardStep.Reopen:
+                            Require(TicketAccessPolicy.CanReopen(Snapshot(), user));
+                            var slaConfigurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(ct);
+                            ticket.Reopen(input.Reason ?? string.Empty, user.UserId, now, slaConfigurations);
+                            break;
+                    }
+                }
+            },
+            cancellationToken);
+
+    /// <summary>ADR-0029: takes a ticket out of its sprint's backlog and onto the board's status
+    /// columns. Same authority as planning it into the sprint.</summary>
+    public Task PullFromSprintBacklogAsync(int ticketId, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "pulled from a sprint backlog",
+            TicketAccessPolicy.CanPlan,
+            (ticket, now, _) =>
+            {
+                ticket.PullFromSprintBacklog(user.UserId, now);
+                return Task.CompletedTask;
+            },
+            cancellationToken);
+
+    /// <summary>
     /// TICKET-ENT-05. Not a workflow transition — status is untouched — but the same
     /// load-authorize-mutate-save shape applies: <c>Ticket.AddComment</c> appends the comment and
     /// its <c>CommentAdded</c> event to the same object graph, persisted by the one

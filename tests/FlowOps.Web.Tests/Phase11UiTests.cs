@@ -36,12 +36,12 @@ public sealed class Phase11UiTests : IClassFixture<FlowOpsWebApplicationFactory>
         Assert.Contains("at-risk item", html, StringComparison.Ordinal);
         Assert.Contains($"/Tickets/Details/{ticketId}", html, StringComparison.Ordinal);
 
-        // The dashboard must open on actionable attention content, not KPI counters.
+        // Phase 29B: the KPI summary comes first (visible without scrolling), then the attention list.
         var attentionIndex = html.IndexOf("What needs attention", StringComparison.Ordinal);
         var summaryIndex = html.IndexOf(">Summary<", StringComparison.Ordinal);
         Assert.True(attentionIndex >= 0, "the at-risk section heading must render");
         Assert.True(summaryIndex >= 0, "the KPI summary section must still render");
-        Assert.True(attentionIndex < summaryIndex, "the at-risk preview must render before the KPI summary section");
+        Assert.True(summaryIndex < attentionIndex, "the KPI summary must render before the at-risk preview");
     }
 
     [Fact]

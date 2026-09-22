@@ -157,9 +157,10 @@
 
 <div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Categories")); }
+    @await Html.PartialAsync("_ShowInactiveToggle", new FlowOps.Web.ShowInactiveToggleViewModel(Model.ShowInactive, Model.HiddenInactiveCount, "categories"))
     @if (Model.Categories.Count == 0)
     {
-        <p class="empty-state">No categories on this team yet — add one below.</p>
+        <p class="empty-state">@(Model.HiddenInactiveCount > 0 ? "No active categories. Turn on Show inactive to see the inactive ones." : "No categories on this team yet — add one below.")</p>
     }
     else
     {

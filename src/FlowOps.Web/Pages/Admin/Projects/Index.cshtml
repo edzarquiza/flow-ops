@@ -26,9 +26,10 @@
    list already uses — this table is the page's entire reason for existing. *@
 <div class="panel panel--focus">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("All projects")); }
+    @await Html.PartialAsync("_ShowInactiveToggle", new FlowOps.Web.ShowInactiveToggleViewModel(Model.ShowInactive, Model.HiddenInactiveCount, "projects"))
     @if (Model.Projects.Count == 0)
     {
-        <p class="empty-state">No projects yet — create your first one below.</p>
+        <p class="empty-state">@(Model.HiddenInactiveCount > 0 ? "No active projects. Turn on Show inactive to see the inactive ones." : "No projects yet — create your first one below.")</p>
     }
     else
     {

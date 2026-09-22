@@ -1,0 +1,60 @@
+@page "{id:int}"
+@using FlowOps.Domain.Planning
+@model FlowOps.Web.Pages.Projects.SprintsModel
+@{
+    ViewData["Title"] = $"{Model.Archive.Header.Name} — Sprints";
+    var projectId = Model.Archive.Header.ProjectId;
+    var returnUrl = Url.Page("/Projects/Sprints", new { id = projectId })!;
+}
+@await Html.PartialAsync("_ProjectHeader", new FlowOps.Web.ProjectHeaderViewModel(Model.Archive.Header, "sprints"))
+@await Html.PartialAsync("_PlanningNotices", Model)
+
+<div class="panel panel--focus">
+    @if (Model.Archive.Sprints.Count == 0)
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No sprints yet</p>
+            <p>Sprints you create for this project appear here, with their results once they're completed.</p>
+            @if (Model.CanManageSprints)
+            {
+                <p><a class="btn-primary" asp-page="/Projects/Details" asp-route-id="@projectId">Create a sprint</a></p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="plan-table plan-table--wide plan-table--nokey">
+                <caption class="sr-only">All sprints in this project, newest first</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Sprint</th>
+                        <th scope="col">Dates</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Tickets</th>
+                        <th scope="col">Done</th>
+                        <th scope="col">Unfinished</th>
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var sprint in Model.Archive.Sprints)
+                    {
+                        <tr>
+                            <td class="plan-table__main"><a asp-page="/Projects/SprintDetail" asp-route-id="@projectId" asp-route-sprintId="@sprint.SprintId">@sprint.Name</a></td>
+                            <td data-label="Dates" class="mono cell-muted">@FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)</td>
+                            <td data-label="Status"><span class="status-badge status-badge--compact @FlowOps.Web.SprintDisplay.StatusBadgeClass(sprint.Status)">@FlowOps.Web.SprintDisplay.StatusLabel(sprint.Status)</span></td>
+                            <td data-label="Tickets" class="mono">@sprint.TotalTickets</td>
+                            <td data-label="Done" class="mono">@sprint.DoneTickets</td>
+                            <td data-label="Unfinished" class="mono">@(sprint.Status == SprintStatus.Cancelled ? "—" : sprint.UnfinishedTickets.ToString())</td>
+                            <td class="plan-table__actions">
+                                @await Html.PartialAsync("_SprintActions", new FlowOps.Web.SprintActionsViewModel(projectId, sprint.SprintId, sprint.Status, Model.CanManageSprints, Model.HasActiveSprint, returnUrl))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+<p class="board-note">A completed sprint's numbers are frozen when it is completed, so they stay true even after unfinished tickets are moved on. Counts include only tickets you can see.</p>

@@ -1,3 +1,4 @@
+using FlowOps.Application.Planning;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Catalog;
 using FlowOps.Domain.Directory;
@@ -12,64 +13,36 @@ using Microsoft.Extensions.Logging;
 namespace FlowOps.Application.Demo;
 
 /// <summary>
-/// CLAUDE.md §14: the public-portfolio demo dataset. Runs once, at startup, only when
-/// <see cref="DemoOptions.Enabled"/> is true — see <c>Program.cs</c> for the ordering (after
-/// migrations, before the app starts serving). Idempotent: skips entirely if any ticket already
-/// exists, matching CLAUDE.md §14's exact wording ("idempotent (skips if tickets exist)").
+/// CLAUDE.md §14: the public-portfolio demo dataset — a small, curated, deterministic story that
+/// shows the current product (roles, teams, projects, sprint planning and history, workflow, SLA and
+/// attention signals) rather than a large volume of generated rows. Runs at startup only when
+/// <see cref="DemoOptions.Enabled"/> is true (see <c>Program.cs</c>, after migrations).
 /// </summary>
 /// <remarks>
-/// Every ticket, transition, and comment is created through <see cref="TicketService"/> — the same
-/// authorization/audit path a real user's request takes — never a raw insert, per CLAUDE.md §14:
-/// "Seeded tickets are created through the domain methods, not by inserting rows that bypass
-/// invariants. If the seeder cannot produce a state through legal transitions, the state is
-/// illegal and the seeder is right to fail." Only genuinely invariant-free reference data (teams,
-/// categories, projects, users, team memberships) is inserted directly, the same way the existing
-/// Web.Tests fixtures already seed that same kind of data.
+/// <para>
+/// <b>Idempotent, keyed on the demo organization.</b> If an organization named
+/// <see cref="OrganizationName"/> already exists the seeder does nothing — it never adds to, edits, or
+/// removes an existing database, so a database seeded by an older definition keeps what it has. There
+/// is deliberately no reset or cleanup here (no destructive startup); see <c>docs/deployment.md</c>
+/// for the explicit, manual reset procedure.
+/// </para>
+/// <para>
+/// <b>Deterministic.</b> No randomness: every title, status, and offset below is fixed, and every
+/// timestamp is an offset from the single seed moment, so a fresh database always tells the same
+/// story. Nothing in the dataset sets a flag directly — the SLA and attention signals shown are the
+/// genuine result of backdated timestamps (see the table in <see cref="SeedWorkAsync"/>).
+/// </para>
+/// <para>
+/// Every ticket, transition, comment, sprint action, and carry-forward goes through
+/// <see cref="TicketService"/> / <see cref="SprintService"/> — the same authorization, audit, and
+/// invariant path a real request takes. Only invariant-free reference data (teams, categories,
+/// projects, users, memberships) is inserted directly. If a state cannot be reached through legal
+/// transitions the seeder is right to fail.
+/// </para>
 /// </remarks>
 public sealed class DemoDataSeeder
 {
-    // Phase 16: the single organization the existing demo dataset becomes a real tenant of. Not
-    // configurable — this seeder still seeds exactly one organization, per CLAUDE.md §14's scope;
-    // multi-organization demo data is not part of the foundation this phase builds.
     public const string OrganizationName = "Demo Organization";
-
-    // CLAUDE.md §14's exact volume. Kept as instance state (not a hardcoded literal inside the
-    // method) so a test can construct this seeder with a smaller volume without duplicating the
-    // whole class — the production default is what Program.cs actually uses.
-    public sealed record Volume(int TicketCount, int TargetCommentCount)
-    {
-        public static readonly Volume Default = new(TicketCount: 600, TargetCommentCount: 1500);
-    }
-
-    // CLAUDE.md §14's team/composition table. The five composition percentages and the five team
-    // names are given as two separate lists of the same length with no explicit mapping between
-    // them; this seeder maps them positionally (first percentage to first team name, and so on) —
-    // a documented interpretation, not an invented one.
-    private static readonly (string Name, double Weight)[] TeamDefinitions =
-    [
-        ("Service Desk", 0.45),
-        ("IT Infrastructure", 0.20),
-        ("Application Support", 0.10),
-        ("Platform Engineering", 0.15),
-        ("Business Operations", 0.10),
-    ];
-
-    private static readonly string[] ProjectNames =
-    [
-        "Website Refresh", "ERP Migration", "Office Relocation", "Security Hardening",
-        "Customer Portal", "Data Warehouse", "Mobile App Pilot", "Vendor Consolidation",
-    ];
-
-    // Matches docs/database.md's seeded SLA-RULE-02 target minutes exactly — used only to compute
-    // realistic backdating offsets here, never to decide the ticket's own SLA fields (TicketService
-    // still resolves those itself from the real SlaConfigurations table, per SLA-RULE-12).
-    private static readonly Dictionary<Priority, int> SeededSlaTargetMinutes = new()
-    {
-        [Priority.Critical] = 240,
-        [Priority.High] = 480,
-        [Priority.Medium] = 1440,
-        [Priority.Low] = 4320,
-    };
 
     private readonly FlowOpsDbContext _dbContext;
     private readonly UserManager<ApplicationUser> _userManager;
@@ -91,53 +64,56 @@ public sealed class DemoDataSeeder
         _logger = logger;
     }
 
-    public Task SeedAsync(CancellationToken cancellationToken = default) => SeedAsync(Volume.Default, cancellationToken);
-
-    public async Task SeedAsync(Volume volume, CancellationToken cancellationToken = default)
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        if (await _dbContext.Tickets.AnyAsync(cancellationToken))
+        if (await _dbContext.Organizations.AnyAsync(o => o.Name == OrganizationName, cancellationToken))
         {
-            _logger.LogInformation("Demo seeding skipped: tickets already exist.");
+            _logger.LogInformation("Demo seeding skipped: the demo organization already exists.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_options.PersonaPassword))
         {
-            // Defensive: Program.cs already validates this on start via ValidateOnStart. Guards
-            // against any other caller (e.g. a future admin-triggered re-seed) skipping that check.
+            // Defensive: Program.cs already validates this on start via ValidateOnStart.
             throw new InvalidOperationException("FlowOps:Demo:PersonaPassword must be set to seed demo data.");
         }
 
-        // CLAUDE.md §14: "inside a transaction". EnableRetryOnFailure (Program.cs) requires any
-        // user-initiated transaction to be wrapped in an execution strategy — a retried attempt
-        // starts this whole delegate over, including a fresh BeginTransactionAsync, so a partial
-        // failure never leaves partial state behind for the retry to build on top of.
+        // CLAUDE.md §14: "inside a transaction". EnableRetryOnFailure requires a user-initiated
+        // transaction to be wrapped in an execution strategy; a retried attempt starts this whole
+        // delegate over, so a partial failure never leaves partial state behind.
         var strategy = _dbContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
             var seedTime = _realTimeProvider.GetUtcNow();
-            var rng = new Random(20260101); // fixed seed — CLAUDE.md §14: "Deterministic".
-
             var organization = await CreateOrganizationAsync(seedTime, cancellationToken);
             var teams = await CreateTeamsAsync(organization.Id, seedTime, cancellationToken);
             var categories = await CreateCategoriesAsync(teams, seedTime, cancellationToken);
             var projects = await CreateProjectsAsync(organization.Id, seedTime, cancellationToken);
-            var users = await CreateUsersAsync(organization.Id, teams, cancellationToken);
+            var users = await CreateUsersAsync(organization.Id, teams, seedTime, cancellationToken);
 
             var clock = new SeederClock(seedTime);
-            var ticketService = new TicketService(_dbContext, clock);
+            var script = new Script(
+                new TicketService(_dbContext, clock),
+                new SprintService(_dbContext, clock),
+                clock,
+                cancellationToken);
 
-            await SeedSignalShowcaseTicketsAsync(ticketService, clock, teams, categories, users, seedTime, cancellationToken);
-            await SeedBulkTicketsAsync(ticketService, clock, teams, categories, projects, users, seedTime, rng, volume, cancellationToken);
+            await SeedWorkAsync(script, teams, categories, projects, users, seedTime);
 
             await transaction.CommitAsync(cancellationToken);
-            _logger.LogInformation("Demo seeding completed: {TicketCount} tickets targeted.", volume.TicketCount);
+            _logger.LogInformation("Demo seeding completed.");
         });
     }
 
     // ---- Reference data -----------------------------------------------------------------------
+
+    private sealed record DemoTeams(Team ServiceDesk, Team ApplicationSupport);
+
+    private sealed record DemoCategories(Category Hardware, Category Access, Category Incidents, Category Changes);
+
+    private sealed record DemoProjects(Project LaptopRefresh, Project BillingPortal);
 
     private async Task<Organization> CreateOrganizationAsync(DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
@@ -147,143 +123,75 @@ public sealed class DemoDataSeeder
         return organization;
     }
 
-    private async Task<List<Team>> CreateTeamsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<DemoTeams> CreateTeamsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        var teams = TeamDefinitions.Select(t => new Team(0, organizationId, t.Name, seedTime)).ToList();
-        _dbContext.Teams.AddRange(teams);
+        var teams = new DemoTeams(
+            new Team(0, organizationId, "Service Desk", seedTime),
+            new Team(0, organizationId, "Application Support", seedTime));
+        _dbContext.Teams.AddRange(teams.ServiceDesk, teams.ApplicationSupport);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return teams;
     }
 
-    private async Task<Dictionary<int, List<Category>>> CreateCategoriesAsync(
-        List<Team> teams, DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<DemoCategories> CreateCategoriesAsync(DemoTeams teams, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        // Two categories per team is enough for TICKET-INV-02 variation without inventing a
-        // separate catalog-design concept this phase was never asked to build.
-        var namesByWorkType = new (string Name, WorkType WorkType)[]
-        {
-            ("Incidents", WorkType.Incident),
-            ("Requests", WorkType.ServiceRequest),
-        };
-
-        var byTeam = new Dictionary<int, List<Category>>();
-        foreach (var team in teams)
-        {
-            var categories = namesByWorkType
-                .Select(n => new Category(0, team.Id, $"{team.Name} {n.Name}", n.WorkType, seedTime))
-                .ToList();
-            _dbContext.Categories.AddRange(categories);
-            byTeam[team.Id] = categories;
-        }
-
+        var categories = new DemoCategories(
+            new Category(0, teams.ServiceDesk.Id, "Hardware & Devices", WorkType.ServiceRequest, seedTime),
+            new Category(0, teams.ServiceDesk.Id, "Access & Accounts", WorkType.ServiceRequest, seedTime),
+            new Category(0, teams.ApplicationSupport.Id, "Application Incidents", WorkType.Incident, seedTime),
+            new Category(0, teams.ApplicationSupport.Id, "Application Changes", WorkType.Task, seedTime));
+        _dbContext.Categories.AddRange(categories.Hardware, categories.Access, categories.Incidents, categories.Changes);
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return byTeam;
+        return categories;
     }
 
-    private async Task<List<Project>> CreateProjectsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
+    private async Task<DemoProjects> CreateProjectsAsync(int organizationId, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        var projects = ProjectNames.Select(name => new Project(0, organizationId, name, seedTime)).ToList();
-        _dbContext.Projects.AddRange(projects);
+        var projects = new DemoProjects(
+            new Project(0, organizationId, "Laptop Refresh 2026", seedTime),
+            new Project(0, organizationId, "Billing Portal Stabilization", seedTime));
+        _dbContext.Projects.AddRange(projects.LaptopRefresh, projects.BillingPortal);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return projects;
     }
 
-    /// <summary>One seeded account plus the <see cref="CurrentUser"/> shape every
-    /// <see cref="TicketService"/> call needs — resolved once, reused for every ticket.</summary>
-    private sealed record SeededUser(Guid Id, UserRole Role, int TeamId, CurrentUser AsCurrentUser);
+    /// <summary>One seeded account plus the <see cref="CurrentUser"/> shape every service call needs.</summary>
+    private sealed record SeededUser(Guid Id, CurrentUser AsCurrentUser);
 
-    private async Task<List<SeededUser>> CreateUsersAsync(int organizationId, List<Team> teams, CancellationToken cancellationToken)
+    private sealed record DemoUsers(SeededUser Admin, SeededUser Manager, SeededUser Agent, SeededUser Viewer);
+
+    /// <summary>
+    /// The four <see cref="DemoPersonas"/>, each a member of both teams (the Manager manages both;
+    /// <c>TicketAccessPolicy.CanView</c> needs team membership for every non-Admin role, and an
+    /// Admin needs it so an assignment to them satisfies TICKET-INV-03). All are
+    /// <c>IsDemoProtected</c> and pre-approved.
+    /// </summary>
+    private async Task<DemoUsers> CreateUsersAsync(int organizationId, DemoTeams teams, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
-        var seeded = new List<SeededUser>();
-
-        // Phase 16: every seeded account gets exactly one OrganizationMembership, the authoritative
-        // source CurrentUserAccessor now reads role from — added alongside the Identity role
-        // assignment CreateUserAsync already performs (kept only as a mirror for the coarse gate).
-        void AddMembership(Guid userId, UserRole role) =>
-            _dbContext.OrganizationMemberships.Add(new OrganizationMembership(0, organizationId, userId, role, DateTimeOffset.UtcNow));
-
-        // The four named, log-in-able personas (CLAUDE.md §14) — fixed teams matching their
-        // showcased role, and marked IsDemoProtected so DemoProtectionPolicy guards them.
-        var personaTeams = new Dictionary<string, Team>
-        {
-            [DemoPersonas.All[0].Email] = teams[0], // Service Desk Manager -> Service Desk
-            [DemoPersonas.All[1].Email] = teams[0], // IT Support Agent -> Service Desk
-            [DemoPersonas.All[2].Email] = teams[2], // Application Support Agent -> Application Support
-        };
+        var teamIds = new HashSet<int> { teams.ServiceDesk.Id, teams.ApplicationSupport.Id };
+        var byRole = new Dictionary<UserRole, SeededUser>();
 
         foreach (var persona in DemoPersonas.All)
         {
+            var user = await CreateUserAsync(persona.DisplayName, persona.Email, persona.Role, seedTime, cancellationToken);
+            _dbContext.OrganizationMemberships.Add(new OrganizationMembership(0, organizationId, user.Id, persona.Role, seedTime));
+
             var isManager = persona.Role == UserRole.Manager;
-            var team = personaTeams.GetValueOrDefault(persona.Email);
-            var user = await CreateUserAsync(persona.DisplayName, persona.Email, persona.Role, isDemoProtected: true, cancellationToken);
-            AddMembership(user.Id, persona.Role);
-
-            if (team is not null)
+            foreach (var team in new[] { teams.ServiceDesk, teams.ApplicationSupport })
             {
-                _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isManager, DateTimeOffset.UtcNow));
-                seeded.Add(new SeededUser(user.Id, persona.Role, team.Id, new CurrentUser(user.Id, organizationId, persona.Role, new HashSet<int> { team.Id }, isManager ? new HashSet<int> { team.Id } : new HashSet<int>())));
+                _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isManager, seedTime));
             }
-            else
-            {
-                // Executive Viewer: a member of every team (non-manager), matching an "executive,
-                // read-only, cross-team analytics" persona — TicketAccessPolicy.CanView requires
-                // team membership for a Viewer exactly like every other non-Admin role.
-                var allTeamIds = teams.Select(t => t.Id).ToHashSet();
-                foreach (var t in teams)
-                {
-                    _dbContext.TeamMembers.Add(new TeamMember(t.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
-                }
 
-                seeded.Add(new SeededUser(user.Id, persona.Role, teams[0].Id, new CurrentUser(user.Id, organizationId, persona.Role, allTeamIds, new HashSet<int>())));
-            }
-        }
-
-        // One additional manager per remaining team (4 more managers; Service Desk's manager is
-        // already the named persona above), then fill the rest with Agents so every team has
-        // enough active assignees for ~600 tickets' worth of assignment/reassignment.
-        var firstNames = new[] { "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Sam", "Drew", "Jamie", "Avery", "Quinn", "Reese", "Skyler", "Rowan", "Emerson", "Dakota", "Hayden", "Kendall", "Peyton", "Charlie" };
-        var lastNames = new[] { "Bennett", "Osei", "Nguyen", "Farrell", "Kowalski", "Iyer", "Novak", "Reyes", "Larsen", "Okafor", "Duarte", "Whitfield", "Sato", "Mercer", "Delgado", "Voss", "Abara", "Lindqvist", "Marchetti", "Solberg" };
-        var nameIndex = 0;
-        string NextName() => $"{firstNames[nameIndex % firstNames.Length]} {lastNames[nameIndex++ % lastNames.Length]}";
-
-        for (var teamIndex = 1; teamIndex < teams.Count; teamIndex++)
-        {
-            var team = teams[teamIndex];
-            var name = NextName();
-            var user = await CreateUserAsync(name, $"manager.{teamIndex}@demo.flowops.dev", UserRole.Manager, isDemoProtected: false, cancellationToken);
-            AddMembership(user.Id, UserRole.Manager);
-            _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: true, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Manager, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Manager, new HashSet<int> { team.Id }, new HashSet<int> { team.Id })));
-        }
-
-        // Remaining headcount up to 25, distributed round-robin across teams as Agents, with two
-        // final Viewers thrown in for role variety.
-        var remaining = 25 - seeded.Count - 2;
-        for (var i = 0; i < remaining; i++)
-        {
-            var team = teams[i % teams.Count];
-            var name = NextName();
-            var user = await CreateUserAsync(name, $"agent.{i}@demo.flowops.dev", UserRole.Agent, isDemoProtected: false, cancellationToken);
-            AddMembership(user.Id, UserRole.Agent);
-            _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Agent, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Agent, new HashSet<int> { team.Id }, new HashSet<int>())));
-        }
-
-        for (var i = 0; i < 2; i++)
-        {
-            var team = teams[i % teams.Count];
-            var name = NextName();
-            var user = await CreateUserAsync(name, $"viewer.{i}@demo.flowops.dev", UserRole.Viewer, isDemoProtected: false, cancellationToken);
-            AddMembership(user.Id, UserRole.Viewer);
-            _dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager: false, DateTimeOffset.UtcNow));
-            seeded.Add(new SeededUser(user.Id, UserRole.Viewer, team.Id, new CurrentUser(user.Id, organizationId, UserRole.Viewer, new HashSet<int> { team.Id }, new HashSet<int>())));
+            byRole[persona.Role] = new SeededUser(
+                user.Id,
+                new CurrentUser(user.Id, organizationId, persona.Role, new HashSet<int>(teamIds), isManager ? new HashSet<int>(teamIds) : new HashSet<int>()));
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return seeded;
+        return new DemoUsers(byRole[UserRole.Admin], byRole[UserRole.Manager], byRole[UserRole.Agent], byRole[UserRole.Viewer]);
     }
 
-    private async Task<ApplicationUser> CreateUserAsync(string displayName, string email, UserRole role, bool isDemoProtected, CancellationToken cancellationToken)
+    private async Task<ApplicationUser> CreateUserAsync(string displayName, string email, UserRole role, DateTimeOffset seedTime, CancellationToken cancellationToken)
     {
         var user = new ApplicationUser
         {
@@ -292,10 +200,10 @@ public sealed class DemoDataSeeder
             EmailConfirmed = true,
             DisplayName = displayName,
             IsActive = true,
-            IsDemoProtected = isDemoProtected,
-            // ADR-0024: demo personas are pre-approved — a portfolio visitor must be able to sign
-            // in with the published demo credentials immediately, never land in a Pending state.
-            RegistrationApprovedAt = _realTimeProvider.GetUtcNow(),
+            IsDemoProtected = true,
+            // ADR-0024: demo personas are pre-approved — a visitor must be able to sign in with the
+            // published demo credentials immediately, never land in a Pending state.
+            RegistrationApprovedAt = seedTime,
         };
 
         var createResult = await _userManager.CreateAsync(user, _options.PersonaPassword!);
@@ -316,333 +224,346 @@ public sealed class DemoDataSeeder
         return user;
     }
 
-    // ---- Tickets: signal showcase --------------------------------------------------------------
+    // ---- Work: sprints and tickets ------------------------------------------------------------
 
     /// <summary>
-    /// CLAUDE.md §14: "Every signal in §9.1 has at least three examples." Deliberately explicit
-    /// and backdated well past each threshold, rather than left to chance in the bulk generator
-    /// below — a demo whose at-risk queue is empty on a bad RNG day is not a working demo.
+    /// 22 tickets, 3 sprints, in one project-management story plus a small support queue. Times are
+    /// offsets from <c>T</c> (the seed moment).
+    /// <code>
+    /// Laptop Refresh 2026 (Service Desk)
+    ///   Sprint 1  Completed  6 tickets: 4 done, 2 unfinished  → snapshots frozen at completion
+    ///        └─ explicit carry-forward of the 2 unfinished ─┐
+    ///   Sprint 2  Active     2 carried + 7 new = 9 tickets   ← board: Backlog 2 · Open 2 · In progress 2 · Pending 1 · Done 2
+    ///   Sprint 3  Planned    3 tickets
+    /// Billing Portal Stabilization (Application Support): 4 tickets, no sprints
+    /// No project: 2 tickets
+    /// </code>
+    /// Persistent attention examples (they only get older, so they stay true at any later time):
+    /// SLA breached (most open tickets older than their target), Overdue (past DueDate), Unassigned
+    /// urgent (Billing invoice export), Stalled in progress / Pending, Aging (the 40-day-old Low
+    /// ticket), Reopened (the payment-webhook ticket). The single "SLA at risk" example (the Critical
+    /// BIOS ticket) is a short-lived bonus and is not relied on.
     /// </summary>
-    /// <remarks>
-    /// The <c>Overdue</c> signal (driven by the optional <see cref="Ticket.DueDate"/> field, via
-    /// <c>Ticket.ChangeDueDate</c>) is not demonstrated here: no <see cref="TicketService"/> method
-    /// exposes that domain method to the Application layer today, and reaching into the aggregate
-    /// directly from the seeder would bypass the same authorization/audit path every other
-    /// mutation in this class goes through. Flagged as a known limitation, not silently skipped.
-    /// </remarks>
-    private async Task SeedSignalShowcaseTicketsAsync(
-        TicketService ticketService,
-        SeederClock clock,
-        List<Team> teams,
-        Dictionary<int, List<Category>> categories,
-        List<SeededUser> users,
-        DateTimeOffset seedTime,
-        CancellationToken cancellationToken)
+    private static async Task SeedWorkAsync(
+        Script s,
+        DemoTeams teams,
+        DemoCategories cats,
+        DemoProjects projects,
+        DemoUsers users,
+        DateTimeOffset t)
     {
-        var team = teams[0];
-        var category = categories[team.Id][0];
-        var manager = users.First(u => u.TeamId == team.Id && u.Role == UserRole.Manager);
-        var agents = users.Where(u => u.TeamId == team.Id && u.Role == UserRole.Agent).ToList();
-        var requester = users.First(u => u.TeamId == team.Id);
+        var admin = users.Admin;
+        var manager = users.Manager;
+        var agent = users.Agent;
+        var today = DateOnly.FromDateTime(t.UtcDateTime);
+        var laptop = projects.LaptopRefresh.Id;
+        var billing = projects.BillingPortal.Id;
+        var sd = teams.ServiceDesk;
+        var app = teams.ApplicationSupport;
 
-        // UnassignedUrgent (needs > 15 minutes unassigned, Critical/High) — 4 examples.
-        for (var i = 0; i < 4; i++)
+        // ---- Laptop Refresh: Sprint 1 (completed) ---------------------------------------------
+        var t0 = t.AddDays(-22);
+        var sprint1 = await s.CreateSprintAsync(manager, laptop, "Sprint 1 - Inventory and imaging", today.AddDays(-22), today.AddDays(-9), t0);
+
+        var a1 = await s.CreateAsync(t0.AddMinutes(10), new TicketSeed(
+            "Audit laptop inventory against the asset register", "Reconcile the 120 laptops on the register with what is actually deployed, so the refresh order matches reality.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        var a2 = await s.CreateAsync(t0.AddMinutes(20), new TicketSeed(
+            "Build Windows 11 standard image for Latitude 5450", "Standard image with drivers, BitLocker, and the baseline application set, tested before the first delivery.",
+            Priority.High, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        var a3 = await s.CreateAsync(t0.AddMinutes(30), new TicketSeed(
+            "Order 40 replacement laptops for Q4 refresh", "Raise the purchase order for the first refresh wave against the approved budget.",
+            Priority.Medium, WorkType.ServiceRequest, sd, cats.Hardware, laptop, admin));
+        var a4 = await s.CreateAsync(t0.AddMinutes(40), new TicketSeed(
+            "Agree handover slots with Finance and HR", "Book 30-minute handover slots so each person swaps devices without losing a working day.",
+            Priority.Low, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        var a5 = await s.CreateAsync(t0.AddMinutes(50), new TicketSeed(
+            "Migrate user profiles for the Finance pilot group", "Move profiles, mapped drives, and browser data for the five-person pilot group to the new image.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        var a6 = await s.CreateAsync(t0.AddMinutes(60), new TicketSeed(
+            "Collect returned laptops from the Sales floor", "Sales have replaced their devices; collect the old ones for wiping and disposal.",
+            Priority.Medium, WorkType.ServiceRequest, sd, cats.Hardware, laptop, manager, Due: t.AddDays(-6)));
+
+        foreach (var id in new[] { a1, a2, a3, a4, a5, a6 })
         {
-            await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Payroll export failing since last night ({i})", Priority.Critical, WorkType.Incident, null,
-                seedTime.AddHours(-2));
+            await s.PlanAsync(id, sprint1, t0.AddHours(2), manager);
+            await s.PullAsync(id, t0.AddHours(2), manager);
         }
 
-        // Aging (Low priority, created > 30 days ago, still open) — 4 examples.
-        for (var i = 0; i < 4; i++)
-        {
-            await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Old low-priority request still open ({i})", Priority.Low, WorkType.ServiceRequest, null,
-                seedTime.AddDays(-45));
-        }
+        await s.StartSprintAsync(sprint1, t0.AddHours(3), manager);
 
-        // Stalled — Pending branch (PutOnHold > 3 days ago, never resumed) — 4 examples.
-        for (var i = 0; i < 4; i++)
-        {
-            var (ticketId, _) = await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Waiting on vendor, stalled ({i})", Priority.Medium, WorkType.Incident, null,
-                seedTime.AddDays(-10));
-            var assignee = agents[i % agents.Count];
-            await ticketService.AssignAsync(ticketId, assignee.Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.PutOnHoldAsync(ticketId, "Awaiting vendor response", assignee.AsCurrentUser, cancellationToken);
-        }
+        var c1 = t0.AddMinutes(10);
+        await s.AssignAsync(a1, c1.AddHours(4), manager, agent);
+        await s.StartAsync(a1, c1.AddHours(5), agent);
+        await s.ResolveAsync(a1, c1.AddHours(30), agent, Resolution.Completed, "Inventory reconciled; 12 unrecorded devices added to the register.");
+        await s.CloseAsync(a1, c1.AddDays(2), manager);
 
-        // Stalled — InProgress branch (started > 5 days ago, no update since) — 4 examples.
-        for (var i = 0; i < 4; i++)
-        {
-            var (ticketId, _) = await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"In progress but gone quiet ({i})", Priority.Medium, WorkType.Incident, null,
-                seedTime.AddDays(-9));
-            var assignee = agents[i % agents.Count];
-            await ticketService.AssignAsync(ticketId, assignee.Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.StartWorkAsync(ticketId, assignee.AsCurrentUser, cancellationToken);
-        }
+        var c2 = t0.AddMinutes(20);
+        await s.AssignAsync(a2, c2.AddHours(3), manager, agent);
+        await s.StartAsync(a2, c2.AddHours(3.5), agent);
+        await s.ResolveAsync(a2, c2.AddHours(7), agent, Resolution.Completed, "Image built, tested on two hardware revisions, and published to the deployment server.");
+        await s.CloseAsync(a2, c2.AddDays(1), manager);
 
-        // Churn (reassigned >= 3 times) — 3 examples.
-        for (var i = 0; i < 3; i++)
-        {
-            var (ticketId, _) = await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Bounced between owners ({i})", Priority.Medium, WorkType.Incident, null,
-                seedTime.AddDays(-4));
-            await ticketService.AssignAsync(ticketId, agents[0].Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.ReassignAsync(ticketId, agents[1 % agents.Count].Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.ReassignAsync(ticketId, agents[2 % agents.Count].Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.ReassignAsync(ticketId, agents[0].Id, manager.AsCurrentUser, cancellationToken);
-        }
+        var c3 = t0.AddMinutes(30);
+        await s.AssignAsync(a3, c3.AddHours(4), admin, manager);
+        await s.StartAsync(a3, c3.AddHours(6), manager);
+        await s.ResolveAsync(a3, c3.AddHours(20), manager, Resolution.Completed, "Purchase order approved and placed with the supplier; delivery in two weeks.");
 
-        // Reopened (>= 1 reopen) — 3 examples.
-        for (var i = 0; i < 3; i++)
-        {
-            var (ticketId, _) = await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Reopened after the fix didn't hold ({i})", Priority.High, WorkType.Incident, null,
-                seedTime.AddDays(-6));
-            var assignee = agents[i % agents.Count];
-            await ticketService.AssignAsync(ticketId, assignee.Id, manager.AsCurrentUser, cancellationToken);
-            await ticketService.StartWorkAsync(ticketId, assignee.AsCurrentUser, cancellationToken);
-            await ticketService.ResolveAsync(ticketId, Resolution.Fixed, "Applied the standard fix.", assignee.AsCurrentUser, cancellationToken);
-            await ticketService.ReopenAsync(ticketId, "Issue recurred within a day.", requester.AsCurrentUser, cancellationToken);
-        }
+        var c4 = t0.AddMinutes(40);
+        await s.AssignAsync(a4, c4.AddDays(1), manager, agent);
+        await s.StartAsync(a4, c4.AddDays(1).AddHours(1), agent);
+        await s.ResolveAsync(a4, c4.AddHours(50), agent, Resolution.Completed, "Handover slots agreed with both departments.");
 
-        // SlaBreached (resolved-nothing, past due) and SlaAtRisk (well into the target window,
-        // still open) — 3 examples each, using each priority's known seeded target minutes.
-        for (var i = 0; i < 3; i++)
-        {
-            var priority = Priority.High;
-            var targetMinutes = SeededSlaTargetMinutes[priority];
-            await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Breached SLA, still unresolved ({i})", priority, WorkType.Incident, null,
-                seedTime.AddMinutes(-(targetMinutes * 1.5)));
-        }
+        var c5 = t0.AddMinutes(50);
+        await s.AssignAsync(a5, c5.AddHours(5), manager, agent);
+        await s.StartAsync(a5, c5.AddDays(1), agent);
+        await s.CommentAsync(a5, c5.AddDays(3), agent, "Two of five profiles migrated; the rest need sign-off from the Finance owner.");
 
-        for (var i = 0; i < 3; i++)
-        {
-            var priority = Priority.Medium;
-            var targetMinutes = SeededSlaTargetMinutes[priority];
-            await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                $"Deep into its SLA window ({i})", priority, WorkType.Incident, null,
-                seedTime.AddMinutes(-(targetMinutes * 0.9)));
-        }
+        await s.AssignAsync(a6, t0.AddMinutes(60).AddDays(1), manager, manager);
+
+        await s.CompleteSprintAsync(sprint1, t.AddDays(-9), manager);
+
+        // ---- Laptop Refresh: Sprint 2 (active) and Sprint 3 (planned) -------------------------
+        var sprint2 = await s.CreateSprintAsync(manager, laptop, "Sprint 2 - Pilot devices", today.AddDays(-8), today.AddDays(5), t.AddDays(-10));
+        var sprint3 = await s.CreateSprintAsync(manager, laptop, "Sprint 3 - Finance rollout", today.AddDays(6), today.AddDays(19), t.AddDays(-10));
+        await s.StartSprintAsync(sprint2, t.AddDays(-8), manager);
+
+        // Explicit carry-forward: the two unfinished Sprint 1 tickets move to Sprint 2. Moving a
+        // ticket into a sprint puts it in that sprint's backlog, so the two in-flight tickets are then
+        // pulled onto the board — the same two steps a manager takes in the UI.
+        await s.CarryForwardAsync(sprint1, t.AddDays(-8).AddHours(1), manager, expectedMoved: 2);
+        await s.PullAsync(a5, t.AddDays(-8).AddHours(1), manager);
+        await s.PullAsync(a6, t.AddDays(-8).AddHours(1), manager);
+
+        // Pending, stalled: waiting on a vendor for four days.
+        var w1Created = t.AddHours(-100);
+        var w1 = await s.CreateAsync(w1Created, new TicketSeed(
+            "Confirm Windows licence entitlement with the vendor", "The new devices ship with OEM licences; confirm the volume entitlement covers the full refresh.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(w1, sprint2, w1Created.AddMinutes(10), manager);
+        await s.PullAsync(w1, w1Created.AddMinutes(20), manager);
+        await s.AssignAsync(w1, w1Created.AddMinutes(30), manager, agent);
+        await s.StartAsync(w1, w1Created.AddHours(1), agent);
+        await s.CommentAsync(w1, w1Created.AddHours(2), agent, "Vendor asked for the tenant ID; waiting on their entitlement report.");
+        await s.HoldAsync(w1, w1Created.AddHours(3), agent, "Waiting for the vendor to confirm the licence entitlement.");
+
+        // Done: resolved inside the sprint.
+        var d2Created = t.AddHours(-40);
+        var d2 = await s.CreateAsync(d2Created, new TicketSeed(
+            "Publish the laptop handover guide on the intranet", "One page: what to back up, what happens on handover day, who to call.",
+            Priority.Low, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(d2, sprint2, d2Created.AddMinutes(5), manager);
+        await s.PullAsync(d2, d2Created.AddMinutes(10), manager);
+        await s.AssignAsync(d2, d2Created.AddHours(1), manager, agent);
+        await s.StartAsync(d2, d2Created.AddHours(2), agent);
+        await s.ResolveAsync(d2, d2Created.AddHours(10), agent, Resolution.Completed, "Guide published and linked from the IT help page.");
+
+        var d1Created = t.AddHours(-22);
+        var d1 = await s.CreateAsync(d1Created, new TicketSeed(
+            "Unbox and asset-tag the first delivery of 10 laptops", "Check serial numbers against the order, tag, and shelve for imaging.",
+            Priority.Medium, WorkType.ServiceRequest, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(d1, sprint2, d1Created.AddMinutes(5), manager);
+        await s.PullAsync(d1, d1Created.AddMinutes(10), manager);
+        await s.AssignAsync(d1, d1Created.AddMinutes(30), manager, agent);
+        await s.StartAsync(d1, d1Created.AddHours(1), agent);
+        await s.ResolveAsync(d1, d1Created.AddHours(3), agent, Resolution.Completed, "All 10 devices matched the order, tagged, and shelved.");
+
+        // In progress, Critical, opened about 3.4 hours ago: inside its SLA "at risk" window for a
+        // short time after seeding (a bonus example, not one the dataset depends on).
+        var p1Created = t.AddMinutes(-204);
+        var p1 = await s.CreateAsync(p1Created, new TicketSeed(
+            "Executive laptop will not boot after BIOS update", "A pilot device stops at the boot logo after the firmware update. The user needs a working machine today.",
+            Priority.Critical, WorkType.Incident, sd, cats.Hardware, laptop, agent));
+        await s.PlanAsync(p1, sprint2, p1Created.AddMinutes(5), manager);
+        await s.PullAsync(p1, p1Created.AddMinutes(5), manager);
+        await s.AssignAsync(p1, p1Created.AddMinutes(8), manager, agent);
+        await s.StartAsync(p1, p1Created.AddMinutes(10), agent);
+        await s.CommentAsync(p1, p1Created.AddMinutes(25), agent, "Loaner laptop issued. Rolling the BIOS back to the previous version.");
+
+        // Open and assigned to the manager.
+        var o1Created = t.AddHours(-9);
+        var o1 = await s.CreateAsync(o1Created, new TicketSeed(
+            "Prepare BitLocker recovery key escrow for new devices", "Make sure recovery keys for the new laptops are escrowed before they are handed over.",
+            Priority.Medium, WorkType.ServiceRequest, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(o1, sprint2, o1Created.AddMinutes(5), manager);
+        await s.PullAsync(o1, o1Created.AddMinutes(10), manager);
+        await s.AssignAsync(o1, o1Created.AddHours(1), manager, manager);
+
+        // Sprint 2 backlog: planned into the sprint, not yet pulled onto the board.
+        var b1Created = t.AddHours(-30);
+        var b1 = await s.CreateAsync(b1Created, new TicketSeed(
+            "Decide on a docking station model for hot-desk areas", "Compare two docking stations against the new laptop model and pick one for the hot-desk zones.",
+            Priority.Low, WorkType.Task, sd, cats.Hardware, laptop, admin));
+        await s.PlanAsync(b1, sprint2, b1Created.AddMinutes(5), manager);
+
+        var b2Created = t.AddHours(-10);
+        var b2 = await s.CreateAsync(b2Created, new TicketSeed(
+            "Arrange secure disposal of retired laptops", "Book a certified disposal service and agree the certificate of destruction.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(b2, sprint2, b2Created.AddMinutes(5), manager);
+
+        // Sprint 3 (planned).
+        var n1Created = t.AddHours(-6);
+        var n1 = await s.CreateAsync(n1Created, new TicketSeed(
+            "Roll out laptops to the Finance pilot group", "Hand over the first five refreshed laptops to Finance during their agreed slots.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(n1, sprint3, n1Created.AddMinutes(5), manager);
+
+        var n2Created = t.AddHours(-5);
+        var n2 = await s.CreateAsync(n2Created, new TicketSeed(
+            "Collect and wipe the legacy Finance laptops", "Collect the replaced devices and wipe them to the disposal standard.",
+            Priority.Medium, WorkType.Task, sd, cats.Hardware, laptop, manager));
+        await s.PlanAsync(n2, sprint3, n2Created.AddMinutes(5), manager);
+
+        var n3Created = t.AddHours(-4);
+        var n3 = await s.CreateAsync(n3Created, new TicketSeed(
+            "Run the post-rollout satisfaction survey", "Send a short survey to the pilot group after two weeks on the new laptops.",
+            Priority.Low, WorkType.Task, sd, cats.Hardware, laptop, admin,
+            PlannedStart: t.AddDays(7), Due: t.AddDays(18)));
+        await s.PlanAsync(n3, sprint3, n3Created.AddMinutes(5), manager);
+
+        // ---- Billing Portal Stabilization: ordinary project tickets, no sprints ----------------
+        // Critical and unassigned for three days: SLA breached and unassigned-urgent.
+        await s.CreateAsync(t.AddDays(-3), new TicketSeed(
+            "Invoice PDF export returns a 500 error for multi-page invoices", "Finance cannot export invoices longer than one page. The error started after the last release.",
+            Priority.Critical, WorkType.Incident, app, cats.Incidents, billing, agent));
+
+        // In progress and past its due date: Overdue and SLA breached.
+        var bi2Created = t.AddHours(-30);
+        var bi2 = await s.CreateAsync(bi2Created, new TicketSeed(
+            "Customers see duplicate charges on monthly statements", "Several customers report the same charge appearing twice on their statement.",
+            Priority.High, WorkType.Incident, app, cats.Incidents, billing, agent, Due: t.AddHours(-6)));
+        await s.AssignAsync(bi2, bi2Created.AddMinutes(30), manager, agent);
+        await s.StartAsync(bi2, bi2Created.AddHours(1), agent);
+        await s.CommentAsync(bi2, bi2Created.AddHours(2), agent, "Confirmed: the retry job posts the charge twice when the gateway times out. Drafting a fix.", isInternal: true);
+
+        // Resolved, then reopened: Reopened, with the full comment trail (investigation, resolution, escalation).
+        var bi3Created = t.AddDays(-9);
+        var bi3 = await s.CreateAsync(bi3Created, new TicketSeed(
+            "Payment webhook retries failing after the gateway upgrade", "Payment confirmations are not reaching the portal, so orders stay unpaid.",
+            Priority.High, WorkType.Incident, app, cats.Incidents, billing, manager));
+        await s.AssignAsync(bi3, bi3Created.AddMinutes(30), manager, agent);
+        await s.StartAsync(bi3, bi3Created.AddHours(1), agent);
+        await s.CommentAsync(bi3, bi3Created.AddHours(5), agent, "The gateway shortened its timeout; our retry interval is now too long.");
+        await s.ResolveAsync(bi3, t.AddDays(-8), agent, Resolution.Fixed, "Raised the retry timeout to match the gateway's new limit.");
+        await s.ReopenAsync(bi3, t.AddDays(-2), manager, "Failed again after the weekend batch run.");
+        await s.CommentAsync(bi3, t.AddDays(-2).AddHours(1), agent, "Reproduced on the batch path. Escalated to the gateway vendor.");
+
+        // A healthy, planned piece of work: assigned, with future planned start and due dates.
+        var bi4Created = t.AddHours(-8);
+        var bi4 = await s.CreateAsync(bi4Created, new TicketSeed(
+            "Add the tax registration number to the invoice template", "Invoices for EU customers must show the company's tax registration number.",
+            Priority.Medium, WorkType.Task, app, cats.Changes, billing, admin,
+            PlannedStart: t.AddDays(1), Due: t.AddDays(7)));
+        await s.AssignAsync(bi4, bi4Created.AddHours(1), admin, admin);
+
+        // ---- No project ---------------------------------------------------------------------
+        // Low priority, untouched for 40 days: Aging.
+        await s.CreateAsync(t.AddDays(-40), new TicketSeed(
+            "Retire the legacy shared printer queue on floor 3", "The old print server is being decommissioned; remove the queue and point staff to the new printers.",
+            Priority.Low, WorkType.ServiceRequest, sd, cats.Hardware, null, agent));
+
+        // A routine request resolved well inside its target.
+        var u2Created = t.AddDays(-2);
+        var u2 = await s.CreateAsync(u2Created, new TicketSeed(
+            "Reset MFA for a new finance starter", "The new starter lost their phone before enrolling; reset their authenticator.",
+            Priority.Medium, WorkType.ServiceRequest, sd, cats.Access, null, agent));
+        await s.AssignAsync(u2, u2Created.AddMinutes(5), manager, agent);
+        await s.StartAsync(u2, u2Created.AddMinutes(10), agent);
+        await s.ResolveAsync(u2, u2Created.AddMinutes(45), agent, Resolution.Fixed, "MFA reset and the starter re-enrolled their authenticator.");
     }
 
-    // ---- Tickets: bulk realistic volume ---------------------------------------------------------
+    private sealed record TicketSeed(
+        string Title,
+        string Description,
+        Priority Priority,
+        WorkType WorkType,
+        Team Team,
+        Category Category,
+        int? ProjectId,
+        SeededUser Requester,
+        DateTimeOffset? PlannedStart = null,
+        DateTimeOffset? Due = null);
 
-    private static readonly (Priority Priority, double Weight)[] PriorityWeights =
-    [
-        (Priority.Low, 0.30), (Priority.Medium, 0.40), (Priority.High, 0.20), (Priority.Critical, 0.10),
-    ];
-
-    private enum Outcome { OpenUnassigned, AssignedOnly, InProgress, Pending, ResolvedOnTime, ResolvedBreached, ClosedOnTime, ClosedBreached }
-
-    private static readonly (Outcome Outcome, double Weight)[] OutcomeWeights =
-    [
-        (Outcome.OpenUnassigned, 0.10),
-        (Outcome.AssignedOnly, 0.10),
-        (Outcome.InProgress, 0.15),
-        (Outcome.Pending, 0.05),
-        (Outcome.ResolvedOnTime, 0.30), // resolved outcomes skew compliant -> ~80-88% overall SLA met
-        (Outcome.ResolvedBreached, 0.08),
-        (Outcome.ClosedOnTime, 0.18),
-        (Outcome.ClosedBreached, 0.04),
-    ];
-
-    private async Task SeedBulkTicketsAsync(
-        TicketService ticketService,
-        SeederClock clock,
-        List<Team> teams,
-        Dictionary<int, List<Category>> categories,
-        List<Project> projects,
-        List<SeededUser> users,
-        DateTimeOffset seedTime,
-        Random rng,
-        Volume volume,
-        CancellationToken cancellationToken)
+    /// <summary>Thin timeline helper: each step sets the seeder clock, then calls the real service.</summary>
+    private sealed class Script(TicketService tickets, SprintService sprints, SeederClock clock, CancellationToken ct)
     {
-        var commentsRemaining = volume.TargetCommentCount;
-
-        for (var i = 0; i < volume.TicketCount; i++)
+        public async Task<int> CreateAsync(DateTimeOffset at, TicketSeed t)
         {
-            var team = WeightedPick(teams, TeamDefinitions.Select(t => t.Weight).ToArray(), rng);
-            var category = categories[team.Id][rng.Next(categories[team.Id].Count)];
-            var priority = WeightedPick(PriorityWeights.Select(p => p.Priority).ToArray(), PriorityWeights.Select(p => p.Weight).ToArray(), rng);
-            var teamUsers = users.Where(u => u.TeamId == team.Id).ToList();
-            // TicketAccessPolicy.CanCreate: Admin, Manager, and Agent may create tickets — Viewer
-            // may not, so a Viewer can never be picked as a ticket's requester here.
-            var eligibleRequesters = teamUsers.Where(u => u.Role != UserRole.Viewer).ToList();
-            var requester = eligibleRequesters[rng.Next(eligibleRequesters.Count)];
-            var agents = teamUsers.Where(u => u.Role is UserRole.Agent or UserRole.Manager).ToList();
-            var manager = teamUsers.First(u => u.Role == UserRole.Manager);
+            clock.Set(at);
+            var request = new CreateTicketRequest(t.Title, t.Description, t.WorkType, t.Priority, t.Team.Id, t.Category.Id, t.ProjectId, t.PlannedStart, t.Due);
+            var (id, _) = await tickets.CreateAsync(request, t.Requester.AsCurrentUser, ct);
+            return id;
+        }
 
-            // Spread creation across the last 90 days so the dashboard's fixed reporting window
-            // (Phase 10) has real, varied resolution-time/compliance data, weighted toward more
-            // recent tickets so there is meaningful open work "now" as well as history.
-            var ageDays = Math.Pow(rng.NextDouble(), 2) * 90;
-            var createdAt = seedTime.AddDays(-ageDays);
+        public Task AssignAsync(int id, DateTimeOffset at, SeededUser by, SeededUser to) =>
+            At(at, () => tickets.AssignAsync(id, to.Id, by.AsCurrentUser, ct));
 
-            // PickOrNull(rng, 8) preserves the original one-in-eight odds of a project being set at
-            // all; when one is, it must be an actual persisted Project.Id (not a positional index
-            // into ProjectNames) — see the investigation behind this fix: an assumed 1..N id only
-            // ever coincidentally matched real rows on a freshly-migrated, never-before-seeded
-            // database, and breaks permanently the moment the projects identity sequence has
-            // already advanced past N for any reason (including an earlier, rolled-back attempt).
-            var (ticketId, _) = await CreateTicketAtAsync(
-                ticketService, clock, requester, team, category,
-                GenerateTitle(category.Name, rng), priority, category.DefaultWorkType, PickOrNull(rng, 8) ? projects[rng.Next(projects.Count)].Id : null,
-                createdAt);
+        public Task StartAsync(int id, DateTimeOffset at, SeededUser by) =>
+            At(at, () => tickets.StartWorkAsync(id, by.AsCurrentUser, ct));
 
-            var outcome = WeightedPick(OutcomeWeights.Select(o => o.Outcome).ToArray(), OutcomeWeights.Select(o => o.Weight).ToArray(), rng);
-            var targetMinutes = SeededSlaTargetMinutes[priority];
-            var assignee = agents[rng.Next(agents.Count)];
+        public Task HoldAsync(int id, DateTimeOffset at, SeededUser by, string reason) =>
+            At(at, () => tickets.PutOnHoldAsync(id, reason, by.AsCurrentUser, ct));
 
-            await ApplyOutcomeAsync(ticketService, clock, ticketId, outcome, createdAt, targetMinutes, requester, assignee, manager, rng, cancellationToken);
+        public Task ResolveAsync(int id, DateTimeOffset at, SeededUser by, Resolution resolution, string notes) =>
+            At(at, () => tickets.ResolveAsync(id, resolution, notes, by.AsCurrentUser, ct));
 
-            // Distribute the remaining comment budget roughly evenly, biased toward tickets that
-            // reached at least Assigned (an untouched Open ticket realistically has fewer notes).
-            var commentBudgetForTicket = outcome == Outcome.OpenUnassigned ? rng.Next(0, 2) : rng.Next(1, 4);
-            for (var c = 0; c < commentBudgetForTicket && commentsRemaining > 0; c++, commentsRemaining--)
+        public Task CloseAsync(int id, DateTimeOffset at, SeededUser by) =>
+            At(at, () => tickets.CloseAsync(id, by.AsCurrentUser, ct));
+
+        public Task ReopenAsync(int id, DateTimeOffset at, SeededUser by, string reason) =>
+            At(at, () => tickets.ReopenAsync(id, reason, by.AsCurrentUser, ct));
+
+        public Task CommentAsync(int id, DateTimeOffset at, SeededUser by, string body, bool isInternal = false) =>
+            At(at, () => tickets.AddCommentAsync(id, body, isInternal, by.AsCurrentUser, ct));
+
+        public Task PlanAsync(int id, int sprintId, DateTimeOffset at, SeededUser by) =>
+            At(at, () => tickets.MoveToSprintAsync(id, sprintId, by.AsCurrentUser, ct));
+
+        public Task PullAsync(int id, DateTimeOffset at, SeededUser by) =>
+            At(at, () => tickets.PullFromSprintBacklogAsync(id, by.AsCurrentUser, ct));
+
+        public async Task<int> CreateSprintAsync(SeededUser by, int projectId, string name, DateOnly start, DateOnly end, DateTimeOffset at)
+        {
+            clock.Set(at);
+            var result = await sprints.CreateSprintAsync(by.AsCurrentUser, projectId, name, start, end, ct);
+            return Require(result, "create sprint").SprintId!.Value;
+        }
+
+        public async Task StartSprintAsync(int sprintId, DateTimeOffset at, SeededUser by)
+        {
+            clock.Set(at);
+            Require(await sprints.StartSprintAsync(by.AsCurrentUser, sprintId, ct), "start sprint");
+        }
+
+        public async Task CompleteSprintAsync(int sprintId, DateTimeOffset at, SeededUser by)
+        {
+            clock.Set(at);
+            Require(await sprints.CompleteSprintAsync(by.AsCurrentUser, sprintId, ct), "complete sprint");
+        }
+
+        public async Task CarryForwardAsync(int completedSprintId, DateTimeOffset at, SeededUser by, int expectedMoved)
+        {
+            clock.Set(at);
+            var result = await sprints.CarryForwardAsync(by.AsCurrentUser, completedSprintId, ct);
+            if (!result.Succeeded || result.Moved != expectedMoved)
             {
-                clock.Set(createdAt.AddHours(rng.Next(1, 72)));
-                var author = rng.NextDouble() < 0.5 ? requester : assignee;
-                await ticketService.AddCommentAsync(ticketId, GenerateCommentBody(rng), isInternal: author.Id != requester.Id && rng.NextDouble() < 0.4, author.AsCurrentUser, cancellationToken);
+                throw new InvalidOperationException($"Demo seed carry-forward moved {result.Moved} tickets (expected {expectedMoved}): {result.Error}");
             }
         }
-    }
 
-    private async Task ApplyOutcomeAsync(
-        TicketService ticketService,
-        SeederClock clock,
-        int ticketId,
-        Outcome outcome,
-        DateTimeOffset createdAt,
-        int targetMinutes,
-        SeededUser requester,
-        SeededUser assignee,
-        SeededUser manager,
-        Random rng,
-        CancellationToken cancellationToken)
-    {
-        if (outcome == Outcome.OpenUnassigned)
+        private async Task At(DateTimeOffset at, Func<Task> action)
         {
-            return;
+            clock.Set(at);
+            await action();
         }
 
-        clock.Set(createdAt.AddMinutes(rng.Next(5, 60)));
-        await ticketService.AssignAsync(ticketId, assignee.Id, manager.AsCurrentUser, cancellationToken);
-
-        if (outcome == Outcome.AssignedOnly)
-        {
-            return;
-        }
-
-        clock.Set(createdAt.AddMinutes(rng.Next(60, 180)));
-        await ticketService.StartWorkAsync(ticketId, assignee.AsCurrentUser, cancellationToken);
-
-        if (outcome == Outcome.InProgress)
-        {
-            return;
-        }
-
-        if (outcome == Outcome.Pending)
-        {
-            clock.Set(createdAt.AddMinutes(rng.Next(180, 400)));
-            await ticketService.PutOnHoldAsync(ticketId, "Waiting on additional information.", assignee.AsCurrentUser, cancellationToken);
-            return;
-        }
-
-        var onTime = outcome is Outcome.ResolvedOnTime or Outcome.ClosedOnTime;
-        var resolveOffsetMinutes = onTime
-            ? (int)(targetMinutes * (0.4 + rng.NextDouble() * 0.4)) // 40-80% of target
-            : (int)(targetMinutes * (1.1 + rng.NextDouble() * 0.5)); // 110-160% of target
-
-        clock.Set(createdAt.AddMinutes(resolveOffsetMinutes));
-        await ticketService.ResolveAsync(ticketId, PickResolution(rng), "Resolved during demo data generation.", assignee.AsCurrentUser, cancellationToken);
-
-        if (outcome is Outcome.ClosedOnTime or Outcome.ClosedBreached)
-        {
-            clock.Set(clock.GetUtcNow().AddDays(rng.Next(1, 5)));
-            await ticketService.CloseAsync(ticketId, requester.AsCurrentUser, cancellationToken);
-        }
+        private static SprintMutationResult Require(SprintMutationResult result, string what) =>
+            result.Succeeded ? result : throw new InvalidOperationException($"Demo seed could not {what}: {result.Error}");
     }
 
-    private static async Task<(int Id, string Reference)> CreateTicketAtAsync(
-        TicketService ticketService,
-        SeederClock clock,
-        SeededUser requester,
-        Team team,
-        Category category,
-        string title,
-        Priority priority,
-        WorkType workType,
-        int? projectId,
-        DateTimeOffset now)
-    {
-        clock.Set(now);
-
-        var request = new CreateTicketRequest(title, GenerateDescription(title), workType, priority, team.Id, category.Id, projectId);
-        return await ticketService.CreateAsync(request, requester.AsCurrentUser);
-    }
-
-    private static T WeightedPick<T>(IReadOnlyList<T> items, IReadOnlyList<double> weights, Random rng)
-    {
-        var total = weights.Sum();
-        var roll = rng.NextDouble() * total;
-        var cumulative = 0.0;
-        for (var i = 0; i < items.Count; i++)
-        {
-            cumulative += weights[i];
-            if (roll <= cumulative)
-            {
-                return items[i];
-            }
-        }
-
-        return items[^1];
-    }
-
-    private static bool PickOrNull(Random rng, int oneInN) => rng.Next(oneInN) == 0;
-
-    private static Resolution PickResolution(Random rng) =>
-        (Resolution)rng.Next(Enum.GetValues<Resolution>().Length);
-
-    private static string GenerateTitle(string categoryName, Random rng)
-    {
-        var subjects = new[] { "Login failure", "Slow performance", "Access request", "Hardware fault", "Configuration change", "Data discrepancy", "Printer offline", "VPN drops", "New starter setup", "License renewal", "Email delivery delay", "Report generation error" };
-        return $"{subjects[rng.Next(subjects.Length)]} — {categoryName}";
-    }
-
-    private static string GenerateDescription(string title) =>
-        $"{title}. Reported during demo data generation; describes a plausible, self-contained scenario with no real user data.";
-
-    private static string GenerateCommentBody(Random rng)
-    {
-        var notes = new[]
-        {
-            "Investigating now.",
-            "Confirmed with the requester, working on a fix.",
-            "Escalated to the platform team for input.",
-            "Applied a workaround while the root cause is investigated.",
-            "Waiting on a response from the requester.",
-            "Verified the fix in the affected environment.",
-        };
-        return notes[rng.Next(notes.Length)];
-    }
-
-    /// <summary>A settable clock so the seeder can back- and forward-date each ticket's own
-    /// lifecycle deterministically — the same technique <c>FlowOpsWebApplicationFactory</c>'s
-    /// <c>BackdatedTimeProvider</c> already uses for a single fixed moment, made mutable here since
-    /// one seeder-owned <see cref="TicketService"/> plays out many tickets' full histories.</summary>
+    /// <summary>A settable clock so the seeder can back- and forward-date each step of a ticket's or
+    /// sprint's history deterministically through the real services.</summary>
     private sealed class SeederClock(DateTimeOffset initial) : TimeProvider
     {
         private DateTimeOffset _now = initial;

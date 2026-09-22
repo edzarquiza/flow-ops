@@ -34,7 +34,7 @@ public sealed class TicketQueryService
     /// The raw SLA columns a projection must carry so <see cref="SlaPolicy.GetStatus"/> can be
     /// applied after materialisation. Internal to this service — never leaves it.
     /// </summary>
-    private sealed record SlaFacts(
+    internal sealed record SlaFacts(
         WorkType WorkType,
         Priority Priority,
         Status Status,
@@ -49,7 +49,7 @@ public sealed class TicketQueryService
     /// configuration table, loaded once per query — four reference rows, so resolving per ticket
     /// in memory costs nothing and adds no query per row.
     /// </summary>
-    private static TicketSlaView BuildSlaView(SlaFacts facts, IReadOnlyList<SlaConfiguration> configurations, DateTimeOffset now)
+    internal static TicketSlaView BuildSlaView(SlaFacts facts, IReadOnlyList<SlaConfiguration> configurations, DateTimeOffset now)
     {
         // SLA-RULE-01 resolution stays in the Domain; this only supplies the rows and the clock.
         var configuration = SlaPolicy.ResolveConfiguration(configurations, facts.WorkType, facts.Priority);
@@ -100,6 +100,8 @@ public sealed class TicketQueryService
     /// or resolves to <see cref="DateRangeOption.AllTime"/> — defaulting to
     /// <see cref="QueueDateField.Created"/> otherwise so a caller that only wants "the last 7 days"
     /// need not also decide a field.</param>
+    /// <param name="includeFinished">Phase 29B: <see langword="false"/> leaves out Resolved and Closed
+    /// tickets. Defaults to <see langword="true"/> so every existing caller keeps its behaviour.</param>
     /// <param name="dateRange">Phase 25: an additional <c>AND</c> narrowing applied in SQL, after
     /// <paramref name="filter"/> and before <paramref name="search"/> — the same ordering
     /// discipline this method's own scope/filter/search comment already documents. A ticket
@@ -111,6 +113,7 @@ public sealed class TicketQueryService
         string? search = null,
         QueueDateField dateField = QueueDateField.Created,
         DateRangeFilter? dateRange = null,
+        bool includeFinished = true,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
@@ -124,6 +127,14 @@ public sealed class TicketQueryService
         var scoped = ApplyViewScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user);
         scoped = ApplyQueueFilter(scoped, filter, now);
         scoped = ApplyDateRangeFilter(scoped, dateField, dateRange, now);
+
+        // Phase 29B: the Work Queue answers "what should I work on?", so it opens on unfinished work.
+        // This is a presentation narrowing applied after the authorization scope above (it can only
+        // remove rows, never widen visibility); finished tickets stay one click away.
+        if (!includeFinished)
+        {
+            scoped = scoped.Where(t => t.Status != Status.Resolved && t.Status != Status.Closed);
+        }
 
         // The requester join exists only to make "Requester" a searchable field (the queue never
         // displayed it before). RequesterId is a required FK, so this INNER JOIN can never exclude
@@ -249,6 +260,9 @@ public sealed class TicketQueryService
                 ticket.UpdatedAt,
                 ticket.PlannedStartDate,
                 ticket.DueDate,
+                ticket.ProjectId,
+                ticket.SprintId,
+                ticket.SprintBacklog,
                 Sla = new SlaFacts(
                     ticket.WorkType,
                     ticket.Priority,
@@ -267,6 +281,24 @@ public sealed class TicketQueryService
         }
 
         var configurations = await LoadSlaConfigurationsAsync(cancellationToken);
+
+        TicketSprintContext? sprintContext = null;
+        if (row.SprintId is { } sprintId && row.ProjectId is { } projectId)
+        {
+            var sprint = await _dbContext.Sprints
+                .AsNoTracking()
+                .Where(s => s.Id == sprintId && s.ProjectId == projectId)
+                .Select(s => new { s.Name, s.StartDate, s.EndDate, s.Status })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (sprint is not null)
+            {
+                var carried = await Planning.SprintHistoryQueries.LoadCarriedFromAsync(_dbContext, [row.Id], cancellationToken);
+                sprintContext = new TicketSprintContext(
+                    projectId, sprintId, sprint.Name, sprint.StartDate, sprint.EndDate, sprint.Status,
+                    row.SprintBacklog && row.Status is Status.Open or Status.Assigned,
+                    carried.GetValueOrDefault(row.Id));
+            }
+        }
 
         return new TicketDetail(
             row.Id,
@@ -288,7 +320,8 @@ public sealed class TicketQueryService
             row.UpdatedAt,
             row.PlannedStartDate,
             row.DueDate,
-            BuildSlaView(row.Sla, configurations, _timeProvider.GetUtcNow()));
+            BuildSlaView(row.Sla, configurations, _timeProvider.GetUtcNow()),
+            sprintContext);
     }
 
     /// <summary>
@@ -362,6 +395,8 @@ public sealed class TicketQueryService
                 comment.IsInternal))
             .ToListAsync(cancellationToken);
 
+        events = await ResolveEventDisplayValuesAsync(events, cancellationToken);
+
         // Timestamp DESC, then Kind, then Id DESC (decision 3) — Kind is the tiebreak an event id
         // and a comment id need because the two sequences are not comparable; it carries no
         // business meaning, only a fixed, deterministic presentation order.
@@ -370,6 +405,62 @@ public sealed class TicketQueryService
             .OrderByDescending(e => e.OccurredAt)
             .ThenBy(e => e.Kind)
             .ThenByDescending(e => e.Id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Audit events store ids (an assignee's user id, a team id, a sprint id) so the record stays true
+    /// if a name later changes. For display, this looks those ids up once per history in a few small
+    /// queries and attaches the current names; a value it cannot resolve stays null and the page shows
+    /// a neutral fallback rather than the raw id. The ids came from this ticket's own events, so the
+    /// lookups add no visibility beyond what the ticket's history already showed.
+    /// </summary>
+    private async Task<List<TicketTimelineEntry>> ResolveEventDisplayValuesAsync(
+        List<TicketTimelineEntry> events,
+        CancellationToken cancellationToken)
+    {
+        static IEnumerable<string?> Values(TicketTimelineEntry e) => [e.OldValue, e.NewValue];
+
+        static List<T> Ids<T>(IEnumerable<TicketTimelineEntry> source, string field, Func<string, T?> parse) where T : struct =>
+            source.Where(e => e.Field == field)
+                .SelectMany(Values)
+                .Select(v => v is null ? null : parse(v))
+                .Where(v => v is not null)
+                .Select(v => v!.Value)
+                .Distinct()
+                .ToList();
+
+        var userIds = Ids(events, "AssigneeId", v => Guid.TryParse(v, out var g) ? g : (Guid?)null);
+        var categoryIds = Ids(events, "CategoryId", v => int.TryParse(v, out var i) ? i : (int?)null);
+        var teamIds = Ids(events, "TeamId", v => int.TryParse(v, out var i) ? i : (int?)null);
+        var sprintIds = Ids(events, "SprintId", v => int.TryParse(v, out var i) ? i : (int?)null);
+
+        if (userIds.Count + categoryIds.Count + teamIds.Count + sprintIds.Count == 0)
+        {
+            return events;
+        }
+
+        var users = userIds.Count == 0 ? [] : await _dbContext.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id.ToString(), u => u.DisplayName, cancellationToken);
+        var categories = categoryIds.Count == 0 ? [] : await _dbContext.Categories.AsNoTracking()
+            .Where(c => categoryIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id.ToString(), c => c.Name, cancellationToken);
+        var teams = teamIds.Count == 0 ? [] : await _dbContext.Teams.AsNoTracking()
+            .Where(t => teamIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id.ToString(), t => t.Name, cancellationToken);
+        var sprints = sprintIds.Count == 0 ? [] : await _dbContext.Sprints.AsNoTracking()
+            .Where(s => sprintIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id.ToString(), s => s.Name, cancellationToken);
+
+        string? Lookup(Dictionary<string, string> map, string? value) =>
+            value is not null && map.TryGetValue(value, out var name) ? name : null;
+
+        return events
+            .Select(e => e.Field switch
+            {
+                "AssigneeId" => e with { OldDisplay = Lookup(users, e.OldValue), NewDisplay = Lookup(users, e.NewValue) },
+                "CategoryId" => e with { OldDisplay = Lookup(categories, e.OldValue), NewDisplay = Lookup(categories, e.NewValue) },
+                "TeamId" => e with { OldDisplay = Lookup(teams, e.OldValue), NewDisplay = Lookup(teams, e.NewValue) },
+                "SprintId" => e with { OldDisplay = Lookup(sprints, e.OldValue), NewDisplay = Lookup(sprints, e.NewValue) },
+                _ => e,
+            })
             .ToList();
     }
 
@@ -385,7 +476,7 @@ public sealed class TicketQueryService
     /// rows <c>CanView</c> accepts — the same pattern ATTN-RULE-06 uses to make its prefilter
     /// duplication safe. If <c>CanView</c> changes, this method and those tests change with it.
     /// </remarks>
-    private static IQueryable<Ticket> ApplyViewScope(FlowOpsDbContext dbContext, IQueryable<Ticket> tickets, CurrentUser user)
+    internal static IQueryable<Ticket> ApplyViewScope(FlowOpsDbContext dbContext, IQueryable<Ticket> tickets, CurrentUser user)
     {
         // Phase 16: the organization boundary is applied first, unconditionally — including for
         // Admin, who otherwise bypasses every team check below and would see every organization's

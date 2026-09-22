@@ -119,7 +119,8 @@ public sealed class TicketCommentPagesTests : IClassFixture<FlowOpsWebApplicatio
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode); // re-rendered, not redirected
         var html = await response.Content.ReadAsStringAsync();
-        Assert.Contains("TICKET-ENT-05", html, StringComparison.Ordinal);
+        Assert.Contains("Comment body is required.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("TICKET-ENT-05", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Stack trace", html, StringComparison.OrdinalIgnoreCase);
     }
 

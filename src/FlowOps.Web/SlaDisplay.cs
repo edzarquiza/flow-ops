@@ -10,6 +10,21 @@ namespace FlowOps.Web;
 /// </summary>
 public static class SlaDisplay
 {
+    /// <summary>The plain-language name of a service-deadline state. The domain enum keeps its
+    /// technical names; this is the only place they are turned into words for users.</summary>
+    public static string StatusLabel(FlowOps.Domain.Sla.SlaStatus status) => status switch
+    {
+        FlowOps.Domain.Sla.SlaStatus.Within => "On track",
+        FlowOps.Domain.Sla.SlaStatus.AtRisk => "Deadline soon",
+        FlowOps.Domain.Sla.SlaStatus.Paused => "Paused",
+        FlowOps.Domain.Sla.SlaStatus.Breached => "Deadline missed",
+        FlowOps.Domain.Sla.SlaStatus.Met => "Deadline met",
+        _ => status.ToString(),
+    };
+
+    /// <summary>"Deadline 2026-09-21 14:00" — the absolute time carried in a title attribute.</summary>
+    public static string DeadlineTitle(DateTimeOffset dueAt) => $"Deadline {dueAt:u}";
+
     /// <summary>
     /// "42m left" or "2h 14m over", or null for a terminal ticket, whose SLA outcome is a settled
     /// fact rather than a countdown.

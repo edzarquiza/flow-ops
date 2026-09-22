@@ -31,6 +31,9 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
                 "ck_tickets_resolution_present",
                 "status NOT IN ('Resolved', 'Closed') OR (resolved_at IS NOT NULL AND resolution_code IS NOT NULL AND resolution_notes IS NOT NULL)");
 
+            // ADR-0029: the backlog flag only means something inside a sprint.
+            t.HasCheckConstraint("ck_tickets_sprint_backlog", "sprint_backlog = false OR sprint_id IS NOT NULL");
+
             // PERSIST-RULE-04.
             t.HasCheckConstraint("ck_tickets_sla_due_after_started", "sla_due_at > sla_started_at");
         });
@@ -75,6 +78,14 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.HasOne<Team>().WithMany().HasForeignKey(t => t.TeamId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Category>().WithMany().HasForeignKey(t => t.CategoryId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Project>().WithMany().HasForeignKey(t => t.ProjectId).OnDelete(DeleteBehavior.Restrict);
+
+        // ADR-0029: sprint membership. Nullable (existing tickets simply have none); a sprint is
+        // never hard-deleted, so RESTRICT.
+        builder.Property(t => t.SprintBacklog).IsRequired().HasDefaultValue(false);
+        builder.HasOne<FlowOps.Domain.Planning.Sprint>().WithMany().HasForeignKey(t => t.SprintId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(t => t.SprintId)
+            .HasFilter("sprint_id IS NOT NULL")
+            .HasDatabaseName("ix_tickets_sprint");
 
         // TICKET-ENT-04 / architecture.md §5: added in Phase 4 now that Identity exists — see
         // the Phase 3A reconciliation report, which flagged these as deferred.

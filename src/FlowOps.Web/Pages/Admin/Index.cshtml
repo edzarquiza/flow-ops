@@ -11,7 +11,7 @@
                 <h1>Admin</h1>
                 <span class="page-header__count">@Model.Teams.Count team@(Model.Teams.Count == 1 ? "" : "s")</span>
             </div>
-            <p class="page-context">Team and project setup for this organization. Reaching this page proves the Admin-only coarse gate (AUTH-RULE-01), now backed by your current organization's membership role rather than a stale Identity role claim (ADR-0021).</p>
+            <p class="page-context">Set up the teams and projects your organization works in. Admin access is required.</p>
         </div>
         <div class="page-header__actions">
             <a class="btn" asp-page="/Admin/Projects/Index">Manage projects</a>
@@ -28,9 +28,10 @@
 
 <div class="zone">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Teams")); }
+    @await Html.PartialAsync("_ShowInactiveToggle", new FlowOps.Web.ShowInactiveToggleViewModel(Model.ShowInactive, Model.HiddenInactiveCount, "teams"))
     @if (Model.Teams.Count == 0)
     {
-        <p class="empty-state">No teams yet — create your first one below.</p>
+        <p class="empty-state">@(Model.HiddenInactiveCount > 0 ? "No active teams. Turn on Show inactive to see the inactive ones." : "No teams yet — create your first one below.")</p>
     }
     else
     {
@@ -56,10 +57,8 @@
 <div class="zone">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Create a team")); }
     <p class="page-context">
-        Every team needs at least one category before a ticket can be filed against it, so both
-        are created together here. Renaming, additional categories, and deactivation are managed
-        from a team's own page — open a team above once it exists. SLA configuration is not yet
-        built.
+        A ticket needs a team and a category, so a new team starts with one category. Rename a
+        team, add categories, or deactivate it from the team's own page.
     </p>
 
     <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>

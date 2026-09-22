@@ -1,0 +1,24 @@
+@model FlowOps.Web.ProjectHeaderViewModel
+@* ADR-0029: one shared header for the three project planning views — the same page-header
+   component every other page uses, plus Overview/Board/Tickets as plain links (no JS, each is a
+   real page, so back/refresh/bookmark all work). *@
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <p class="page-crumb"><a class="text-link" asp-page="/Projects/Index">Projects</a></p>
+            <div class="page-header__title-row">
+                <h1>@Model.Header.Name</h1>
+                @if (!Model.Header.IsActive)
+                {
+                    <span class="status-badge status-badge--muted">Inactive</span>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+<nav class="proj-tabs" aria-label="Project views">
+    <a asp-page="/Projects/Details" asp-route-id="@Model.Header.ProjectId" aria-current="@(Model.ActiveTab == "overview" ? "page" : null)">Overview</a>
+    <a asp-page="/Projects/Board" asp-route-id="@Model.Header.ProjectId" aria-current="@(Model.ActiveTab == "board" ? "page" : null)">Board</a>
+    <a asp-page="/Projects/Tickets" asp-route-id="@Model.Header.ProjectId" aria-current="@(Model.ActiveTab == "tickets" ? "page" : null)">Tickets</a>
+    <a asp-page="/Projects/Sprints" asp-route-id="@Model.Header.ProjectId" aria-current="@(Model.ActiveTab == "sprints" ? "page" : null)">Sprints</a>
+</nav>

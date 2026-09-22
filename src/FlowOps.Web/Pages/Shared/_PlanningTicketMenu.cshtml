@@ -1,0 +1,109 @@
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.PlanningMenuViewModel
+@{
+    // Offers exactly the actions the same TicketAccessPolicy calls the services make would allow
+    // (an affordance — every handler re-authorizes). Workflow items call the existing ticket
+    // transitions; sprint items call TicketService.MoveToSprintAsync / PullFromSprintBacklogAsync.
+    var snapshot = new TicketAuthorizationSnapshot(Model.TicketId, Model.TeamId, Model.RequesterId, Model.AssigneeId, Model.Status);
+    var terminal = Model.Status is Status.Resolved or Status.Closed;
+    var canTransition = TicketAccessPolicy.CanTransition(snapshot, Model.Caller);
+    var canPlan = TicketAccessPolicy.CanPlan(snapshot, Model.Caller) && !terminal;
+
+    var workflow = new List<(string Handler, string Label)>();
+    if (Model.Status == Status.Open && TicketAccessPolicy.CanAssign(snapshot, Model.Caller, Model.Caller.UserId))
+    {
+        workflow.Add(("AssignMe", "Assign to me"));
+    }
+
+    if (Model.Status == Status.Assigned && canTransition)
+    {
+        workflow.Add(("StartWork", "Start work"));
+    }
+
+    // The explicit twin of dragging an Open ticket to In progress (ADR-0030): the existing
+    // "assign to me" then "start work", in one step — offered only for a ticket on a sprint board.
+    var canAssignAndStart = Model.SprintId is not null && Model.Status == Status.Open
+        && TicketAccessPolicy.CanAssign(snapshot, Model.Caller, Model.Caller.UserId);
+
+    if (Model.Status == Status.Pending && canTransition)
+    {
+        workflow.Add(("Resume", "Resume"));
+    }
+
+    if (Model.Status == Status.Resolved && TicketAccessPolicy.CanClose(snapshot, Model.Caller))
+    {
+        workflow.Add(("Close", "Close ticket"));
+    }
+
+    var destinations = Model.MoveTargets.Where(s => s.SprintId != Model.SprintId).ToList();
+}
+<details class="row-menu">
+    <summary aria-label="Actions for ticket @Model.TicketId">@Html.Raw(Icons.More)</summary>
+    <div class="row-menu__panel row-menu__panel--list">
+        @if (workflow.Count > 0)
+        {
+            <p class="row-menu__label">Workflow</p>
+            @foreach (var (handler, label) in workflow)
+            {
+                <form method="post" asp-page-handler="@handler" asp-route-id="@Model.ProjectId">
+                    <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button type="submit" class="row-menu__item">@label</button>
+                </form>
+            }
+        }
+        @if (canAssignAndStart)
+        {
+            @if (workflow.Count == 0)
+            {
+                <p class="row-menu__label">Workflow</p>
+            }
+            <form method="post" asp-page-handler="BoardMove" asp-route-id="@Model.ProjectId">
+                <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                <input type="hidden" name="target" value="InProgress" />
+                <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                <button type="submit" class="row-menu__item">Assign to me &amp; start work</button>
+            </form>
+        }
+        @if (canPlan)
+        {
+            <p class="row-menu__label">Sprint</p>
+            @if (Model.SprintId is not null && Model.SprintBacklog)
+            {
+                <form method="post" asp-page-handler="PullToBoard" asp-route-id="@Model.ProjectId">
+                    <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button type="submit" class="row-menu__item">Move to Open</button>
+                </form>
+            }
+            @if (Model.SprintId is not null && !Model.SprintBacklog && Model.Status is Status.Open or Status.Assigned)
+            {
+                @* The explicit twin of dragging a card back to Sprint backlog (ADR-0030). *@
+                <form method="post" asp-page-handler="BoardMove" asp-route-id="@Model.ProjectId">
+                    <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                    <input type="hidden" name="target" value="Backlog" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button type="submit" class="row-menu__item">Move back to planned</button>
+                </form>
+            }
+            @foreach (var target in destinations)
+            {
+                <form method="post" asp-page-handler="MoveToSprint" asp-route-id="@Model.ProjectId">
+                    <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                    <input type="hidden" name="sprintId" value="@target.SprintId" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button type="submit" class="row-menu__item">@(Model.SprintId is null ? "Add to" : "Move to") @target.Name@(target.Status == FlowOps.Domain.Planning.SprintStatus.Active ? " (current)" : "")</button>
+                </form>
+            }
+            @if (Model.SprintId is not null)
+            {
+                <form method="post" asp-page-handler="MoveToSprint" asp-route-id="@Model.ProjectId">
+                    <input type="hidden" name="ticketId" value="@Model.TicketId" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button type="submit" class="row-menu__item row-menu__item--warn">Move out of sprint</button>
+                </form>
+            }
+        }
+        <a class="row-menu__item" asp-page="/Tickets/Details" asp-route-id="@Model.TicketId">Open ticket to resolve, hold or reopen</a>
+    </div>
+</details>

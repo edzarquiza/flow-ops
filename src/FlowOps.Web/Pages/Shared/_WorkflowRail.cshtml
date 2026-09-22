@@ -15,7 +15,7 @@
     // The rail is decorative reinforcement, not the only signal (CLAUDE.md §22) — the caller
     // already renders the status word as real text; this label exists so the rail is still
     // meaningful to a screen reader even if a future caller ever omits that text.
-    var railLabel = $"Workflow stage: {FlowOps.Web.WorkflowRail.Label(currentIndex)}. SLA {Model.Sla.Status}.";
+    var railLabel = $"Workflow stage: {FlowOps.Web.WorkflowRail.Label(currentIndex)}. Deadline: {FlowOps.Web.SlaDisplay.StatusLabel(Model.Sla.Status)}.";
 }
 <div class="@sizeClass @toneClass" role="img" aria-label="@railLabel">
     @for (var i = 0; i < FlowOps.Web.WorkflowRail.StopCount; i++)

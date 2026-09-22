@@ -71,6 +71,29 @@
     </form>
 </div>
 
+@* Phase 29C: personal appearance. Three radios in one fieldset; the saved value is what the server
+   renders on every page, and appearance-preview.js only previews the selection until it is saved. *@
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Appearance")); }
+    <form method="post" asp-page-handler="SetAppearance" data-appearance-form data-saved-theme="@Model.CurrentAppearance.ToString().ToLowerInvariant()">
+        @Html.AntiForgeryToken()
+        <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+        <fieldset class="segmented">
+            <legend class="sr-only">Appearance</legend>
+            @foreach (var option in new[] { FlowOps.Domain.Accounts.AppearancePreference.System, FlowOps.Domain.Accounts.AppearancePreference.Light, FlowOps.Domain.Accounts.AppearancePreference.Dark })
+            {
+                <label class="segmented__option">
+                    <input type="radio" name="Appearance" value="@option" checked="@(Model.CurrentAppearance == option)" />
+                    <span>@option</span>
+                </label>
+            }
+        </fieldset>
+        <p class="field-hint">System follows your device's light or dark setting. Your choice is saved to your account.</p>
+        <button type="submit" class="btn">Save appearance</button>
+    </form>
+    <script src="~/js/appearance-preview.js" asp-append-version="true"></script>
+</div>
+
 <div class="zone">
     @* Phase 24A: kept as its own eyebrow+heading, not migrated to the plain _SectionHeading — the
        one place on this page a section needs a genuine warning signal ahead of its heading, not

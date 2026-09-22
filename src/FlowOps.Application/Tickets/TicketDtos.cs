@@ -130,7 +130,21 @@ public sealed record TicketDetail(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? PlannedStartDate,
     DateTimeOffset? DueDate,
-    TicketSlaView Sla);
+    TicketSlaView Sla,
+    TicketSprintContext? Sprint = null);
+
+/// <summary>Where a ticket sits in project planning, for the read-only Sprint line on Ticket Detail.
+/// <paramref name="InPlanned"/> is the sprint-backlog flag (planned for the sprint, work not started on
+/// the board). <paramref name="CarriedFromSprint"/> comes from the completion snapshots (ADR-0030).</summary>
+public sealed record TicketSprintContext(
+    int ProjectId,
+    int SprintId,
+    string Name,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    FlowOps.Domain.Planning.SprintStatus Status,
+    bool InPlanned,
+    string? CarriedFromSprint);
 
 /// <summary>
 /// Which source table a <see cref="TicketTimelineEntry"/> was projected from. A presentation-layer
@@ -176,7 +190,9 @@ public sealed record TicketTimelineEntry(
     string? NewValue,
     string? Note,
     string? Body,
-    bool? IsInternal);
+    bool? IsInternal,
+    string? OldDisplay = null,
+    string? NewDisplay = null);
 
 /// <summary>
 /// One page of results plus the totals a pager needs. <paramref name="TotalCount"/> is the count

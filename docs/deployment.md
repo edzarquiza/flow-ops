@@ -220,9 +220,10 @@ field). Local `dotnet run`, `docker compose up`, and a plain `docker run <image>
 all continue to use the bare entrypoint exactly as before; nothing about local development changed.
 
 See `docs/adr/0014-render-pre-deploy-database-initialization.md` for the full reasoning behind
-`init-database` itself: the demo seed's dataset (CLAUDE.md §14's ~600 tickets / ~1,500 comments) is
-built through thousands of sequential `TicketService` calls — fast locally, but slow enough against
-Neon's real network latency to exceed a running instance's health-check timeout if it ran inline.
+`init-database` itself: the demo seed is built through sequential `TicketService`/`SprintService`
+calls (a few hundred, after the Phase 27 rebuild to a small curated dataset — originally ~600 tickets,
+which is why ADR-0014 exists) — quick locally, but slow enough against Neon's real network latency to
+be worth doing before the web process starts rather than inline in a health-checked instance.
 Running it before the web process starts (via this script, in the absence of Pre-Deploy Command)
 means the new instance's own `/health` is reachable immediately once it starts, because the
 expensive work already happened beforehand.
@@ -246,6 +247,24 @@ Seeding runs once, inside a single transaction, as part of `render-start.sh`'s `
 above (after migrations succeed); a failure fails the whole script (`set -e`) — the web server never
 starts on top of a failed initialization — rather than leaving a half-seeded demo online. See
 CLAUDE.md §14 and `FlowOps.Application.Demo.DemoDataSeeder`.
+
+### Resetting or cleaning demo data (manual, explicit)
+
+The seeder is keyed on the "Demo Organization": if it exists, seeding does nothing. It never wipes,
+edits, or reconciles an existing database, and nothing here runs at startup. A database seeded by an
+older definition therefore keeps its old data until *you* reset it.
+
+- **Local Docker:** `docker compose down -v` (deletes the local Postgres volume), then
+  `docker compose up`. The fresh database is migrated and seeded with the current demo.
+- **Render / Neon:** create a new empty database (or drop and recreate the schema in the Neon
+  console), point `ConnectionStrings__DefaultConnection` at it, and redeploy; `render-start.sh` runs
+  `init-database`, which migrates and seeds. Do this only for the demo deployment.
+- **Stale test or old-seed organizations** (local development databases accumulate them from test
+  runs): list first, read-only —
+  `docker exec flowops-postgres-dev psql -U flowops -d flowops_dev -c "select id, name, created_at from organizations where name <> 'Demo Organization' order by id;"`.
+  Removing them is a manual decision; the safe way for a local database is the reset above.
+  The application never deletes organizations automatically, and test data stays in the test
+  containers (Testcontainers), separate from the demo.
 
 ### Required environment variables (Render)
 

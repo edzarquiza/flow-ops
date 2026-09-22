@@ -1,7 +1,7 @@
 /* FlowOps — dark charcoal + teal design system (docs/ui/design-system.md).
-   Single theme, deliberately: FlowOps is dark-only today (see design-system.md §11). Restrained,
-   operational, calm. No gradients except the functional ones on the workflow rail, no shadows
-   except the rail's own current-stop glow, no decoration. */
+   Two themes over one token set (Dark is the baseline, Light is a token override — see "Themes" below
+   and design-system.md). Restrained, operational, calm. No gradients except the functional ones on the
+   workflow rail, no shadows except the rail's own current-stop glow and the select popup, no decoration. */
 
 /* ---- Fonts: self-hosted (CLAUDE.md §11.1 — no CDN). Both are variable fonts; one file per
    family covers every weight declared below, matching how Google itself serves them. ---- */
@@ -53,6 +53,25 @@
      permits "additional restrained hues" for role tints) — a muted slate-violet, dim enough not
      to compete with teal as a second "identity" color. */
   --fo-violet: #8D85C9;
+  --fo-teal-hover: #4fc0b1;   /* primary button hover */
+  --fo-danger-hover: #c85a5e; /* filled danger hover */
+  --fo-track: #22302E;        /* the unfilled part of a rail stop */
+
+  /* Phase 29C — values that must differ by theme. In Dark each equals what the stylesheet already used. */
+  --fo-teal-text: #5FD3C4;    /* teal as TEXT / outline / stroke (Light needs a deeper teal for contrast); teal FILLS keep --fo-teal */
+  --fo-on-fill: #F6FAFA;      /* text on a saturated fill (danger/teal-dim); the same in both themes */
+  /* The semantic colours as space-separated channels, so tinted backgrounds/borders/glows follow the theme:
+     rgb(var(--fo-danger-rgb) / 0.18). One triple per meaning, defined here and nowhere else. */
+  --fo-ok-rgb: 76 195 138;
+  --fo-info-rgb: 99 167 232;
+  --fo-warn-rgb: 232 180 92;
+  --fo-danger-rgb: 229 107 111;
+  --fo-teal-rgb: 95 211 196;
+  --fo-violet-rgb: 141 133 201;
+  --fo-muted-rgb: 113 130 133;
+  --fo-scrim-nav: rgb(4 8 9 / 0.55);
+  --fo-scrim-dialog: rgb(8 16 18 / 0.72);
+  --fo-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.35);
 
   --fo-space-1: 4px;
   --fo-space-2: 8px;
@@ -67,6 +86,77 @@
 
   --fo-font: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --fo-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+/* ---- Themes (Phase 29C). :root above is the Dark theme (the FlowOps baseline). The server renders
+   <html data-theme="dark|light|system"> from the user's saved preference, so the right theme is present
+   on the first byte — no flash and no script. Light restates only the tokens whose value differs; every
+   component reads tokens, so nothing else changes. "system" follows the OS through the media query
+   below (the same values, applied only when the OS prefers light). A test keeps both blocks complete. ---- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --fo-bg: #F6F4EE;
+  --fo-surface: #FFFFFF;
+  --fo-surface-2: #F0EEE7;
+  --fo-line-row: #ECE9E1;
+  --fo-line: #DAD6CB;
+  --fo-line-hi: #B9B4A6;
+  --fo-text-hi: #14201F;
+  --fo-text: #1F2C2B;
+  --fo-text-2: #3F5152;
+  --fo-text-3: #4E5F60;
+  --fo-teal-text: #095D56;
+  --fo-ok: #126140;
+  --fo-info: #1B549A;
+  --fo-warn: #7A4B04;
+  --fo-danger: #A12A30;
+  --fo-violet: #564FA0;
+  --fo-danger-hover: #8A2227;
+  --fo-track: #E4E0D6;
+  --fo-ok-rgb: 18 97 64;
+  --fo-info-rgb: 27 84 154;
+  --fo-warn-rgb: 122 75 4;
+  --fo-danger-rgb: 161 42 48;
+  --fo-teal-rgb: 9 93 86;
+  --fo-violet-rgb: 86 79 160;
+  --fo-muted-rgb: 78 95 96;
+  --fo-scrim-nav: rgb(20 32 31 / 0.35);
+  --fo-scrim-dialog: rgb(20 32 31 / 0.45);
+  --fo-shadow-pop: 0 8px 24px rgb(20 32 31 / 0.16);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --fo-bg: #F6F4EE;
+    --fo-surface: #FFFFFF;
+    --fo-surface-2: #F0EEE7;
+    --fo-line-row: #ECE9E1;
+    --fo-line: #DAD6CB;
+    --fo-line-hi: #B9B4A6;
+    --fo-text-hi: #14201F;
+    --fo-text: #1F2C2B;
+    --fo-text-2: #3F5152;
+    --fo-text-3: #4E5F60;
+    --fo-teal-text: #095D56;
+    --fo-ok: #126140;
+    --fo-info: #1B549A;
+    --fo-warn: #7A4B04;
+    --fo-danger: #A12A30;
+    --fo-violet: #564FA0;
+    --fo-danger-hover: #8A2227;
+    --fo-track: #E4E0D6;
+    --fo-ok-rgb: 18 97 64;
+    --fo-info-rgb: 27 84 154;
+    --fo-warn-rgb: 122 75 4;
+    --fo-danger-rgb: 161 42 48;
+    --fo-teal-rgb: 9 93 86;
+    --fo-violet-rgb: 86 79 160;
+    --fo-muted-rgb: 78 95 96;
+    --fo-scrim-nav: rgb(20 32 31 / 0.35);
+    --fo-scrim-dialog: rgb(20 32 31 / 0.45);
+    --fo-shadow-pop: 0 8px 24px rgb(20 32 31 / 0.16);
+  }
 }
 
 * {
@@ -90,7 +180,7 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: dark; /* Light and System set their own below */
 }
 
 body {
@@ -144,19 +234,19 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--fo-teal);
+  outline: 3px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
 a {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
   transition: color 150ms ease;
 }
 
 /* ---- Quiet return navigation ("Back to work queue") — reads as wayfinding, not body copy ---- */
 .back-link {
   display: inline-block;
-  padding: 4px 0;
+  padding: var(--fo-space-1) 0;
   color: var(--fo-text-2);
   font-size: 13.5px;
   text-decoration: none;
@@ -164,7 +254,7 @@ a {
 
 .back-link:hover,
 .back-link:focus-visible {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 /* ---- Application shell: a persistent left sidebar + workspace, replacing the earlier
@@ -223,12 +313,12 @@ a {
 }
 
 .brand-mark__ring {
-  stroke: var(--fo-teal);
+  stroke: var(--fo-teal-text);
   stroke-width: 1.3;
 }
 
 .brand-mark__wave {
-  stroke: var(--fo-teal);
+  stroke: var(--fo-teal-text);
   stroke-width: 1.9;
   stroke-linecap: round;
 }
@@ -244,7 +334,7 @@ a {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 8px 10px;
+  padding: var(--fo-space-2) 10px;
   border-radius: var(--fo-radius);
   border-left: 2px solid transparent;
   color: var(--fo-text-2);
@@ -269,14 +359,14 @@ a {
 
 /* The one restrained teal indicator: a left rule plus tinted text, never a filled block. */
 .fo-sidebar__nav a[aria-current="page"] {
-  background: rgba(95, 211, 196, 0.1);
-  border-left-color: var(--fo-teal);
-  color: var(--fo-teal);
+  background: rgb(var(--fo-teal-rgb) / 0.1);
+  border-left-color: var(--fo-teal-text);
+  color: var(--fo-teal-text);
   font-weight: 500;
 }
 
 .fo-sidebar__nav a[aria-current="page"] svg {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 .fo-sidebar__spacer {
@@ -299,7 +389,7 @@ a {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 8px 10px;
+  padding: var(--fo-space-2) 10px;
   border: none;
   border-left: 2px solid transparent;
   border-radius: var(--fo-radius);
@@ -358,7 +448,7 @@ a {
   align-items: flex-start;
   gap: 9px;
   line-height: 1.3;
-  padding: 8px 10px;
+  padding: var(--fo-space-2) 10px;
   border: 1px solid var(--fo-line);
   border-radius: var(--fo-radius);
   color: inherit;
@@ -487,12 +577,12 @@ a {
 }
 
 .fo-org-switcher summary:focus-visible {
-  outline: 2px solid var(--fo-teal);
+  outline: 2px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
 .fo-org-switcher[open] summary {
-  border-color: var(--fo-teal);
+  border-color: var(--fo-teal-text);
 }
 
 .fo-org-switcher ul {
@@ -536,7 +626,7 @@ a {
 }
 
 .fo-org-switcher__current {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
   cursor: default;
   font-weight: 500;
 }
@@ -592,7 +682,7 @@ a {
    rings the visible trigger instead whenever the underlying checkbox has keyboard focus, using
    the same teal the sitewide a/button/input focus-visible rule already uses everywhere else. */
 .confirm:has(.confirm-toggle:focus-visible) .confirm-trigger {
-  outline: 3px solid var(--fo-teal);
+  outline: 3px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
@@ -603,7 +693,7 @@ a {
   border: 1px solid var(--fo-line-hi);
   border-left: 3px solid var(--fo-warn);
   border-radius: var(--fo-radius);
-  background: rgba(232, 180, 92, 0.06);
+  background: rgb(var(--fo-warn-rgb) / 0.06);
 }
 
 .confirm:has(.confirm-toggle:checked) .confirm-panel {
@@ -611,7 +701,7 @@ a {
 }
 
 .confirm-panel__question {
-  margin: 0 0 4px;
+  margin: 0 0 var(--fo-space-1);
   font-size: 13.5px;
   font-weight: 500;
   color: var(--fo-text-hi);
@@ -688,7 +778,7 @@ a {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(4, 8, 9, 0.55);
+    background: var(--fo-scrim-nav);
     z-index: 40;
     cursor: pointer;
   }
@@ -722,6 +812,15 @@ a {
 main {
   max-width: 1680px;
   padding: var(--fo-space-6) var(--fo-space-6) var(--fo-space-7);
+}
+
+/* Anonymous pages (Login, Register, invitation, password reset) render <main> directly in <body>,
+   not beside the sidebar. Capped at 1680px with no auto margins it was pinned to the left on wider
+   viewports, and the centred login card centred inside that narrower box instead of the window
+   (Phase 28). The signed-in shell nests <main> inside .fo-appmain, so this selector never applies
+   to it and that layout stays left-aligned by design. */
+body > main {
+  margin-inline: auto;
 }
 
 h1 {
@@ -761,7 +860,7 @@ p {
 
 .fo-label a:hover,
 .fo-label a:focus-visible {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 /* Phase 24A (CSP stabilization): Account/Settings' "Danger zone" eyebrow used
@@ -848,18 +947,34 @@ p {
    with the values themselves — four numbers you can read in one glance, not four spreadsheet
    cells. ---- */
 .stat-strip {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .stat {
-  flex: 1 1 180px;
-  padding: 0 var(--fo-space-6) 0 0;
+  min-width: 0;
+  padding: 0 var(--fo-space-5) 0 0;
 }
 
 .stat + .stat {
   border-left: 1px solid var(--fo-line-row);
-  padding-left: var(--fo-space-6);
+  padding-left: var(--fo-space-5);
+}
+
+/* Four figures in a row need ~1100px; below that they form a tidy 2 x 2 rather than wrapping 3 + 1. */
+@media (max-width: 1100px) {
+  .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--fo-space-5); }
+  .stat:nth-child(odd) { border-left: 0; padding-left: 0; }
+}
+/* Phone width: one figure per row, separated by a hairline. */
+@media (max-width: 520px) {
+  .stat-strip { grid-template-columns: minmax(0, 1fr); row-gap: var(--fo-space-4); }
+  .stat + .stat {
+    border-left: none;
+    border-top: 1px solid var(--fo-line-row);
+    padding-left: 0;
+    padding-top: var(--fo-space-4);
+  }
 }
 
 .stat__value {
@@ -877,7 +992,7 @@ p {
 }
 
 .stat__value a:hover {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 /* Phase 24A (CSP stabilization): the Overdue KPI's conditional red used to arrive via
@@ -938,11 +1053,11 @@ p {
 /* "Healthy" earns the identity colour as a genuinely good status word, not decoration — the one
    exception to "figures only" here, matching the rule's own reasoning (Principle 1). */
 .kpi-strip__value--teal {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 .kpi-strip__caption {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--fo-text-3);
   margin-top: 6px;
 }
@@ -976,7 +1091,7 @@ p {
 }
 
 .approval-row__meta {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--fo-text-3);
   white-space: nowrap;
   overflow: hidden;
@@ -1018,7 +1133,7 @@ p {
    in-row links — and gain an underline only on hover/focus, the conventional "you are about to
    activate this" signal. ---- */
 .table-action-link {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
   text-decoration: none;
 }
 
@@ -1182,7 +1297,7 @@ p {
      of disappearing; nothing in this row is desktop-only. */
   .q-row {
     flex-wrap: wrap;
-    row-gap: 8px;
+    row-gap: var(--fo-space-2);
   }
 
   .q-sev-col,
@@ -1217,21 +1332,21 @@ p {
 }
 
 .sev span {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.sev.crit { background: rgba(229, 107, 111, 0.18); border-color: rgba(229, 107, 111, 0.55); }
+.sev.crit { background: rgb(var(--fo-danger-rgb) / 0.18); border-color: rgb(var(--fo-danger-rgb) / 0.55); }
 .sev.crit span { color: var(--fo-danger); }
-.sev.high { background: rgba(232, 180, 92, 0.18); border-color: rgba(232, 180, 92, 0.55); }
+.sev.high { background: rgb(var(--fo-warn-rgb) / 0.18); border-color: rgb(var(--fo-warn-rgb) / 0.55); }
 .sev.high span { color: var(--fo-warn); }
 /* Medium reads as blue, Low as green — distinct from High's amber/Critical's red, and from each
    other, rather than both fading to the same neutral grey. */
-.sev.med { background: rgba(99, 167, 232, 0.18); border-color: rgba(99, 167, 232, 0.55); }
+.sev.med { background: rgb(var(--fo-info-rgb) / 0.18); border-color: rgb(var(--fo-info-rgb) / 0.55); }
 .sev.med span { color: var(--fo-info); }
-.sev.low { background: rgba(76, 195, 138, 0.18); border-color: rgba(76, 195, 138, 0.55); }
+.sev.low { background: rgb(var(--fo-ok-rgb) / 0.18); border-color: rgb(var(--fo-ok-rgb) / 0.55); }
 .sev.low span { color: var(--fo-ok); }
 
 /* ---- Status badge: the workflow-status label at Ticket Detail's own header, Work Queue rows, and
@@ -1257,17 +1372,17 @@ p {
   color: var(--fo-text-hi);
 }
 
-.status-badge--muted { background: rgba(113, 130, 133, 0.16); border-color: rgba(113, 130, 133, 0.4); color: var(--fo-text-3); }
-.status-badge--info { background: rgba(99, 167, 232, 0.16); border-color: rgba(99, 167, 232, 0.4); color: var(--fo-info); }
-.status-badge--warn { background: rgba(232, 180, 92, 0.16); border-color: rgba(232, 180, 92, 0.4); color: var(--fo-warn); }
-.status-badge--violet { background: rgba(141, 133, 201, 0.16); border-color: rgba(141, 133, 201, 0.4); color: var(--fo-violet); }
-.status-badge--teal { background: rgba(95, 211, 196, 0.16); border-color: rgba(95, 211, 196, 0.4); color: var(--fo-teal); }
-.status-badge--ok { background: rgba(76, 195, 138, 0.16); border-color: rgba(76, 195, 138, 0.4); color: var(--fo-ok); }
+.status-badge--muted { background: rgb(var(--fo-muted-rgb) / 0.16); border-color: rgb(var(--fo-muted-rgb) / 0.4); color: var(--fo-text-3); }
+.status-badge--info { background: rgb(var(--fo-info-rgb) / 0.16); border-color: rgb(var(--fo-info-rgb) / 0.4); color: var(--fo-info); }
+.status-badge--warn { background: rgb(var(--fo-warn-rgb) / 0.16); border-color: rgb(var(--fo-warn-rgb) / 0.4); color: var(--fo-warn); }
+.status-badge--violet { background: rgb(var(--fo-violet-rgb) / 0.16); border-color: rgb(var(--fo-violet-rgb) / 0.4); color: var(--fo-violet); }
+.status-badge--teal { background: rgb(var(--fo-teal-rgb) / 0.16); border-color: rgb(var(--fo-teal-rgb) / 0.4); color: var(--fo-teal-text); }
+.status-badge--ok { background: rgb(var(--fo-ok-rgb) / 0.16); border-color: rgb(var(--fo-ok-rgb) / 0.4); color: var(--fo-ok); }
 
 /* Compact variant for a status badge embedded inline within a dense row metadata line (Work
    Queue, At-Risk) rather than a page header — tighter padding, same shape, same component. */
 .status-badge--compact {
-  padding: 1px 8px;
+  padding: 1px var(--fo-space-2);
   vertical-align: middle;
 }
 
@@ -1280,7 +1395,7 @@ p {
 .severity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--fo-space-2);
 }
 
 .severity__bar {
@@ -1320,7 +1435,7 @@ p {
    Used at Ticket Detail's own "SLA status" fact; Work Queue/At-Risk's SLA column was already
    plain text (see .q-sla__state/.is-breached/.is-at-risk above) and needed no change. ---- */
 .sla-state--met { color: var(--fo-ok); }
-.sla-state--within { color: #8A9A9C; }
+.sla-state--within { color: var(--fo-text-2); }
 .sla-state--paused { color: var(--fo-info); }
 .sla-state--at-risk { color: var(--fo-warn); }
 .sla-state--breached { color: var(--fo-danger); }
@@ -1330,15 +1445,15 @@ p {
    it — now a modifier, combined with one of the five tone classes above. */
 .sla-state--lede {
   font-size: 14px;
-  margin-bottom: 8px;
+  margin-bottom: var(--fo-space-2);
 }
 
 /* The SLA column's remaining/overdue duration, beneath its own badge — the badge alone answers
    "what state," this answers "how much time," matching the exact "[ Breached ] / 18h over"
    composition asked for. */
 .fo-sla-duration {
-  margin-top: 4px;
-  font-size: 11.5px;
+  margin-top: var(--fo-space-1);
+  font-size: 12px;
   color: var(--fo-text-3);
 }
 
@@ -1354,7 +1469,7 @@ p {
 .ticket-subtitle {
   font-size: 13px;
   color: var(--fo-text-3);
-  margin-left: 4px;
+  margin-left: var(--fo-space-1);
 }
 
 /* Phase 24A (CSP stabilization): Ownership's own "Created ... Last updated" line used
@@ -1534,7 +1649,7 @@ p {
 .rail b.now {
   width: 14px;
   height: 14px;
-  background: conic-gradient(var(--rail-tone, var(--fo-info)) var(--rail-fill-pct, 100%), var(--rail-fill-bg, #1B2A31) 0);
+  background: conic-gradient(var(--rail-tone, var(--fo-info)) var(--rail-fill-pct, 100%), var(--rail-fill-bg, var(--fo-track)) 0);
 }
 
 .rail.lg b.past,
@@ -1549,17 +1664,17 @@ p {
   border: 2px solid var(--fo-bg);
 }
 
-.rail-healthy b.now { --rail-tone: var(--fo-info); --rail-fill-bg: #1B2A31; }
-.rail-at-risk b.now { --rail-tone: var(--fo-warn); --rail-fill-bg: #22302E; box-shadow: 0 0 0 3px rgba(232, 180, 92, 0.15); }
-.rail-breached b.now { --rail-tone: var(--fo-danger); --rail-fill-bg: var(--fo-danger); box-shadow: 0 0 0 3px rgba(229, 107, 111, 0.18); }
+.rail-healthy b.now { --rail-tone: var(--fo-info); --rail-fill-bg: var(--fo-track); }
+.rail-at-risk b.now { --rail-tone: var(--fo-warn); --rail-fill-bg: var(--fo-track); box-shadow: 0 0 0 3px rgb(var(--fo-warn-rgb) / 0.15); }
+.rail-breached b.now { --rail-tone: var(--fo-danger); --rail-fill-bg: var(--fo-danger); box-shadow: 0 0 0 3px rgb(var(--fo-danger-rgb) / 0.18); }
 .rail-resolved b.now { background: var(--fo-teal); box-shadow: none; }
 .rail-paused b.now {
-  background: repeating-linear-gradient(45deg, #718285, #718285 2px, #22302E 2px, #22302E 4px);
+  background: repeating-linear-gradient(45deg, var(--fo-text-3), var(--fo-text-3) 2px, var(--fo-track) 2px, var(--fo-track) 4px);
   box-shadow: none;
 }
 
-.rail.lg.rail-at-risk b.now { box-shadow: 0 0 0 5px rgba(232, 180, 92, 0.15); }
-.rail.lg.rail-breached b.now { box-shadow: 0 0 0 5px rgba(229, 107, 111, 0.18); }
+.rail.lg.rail-at-risk b.now { box-shadow: 0 0 0 5px rgb(var(--fo-warn-rgb) / 0.15); }
+.rail.lg.rail-breached b.now { box-shadow: 0 0 0 5px rgb(var(--fo-danger-rgb) / 0.18); }
 
 /* Ticket Detail badge-fix pass: the rail previously stretched to the zone's full content width —
    on a wide viewport the connector lines between stops read as sparse rather than a connected
@@ -1567,13 +1682,13 @@ p {
    happens to hold it. */
 .ticket-rail-wrap {
   max-width: 820px;
-  padding: 4px 8px 20px;
+  padding: var(--fo-space-1) var(--fo-space-2) 20px;
 }
 
 .rail-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: var(--fo-space-2);
   font-size: 10.5px;
   color: var(--fo-text-3);
 }
@@ -1596,7 +1711,7 @@ p {
   column-gap: 40px;
   border: 1px solid var(--fo-line);
   border-radius: var(--fo-radius);
-  padding: 24px 28px;
+  padding: var(--fo-space-5) 28px;
   margin-bottom: var(--fo-space-6);
 }
 
@@ -1607,11 +1722,11 @@ p {
 }
 
 .setup__intro .fo-label {
-  margin-bottom: 8px;
+  margin-bottom: var(--fo-space-2);
 }
 
 .setup__title {
-  margin: 0 0 8px;
+  margin: 0 0 var(--fo-space-2);
   font-size: 16px;
   font-weight: 500;
   color: var(--fo-text-hi);
@@ -1685,7 +1800,7 @@ p {
 }
 
 .setup__item.is-done .setup__marker {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 .setup__content {
@@ -1746,7 +1861,7 @@ p {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--fo-space-1);
 }
 
 .setup__action-group form {
@@ -1759,9 +1874,9 @@ p {
   border: none;
   padding: 0;
   font: inherit;
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 12px;
   text-decoration: none;
 }
 
@@ -1780,7 +1895,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--fo-space-4);
   flex-wrap: wrap;
   border: 1px solid var(--fo-line);
   border-radius: var(--fo-radius);
@@ -1796,7 +1911,7 @@ p {
 .setup-next__actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--fo-space-4);
 }
 
 .setup-next__skip-form {
@@ -1817,7 +1932,7 @@ p {
 @media (max-width: 480px) {
   .setup__item {
     grid-template-columns: 16px 1fr;
-    row-gap: 8px;
+    row-gap: var(--fo-space-2);
   }
 
   .setup__action {
@@ -1915,9 +2030,9 @@ table a:focus-visible {
 }
 
 .badge-neutral { background: var(--fo-surface-2); color: var(--fo-text-2); border-color: var(--fo-line-hi); }
-.badge-info { background: rgba(99, 167, 232, 0.1); color: var(--fo-info); border-color: rgba(99, 167, 232, 0.35); }
-.badge-warning { background: rgba(232, 180, 92, 0.1); color: var(--fo-warn); border-color: rgba(232, 180, 92, 0.35); }
-.badge-danger { background: rgba(229, 107, 111, 0.1); color: var(--fo-danger); border-color: rgba(229, 107, 111, 0.35); }
+.badge-info { background: rgb(var(--fo-info-rgb) / 0.1); color: var(--fo-info); border-color: rgb(var(--fo-info-rgb) / 0.35); }
+.badge-warning { background: rgb(var(--fo-warn-rgb) / 0.1); color: var(--fo-warn); border-color: rgb(var(--fo-warn-rgb) / 0.35); }
+.badge-danger { background: rgb(var(--fo-danger-rgb) / 0.1); color: var(--fo-danger); border-color: rgb(var(--fo-danger-rgb) / 0.35); }
 
 /* ---- Forms ---- */
 form {
@@ -2128,7 +2243,7 @@ select:disabled {
 }
 
 .fo-select__trigger:focus-visible {
-  outline: 3px solid var(--fo-teal);
+  outline: 3px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
@@ -2157,7 +2272,7 @@ select:disabled {
   border: 1px solid var(--fo-line-hi);
   border-radius: var(--fo-radius);
   background: var(--fo-surface-2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--fo-shadow-pop);
 }
 
 .fo-select__listbox--above {
@@ -2187,7 +2302,7 @@ select:disabled {
 
 .fo-select__option.is-active {
   background: var(--fo-teal-dim);
-  color: var(--fo-text-hi);
+  color: var(--fo-on-fill);
 }
 
 /* The chosen option — a checkmark, never colour alone, so it reads the same whether or not it
@@ -2324,7 +2439,7 @@ input[type="checkbox"] {
   display: inline-block;
   margin-top: var(--fo-space-1);
   font-size: 12.5px;
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
   min-height: 1em;
 }
 
@@ -2346,26 +2461,26 @@ input[type="checkbox"] {
 }
 
 .notice--success {
-  background: rgba(76, 195, 138, 0.08);
-  border-color: rgba(76, 195, 138, 0.35);
+  background: rgb(var(--fo-ok-rgb) / 0.08);
+  border-color: rgb(var(--fo-ok-rgb) / 0.35);
   border-left-color: var(--fo-ok);
 }
 
 .notice--info {
-  background: rgba(99, 167, 232, 0.08);
-  border-color: rgba(99, 167, 232, 0.35);
+  background: rgb(var(--fo-info-rgb) / 0.08);
+  border-color: rgb(var(--fo-info-rgb) / 0.35);
   border-left-color: var(--fo-info);
 }
 
 .notice--warning {
-  background: rgba(232, 180, 92, 0.08);
-  border-color: rgba(232, 180, 92, 0.35);
+  background: rgb(var(--fo-warn-rgb) / 0.08);
+  border-color: rgb(var(--fo-warn-rgb) / 0.35);
   border-left-color: var(--fo-warn);
 }
 
 .notice--danger {
-  background: rgba(229, 107, 111, 0.08);
-  border-color: rgba(229, 107, 111, 0.35);
+  background: rgb(var(--fo-danger-rgb) / 0.08);
+  border-color: rgb(var(--fo-danger-rgb) / 0.35);
   border-left-color: var(--fo-danger);
 }
 
@@ -2460,6 +2575,7 @@ input[type="checkbox"] {
 }
 
 .row-menu > summary {
+  position: relative;
   list-style: none;
   cursor: pointer;
   display: inline-flex;
@@ -2475,13 +2591,20 @@ input[type="checkbox"] {
   display: none;
 }
 
+/* Touch target: the visible button stays 28px, the tappable area grows to ~40px. */
+.row-menu > summary::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
 .row-menu > summary:hover {
   background: var(--fo-surface-2);
   color: var(--fo-text-hi);
 }
 
 .row-menu > summary:focus-visible {
-  outline: 2px solid var(--fo-teal);
+  outline: 2px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
@@ -2523,6 +2646,11 @@ input[type="checkbox"] {
 }
 
 /* ---- Two-up field layout (Create Ticket's classification group) ---- */
+/* Phase 29B: a wide form (Create ticket) lets its fields use the width — long text fields are not
+   capped at the 32rem the narrow admin forms use — while the form itself stays a readable width. */
+.form-wide { max-width: 56rem; }
+.form-wide .field { max-width: none; }
+
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2571,14 +2699,14 @@ button:hover,
 
 .btn-primary {
   background: var(--fo-teal);
-  border-color: var(--fo-teal);
+  border-color: var(--fo-teal-text);
   color: var(--fo-teal-ink);
   font-weight: 500;
 }
 
 .btn-primary:hover {
-  background: #4fc0b1;
-  border-color: #4fc0b1;
+  background: var(--fo-teal-hover);
+  border-color: var(--fo-teal-hover);
   color: var(--fo-teal-ink);
 }
 
@@ -2592,7 +2720,7 @@ button:active,
 .btn-primary:active {
   background: var(--fo-teal-dim);
   border-color: var(--fo-teal-dim);
-  color: var(--fo-text-hi);
+  color: var(--fo-on-fill);
 }
 
 /* ---- Component-consolidation cleanup: consequential, hard-to-reverse lifecycle actions
@@ -2606,11 +2734,11 @@ button:active,
 
 .btn-caution:hover {
   border-color: var(--fo-warn);
-  background: rgba(232, 180, 92, 0.12);
+  background: rgb(var(--fo-warn-rgb) / 0.12);
 }
 
 .btn-caution:active {
-  background: rgba(232, 180, 92, 0.2);
+  background: rgb(var(--fo-warn-rgb) / 0.2);
 }
 
 /* Phase 17: the one destructive action in the app (account deletion). Restrained, not alarming —
@@ -2624,12 +2752,12 @@ button:active,
 .btn-danger:hover {
   background: var(--fo-danger);
   border-color: var(--fo-danger);
-  color: var(--fo-text-hi);
+  color: var(--fo-on-fill);
 }
 
 .btn-danger:active {
-  background: #c85a5e;
-  border-color: #c85a5e;
+  background: var(--fo-danger-hover);
+  border-color: var(--fo-danger-hover);
   color: var(--fo-text-hi);
 }
 
@@ -2697,7 +2825,7 @@ button:active,
 }
 
 .reveal:has(.reveal-toggle:focus-visible) .reveal-trigger {
-  outline: 3px solid var(--fo-teal);
+  outline: 3px solid var(--fo-teal-text);
   outline-offset: 2px;
 }
 
@@ -2772,7 +2900,7 @@ button:active,
 }
 
 .search-box:focus-within {
-  border-color: var(--fo-teal);
+  border-color: var(--fo-teal-text);
 }
 
 .search-box__icon {
@@ -2913,7 +3041,7 @@ code {
 .approval-status__detail {
   font-size: 13px;
   color: var(--fo-text-2);
-  margin: 4px 0 0;
+  margin: var(--fo-space-1) 0 0;
 }
 
 /* ---- Demo access: secondary to the login card, not a raw debug table ---- */
@@ -3033,7 +3161,7 @@ code {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--fo-space-4);
-  margin-bottom: 4px;
+  margin-bottom: var(--fo-space-1);
 }
 
 .page-header__top {
@@ -3066,10 +3194,10 @@ code {
 .page-header__metric {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--fo-space-2);
   flex-shrink: 0;
   align-self: center;
-  padding: 6px 14px 6px 12px;
+  padding: 6px 14px 6px var(--fo-space-3);
   background: var(--fo-surface-2);
   border: 1px solid var(--fo-line-hi);
   border-radius: 999px;
@@ -3166,7 +3294,7 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--fo-space-1);
 }
 
 .page-link {
@@ -3175,7 +3303,7 @@ code {
   justify-content: center;
   min-width: 30px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--fo-space-2);
   border-radius: var(--fo-radius);
   border: 1px solid transparent;
   font-size: 13px;
@@ -3234,7 +3362,7 @@ a.page-link:focus-visible {
 }
 
 .panel__head .fo-label {
-  margin-bottom: 4px;
+  margin-bottom: var(--fo-space-1);
 }
 
 .panel__head h2 {
@@ -3256,35 +3384,27 @@ a.page-link:focus-visible {
    workload/SLA row, then two more full-width panels — never every section at the same width. */
 .dashboard-grid {
   display: grid;
+  /* minmax(0, 1fr), not the implicit auto track: an auto track grows to the widest panel's
+     min-content, and the workload table inside its scrolling wrapper counted toward that, pushing
+     every panel ~1px past the viewport at 390px (Phase 28B QA). The wrapper scrolls instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fo-space-5);
   margin-top: var(--fo-space-5);
 }
 
-/* align-items: start — deliberately NOT the grid default (stretch). A trend chart and a compact
-   status list, or a single-team workload panel next to a five-row SLA panel, have genuinely
-   different natural heights; stretching the shorter one to match just manufactures empty space
-   inside it. Each panel sizes to its own content instead. */
-.dashboard-row-trend {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: var(--fo-space-5);
-  align-items: start;
-}
-
-.dashboard-row-half {
+/* Phase 29B: ONE two-column analytical grid — volume | status, then deadline status | workload —
+   with equal columns, so every left/right edge lines up across rows. Items stretch, so the two panels
+   of a row share one height (their content stays top-aligned inside). Below 900px it is one column. */
+.dashboard-charts {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--fo-space-5);
-  align-items: start;
+  align-items: stretch;
 }
 
-/* A dedicated tablet breakpoint (wider than the app's usual 768px mobile one, below): two
-   analytical panels side by side need real room, so they drop to one column earlier than
-   everything else does. */
 @media (max-width: 900px) {
-  .dashboard-row-trend,
-  .dashboard-row-half {
-    grid-template-columns: 1fr;
+  .dashboard-charts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -3308,7 +3428,7 @@ a.page-link:focus-visible {
 .filter-bar__field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--fo-space-1);
   min-width: 9rem;
 }
 
@@ -3330,6 +3450,29 @@ a.page-link:focus-visible {
 .filter-bar__field .fo-select {
   width: auto;
   min-width: 10rem;
+}
+
+.filter-bar__field--check { min-width: 0; justify-content: flex-end; }
+.check-inline,
+.filter-bar__field .check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+  min-height: 38px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fo-text);
+  cursor: pointer;
+}
+
+/* "Show inactive" on Admin lists (Phase 29C): a slim GET form above the list. */
+.show-inactive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fo-space-2) var(--fo-space-4);
+  margin: 0 0 var(--fo-space-3);
 }
 
 .filter-bar__actions {
@@ -3355,14 +3498,14 @@ a.page-link:focus-visible {
 
 .trend-chart polyline {
   fill: none;
-  stroke: var(--fo-teal);
+  stroke: var(--fo-teal-text);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
 .trend-chart .trend-marker {
-  fill: var(--fo-teal);
+  fill: var(--fo-teal-text);
 }
 
 .trend-chart .trend-baseline {
@@ -3397,7 +3540,7 @@ a.page-link:focus-visible {
 
 .chart-fallback summary:hover,
 .chart-fallback summary:focus-visible {
-  color: var(--fo-teal);
+  color: var(--fo-teal-text);
 }
 
 .chart-fallback .table-responsive {
@@ -3490,17 +3633,6 @@ a.page-link:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .stat-strip {
-    flex-direction: column;
-  }
-
-  .stat + .stat {
-    border-left: none;
-    border-top: 1px solid var(--fo-line-row);
-    padding-left: 0;
-    padding-top: var(--fo-space-4);
-  }
-
   .attn-row {
     grid-template-columns: 1fr;
     row-gap: 6px;
@@ -3511,7 +3643,7 @@ a.page-link:focus-visible {
   }
 
   .rail-labels {
-    font-size: 9.5px;
+    font-size: 10px;
   }
 
   .login-shell {
@@ -3786,3 +3918,383 @@ a.page-link:focus-visible {
 .rail-fill-98 { --rail-fill-pct: 98%; }
 .rail-fill-99 { --rail-fill-pct: 99%; }
 .rail-fill-100 { --rail-fill-pct: 100%; }
+
+/* ======================================================================================
+   Phase 26 (ADR-0029): project planning — Overview / Board / Tickets.
+   Built only from existing tokens and components (.panel, .status-badge, .filter-bar,
+   .row-menu, .badge-*); nothing here introduces a new colour, radius, or shadow.
+   ====================================================================================== */
+.page-crumb { margin: 0 0 var(--fo-space-1); font-size: 12.5px; color: var(--fo-text-3); }
+
+.proj-tabs {
+  display: flex;
+  gap: var(--fo-space-1);
+  border-bottom: 1px solid var(--fo-line);
+  margin: 0 0 var(--fo-space-5);
+  overflow-x: auto;
+}
+.proj-tabs a {
+  padding: var(--fo-space-2) var(--fo-space-4);
+  color: var(--fo-text-2);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.proj-tabs a:hover { color: var(--fo-text); }
+.proj-tabs a[aria-current="page"] { color: var(--fo-text-hi); border-bottom-color: var(--fo-teal-text); }
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--fo-space-5);
+  align-items: stretch;
+}
+.plan-stack { display: grid; gap: var(--fo-space-5); }
+@media (max-width: 1100px) { .plan-grid { grid-template-columns: 1fr; } }
+
+.sprint-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fo-space-2) var(--fo-space-4);
+  padding: var(--fo-space-3) var(--fo-space-4);
+  margin: 0 0 var(--fo-space-4);
+  background: var(--fo-surface);
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+}
+.panel .sprint-strip { border: 0; padding-inline: 0; background: transparent; }
+.sprint-strip__name { color: var(--fo-text-hi); font-weight: 500; }
+.sprint-strip__dates,
+.sprint-strip__progress { color: var(--fo-text-2); font-size: 13px; }
+.sprint-strip__spacer { flex: 1; }
+.sprint-strip form { margin: 0; }
+
+.sprint-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fo-space-5);
+  margin: 0 0 var(--fo-space-4);
+}
+.sprint-stats > div { display: flex; flex-direction: column-reverse; }
+.sprint-stats dd { margin: 0; font-size: 24px; font-weight: 500; color: var(--fo-text-hi); }
+.sprint-stats dt { font-size: 10.5px; font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fo-text-3); }
+
+/* Board: columns wrap to the available width instead of scrolling sideways. */
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--fo-space-3);
+  align-items: start;
+}
+.board-col { background: var(--fo-surface); border: 1px solid var(--fo-line); border-radius: var(--fo-radius); min-width: 0; }
+.board-col--backlog { border-style: dashed; border-color: var(--fo-line-hi); }
+.board-col__head {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+  margin: 0;
+  padding: var(--fo-space-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fo-text-2);
+  border-bottom: 1px solid var(--fo-line-row);
+}
+.board-col__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fo-text-3); }
+.board-col--inprogress .board-col__dot { background: var(--fo-warn); }
+.board-col--pending .board-col__dot { background: var(--fo-violet); }
+.board-col--done .board-col__dot { background: var(--fo-ok); }
+.board-col--backlog .board-col__dot { background: transparent; border: 1px dashed var(--fo-text-3); }
+.board-col__count { margin-left: auto; color: var(--fo-text-3); font-size: 12px; }
+.board-col__cards { display: flex; flex-direction: column; gap: var(--fo-space-2); padding: var(--fo-space-3); }
+.board-col__empty { margin: 0; color: var(--fo-text-3); font-size: 13px; }
+
+.board-card {
+  position: relative;
+  padding: var(--fo-space-2) var(--fo-space-3) var(--fo-space-2) var(--fo-space-4);
+  background: var(--fo-surface-2);
+  border: 1px solid var(--fo-line);
+  border-radius: var(--fo-radius);
+  transition: border-color 150ms ease;
+}
+.board-card:hover { border-color: var(--fo-line-hi); }
+/* Priority is the stripe (same height-free colour language as .severity), never colour alone: the
+   priority word is also printed in the meta line. */
+.board-card::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--fo-text-3); }
+.board-card--critical::before { background: var(--fo-danger); }
+.board-card--high::before { background: var(--fo-warn); }
+.board-card--medium::before { background: var(--fo-line-hi); }
+.board-card__top { display: flex; align-items: center; justify-content: space-between; gap: var(--fo-space-2); }
+.board-card__title { display: block; margin: 2px 0 var(--fo-space-2); color: var(--fo-text-hi); text-decoration: none; line-height: 1.35; overflow-wrap: anywhere; }
+.board-card__title:hover,
+.board-card__title:focus-visible { color: var(--fo-teal-text); }
+.board-card__meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--fo-space-2); font-size: 12px; color: var(--fo-text-2); }
+.board-card__flags { display: flex; flex-wrap: wrap; gap: 2px var(--fo-space-3); margin-top: var(--fo-space-2); }
+/* Deadline state is plain coloured text, the same treatment the Work Queue uses (design system §10) —
+   the words carry the meaning, the colour reinforces it. */
+.flag-text { font-size: 12px; color: var(--fo-text-2); overflow-wrap: anywhere; }
+.flag-text--danger { color: var(--fo-danger); }
+.flag-text--warn { color: var(--fo-warn); }
+/* Subtle "Carried from Sprint 1" marker: plain muted text, not a boxed badge. */
+.carried-note { font-size: 12px; color: var(--fo-text-3); overflow-wrap: anywhere; }
+.board-note { margin: var(--fo-space-4) 0 0; color: var(--fo-text-3); font-size: 12.5px; }
+
+/* Action menu content (inside the existing .row-menu panel). */
+.row-menu__panel--list { gap: 2px; padding: var(--fo-space-2); min-width: 240px; }
+.row-menu__panel--list form { margin: 0; }
+.row-menu__label { margin: var(--fo-space-2) var(--fo-space-2) 2px; font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fo-text-3); }
+.row-menu__label:first-child { margin-top: 0; }
+.row-menu__item {
+  display: flex;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  padding: 6px var(--fo-space-2);
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fo-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.row-menu__item:hover,
+.row-menu__item:focus-visible { background: var(--fo-line); color: var(--fo-text-hi); }
+.row-menu__item--warn { color: var(--fo-warn); }
+
+/* Planning tables (Projects, Sprints, Tickets). */
+.plan-table__key { white-space: nowrap; }
+.plan-table__main { min-width: 12rem; }
+.plan-table__actions { text-align: right; white-space: nowrap; }
+.plan-table__actions form { display: inline-block; margin: 0; }
+.plan-sprint { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 13px; color: var(--fo-text); }
+.plan-sprint__meta { font-size: 12px; color: var(--fo-text-3); }
+.plan-table--tickets td[data-label="Sprint"] { min-width: 200px; }
+.plan-sprint--active .plan-sprint__name { color: var(--fo-teal-text); }
+.plan-sprint--completed .plan-sprint__name { color: var(--fo-text-2); }
+
+/* Browser-QA pass (Phase 26A): consistent cell type sizes, no wrapping of badges/dates, quiet
+   summary links, and a menu that is never clipped by the table wrapper. */
+.plan-table td { vertical-align: middle; font-size: 13.5px; }
+.plan-table .mono { font-size: 13px; white-space: nowrap; }
+.plan-table .status-badge { white-space: nowrap; }
+.plan-table .q-ref,
+.board-card .q-ref { font-size: 12.5px; }
+.plan-table__main a { color: var(--fo-text-hi); }
+.plan-table__main a:hover,
+.plan-table__main a:focus-visible { color: var(--fo-teal-text); }
+.table-responsive:has(.plan-table) { overflow: visible; }
+.board-card__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Narrow layouts: rows reflow into stacked label-above-value blocks — every column stays visible.
+   The Tickets table has eight columns, so it reflows earlier (<= 1360px, before it could overflow
+   beside the sidebar); the small Projects/Sprints tables only need it on phones. */
+@media (max-width: 1360px) {
+  .plan-table--tickets thead { position: absolute; left: -9999px; }
+  .plan-table--tickets, .plan-table--tickets tbody, .plan-table--tickets tr, .plan-table--tickets td { display: block; width: 100%; }
+  .plan-table--tickets tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--fo-space-2) var(--fo-space-4); padding: var(--fo-space-3) var(--fo-space-4); border-bottom: 1px solid var(--fo-line-row); }
+  .plan-table--tickets td { padding: 0; border: 0; min-width: 0; }
+  .plan-table--tickets td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fo-text-3); }
+  .plan-table--tickets .plan-table__key { grid-column: 1; grid-row: 1; }
+  .plan-table--tickets .plan-table__actions { grid-column: 2; grid-row: 1; text-align: right; }
+  .plan-table--tickets .plan-table__main { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .plan-table--tickets td:nth-child(7) { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .plan-table:not(.plan-table--tickets) thead { position: absolute; left: -9999px; }
+  .plan-table:not(.plan-table--tickets), .plan-table:not(.plan-table--tickets) tbody, .plan-table:not(.plan-table--tickets) tr, .plan-table:not(.plan-table--tickets) td { display: block; width: 100%; }
+  .plan-table:not(.plan-table--tickets) tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--fo-space-2) var(--fo-space-4); padding: var(--fo-space-3) var(--fo-space-4); border-bottom: 1px solid var(--fo-line-row); }
+  .plan-table:not(.plan-table--tickets) td { padding: 0; border: 0; min-width: 0; }
+  .plan-table:not(.plan-table--tickets) td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fo-text-3); }
+  .plan-table:not(.plan-table--tickets) .plan-table__main { grid-column: 1 / -1; min-width: 0; }
+  .plan-table:not(.plan-table--tickets) .plan-table__actions { grid-column: 1 / -1; text-align: left; }
+}
+.plan-grid > *, .plan-stack > * { min-width: 0; }
+
+/* ======================================================================================
+   Phase 26B (ADR-0030): board drag-and-drop states, the move dialog, sprint actions, and the
+   sprint detail/archive layout. Same tokens as everything above; no new colours or shadows.
+   ====================================================================================== */
+.board-card[draggable="true"] { cursor: grab; }
+.board-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+.board.is-dragging-active .board-col { transition: border-color 150ms ease, background-color 150ms ease, opacity 150ms ease; }
+.board-col.is-origin { border-color: var(--fo-line-hi); }
+.board-col.is-valid-target { border-color: var(--fo-teal-dim); }
+.board-col.is-invalid-target { opacity: 0.55; }
+.board-col.is-drop-over.is-valid-target { border-color: var(--fo-teal-text); background: rgb(var(--fo-teal-rgb) / 0.06); }
+.board-col.is-drop-over.is-invalid-target { border-color: var(--fo-danger); }
+
+.board-move-form { margin: 0; }
+.board-dialog {
+  width: min(30rem, calc(100vw - 2rem));
+  padding: var(--fo-space-5);
+  background: var(--fo-surface-2);
+  color: var(--fo-text);
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+}
+.board-dialog::backdrop { background: var(--fo-scrim-dialog); }
+.board-dialog__title { margin: 0 0 var(--fo-space-1); font-size: 16px; font-weight: 500; color: var(--fo-text-hi); }
+.board-dialog__help { margin: 0 0 var(--fo-space-4); font-size: 13px; color: var(--fo-text-2); }
+.board-dialog__actions { display: flex; justify-content: flex-end; gap: var(--fo-space-2); margin-top: var(--fo-space-4); }
+.board-dialog .field { max-width: none; }
+
+.btn-quiet-danger { color: var(--fo-danger); }
+.btn-quiet-danger:hover { border-color: var(--fo-danger); }
+/* Overview/Sprints rows keep one height whether or not they carry an action button. */
+@media (min-width: 901px) {
+  .plan-table:not(.plan-table--wide):not(.plan-table--tickets) tbody td { height: 54px; }
+}
+@media (min-width: 1361px) {
+  .plan-table--wide tbody td { height: 54px; }
+}
+.sprint-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--fo-space-2); }
+.sprint-actions form { margin: 0; }
+.plan-table__actions .sprint-actions { justify-content: flex-end; }
+
+.panel__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--fo-space-3); margin-bottom: var(--fo-space-3); }
+.panel__head form { margin: 0; }
+.panel__head .panel__title,
+.panel--focus > .panel__title { margin: 0; }
+.panel__foot { margin: var(--fo-space-3) 0 0; font-size: 13px; }
+/* Layout owns its own spacing (Phase 29B): there is deliberately no global sibling-panel margin.
+   The old `.panel + .panel` rule also matched the second panel of every side-by-side pair and pushed
+   it 24px down (Dashboard charts, Ticket Detail). Grids set their own `gap`; a plain vertical stack
+   of panels uses .panel-stack. */
+.panel-stack { display: grid; gap: var(--fo-space-5); }
+.panel-stack > .panel { margin: 0; min-width: 0; }
+
+/* Browser-QA (Phase 26B): a row menu opens to the LEFT of its "..." button instead of underneath it —
+   underneath, the panel covered the "..." buttons of the rows below, so a second menu could not be
+   reached without first dismissing the first. Sprint/Sprint-detail tables (6–7 columns) reflow early,
+   like the Tickets table. */
+.row-menu__panel--list { top: 0; right: calc(100% + 6px); }
+
+@media (max-width: 1360px) {
+  .plan-table--wide thead { position: absolute; left: -9999px; }
+  .plan-table--wide, .plan-table--wide tbody, .plan-table--wide tr, .plan-table--wide td { display: block; width: 100%; }
+  .plan-table--wide tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--fo-space-2) var(--fo-space-4); padding: var(--fo-space-3) var(--fo-space-4); border-bottom: 1px solid var(--fo-line-row); }
+  .plan-table--wide td { padding: 0; border: 0; min-width: 0; }
+  .plan-table--wide td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fo-text-3); }
+  .plan-table--wide .plan-table__key { grid-column: 1; grid-row: 1; }
+  .plan-table--wide .plan-table__main { grid-column: 1 / -1; grid-row: 2; }
+  .plan-table--wide .plan-table__actions { grid-column: 2; grid-row: 1; text-align: right; }
+  .plan-table--wide.plan-table--nokey .plan-table__main { grid-column: 1; grid-row: 1; }
+}
+
+/* Browser-QA (Phase 26B): the "Recent sprints" table used to sit in the narrow left column, and its
+   nowrap action buttons pushed the table past the panel's border. Two rules fix the cause, not the
+   pixel: (1) the wide panel now spans the full grid width, and (2) table wrappers contain their own
+   overflow again — only the Tickets table (whose row menus must not be clipped) opts out, and that
+   table reflows before it can overflow. */
+.plan-grid__wide { grid-column: 1 / -1; order: 3; }
+.plan-grid > .panel:not(.plan-grid__wide) { order: 1; }
+.plan-grid--single { grid-template-columns: minmax(0, 1fr); }
+.table-responsive:has(.plan-table) { overflow-x: auto; overflow-y: visible; }
+.table-responsive:has(.plan-table--tickets) { overflow: visible; }
+.plan-table__actions { white-space: normal; }
+.page-header__title-row:has(.page-header__metric) { justify-content: flex-start; }
+
+/* Browser-QA (Phase 26B), 390px: a wide action button ("Move to current sprint") sat in the half-width
+   top-right cell and overlapped the ticket key — actions now get their own full-width row in the
+   reflowed wide tables; the four project tabs fit a phone width instead of clipping "Sprints"; and
+   the inline confirm panel stays left-aligned inside a right-aligned actions cell. */
+@media (max-width: 1360px) {
+  .plan-table--wide .plan-table__actions { grid-column: 1 / -1; grid-row: auto; text-align: left; }
+  .plan-table--wide.plan-table--nokey .plan-table__main { grid-column: 1 / -1; grid-row: 1; }
+}
+@media (max-width: 480px) {
+  .proj-tabs a { padding: var(--fo-space-2) 10px; }
+}
+.plan-table__actions .confirm-panel { text-align: left; }
+
+/* ---- Segmented radio group (Phase 29C: Appearance). Native radios stay in the DOM — they carry the
+   keyboard behaviour, the label and the checked state for assistive tech — and are only visually
+   replaced. Selected is shown by a filled marker AND a stronger label, never colour alone. Options are
+   at least 44px tall, and the group wraps rather than overflowing on a phone. ---- */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin: 0 0 var(--fo-space-3);
+  padding: 0;
+  border: 1px solid var(--fo-line-hi);
+  border-radius: var(--fo-radius);
+  background: var(--fo-surface);
+  overflow: hidden;
+}
+
+.segmented__option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fo-space-2);
+  min-height: 44px;
+  padding: 0 var(--fo-space-4);
+  color: var(--fo-text-2);
+  cursor: pointer;
+}
+
+.segmented__option + .segmented__option {
+  border-left: 1px solid var(--fo-line);
+}
+
+.segmented__option input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segmented__option::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--fo-text-3);
+  border-radius: 50%;
+  flex: none;
+}
+
+.segmented__option:has(input:checked) {
+  background: var(--fo-surface-2);
+  color: var(--fo-text-hi);
+  font-weight: 500;
+}
+
+.segmented__option:has(input:checked)::before {
+  border-color: var(--fo-teal-text);
+  background: var(--fo-teal-text);
+}
+
+.segmented__option:hover {
+  color: var(--fo-text-hi);
+}
+
+.segmented__option:has(input:focus-visible) {
+  outline: 2px solid var(--fo-teal-text);
+  outline-offset: -2px;
+}
+
+/* Phase 29B: respect the user's reduced-motion preference. The app only uses short colour/border/
+   transform transitions, so this simply removes them (and any animation) for those who ask. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

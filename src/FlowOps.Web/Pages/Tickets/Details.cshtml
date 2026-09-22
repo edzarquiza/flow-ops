@@ -53,7 +53,7 @@
 
 @* ============ JOURNEY: where the ticket sits in its lifecycle ============ *@
 <div class="zone">
-    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("SLA & workflow")); }
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Deadline & workflow")); }
     <div class="ticket-rail-wrap">
         @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(Model.Ticket.Status, Model.Ticket.Sla, Expanded: true)); }
     </div>
@@ -63,16 +63,16 @@
    rows — related-but-distinct facts about the same ticket, at a glance. ============ *@
 <div class="ticket-zone-grid">
     <div class="panel">
-        <h3>SLA</h3>
+        <h3>Service deadline</h3>
         <div class="sla-state sla-state--@slaStateClass sla-state--lede">
-            @Model.Ticket.Sla.Status.ToString()
+            @FlowOps.Web.SlaDisplay.StatusLabel(Model.Ticket.Sla.Status)
             @if (FlowOps.Web.SlaDisplay.Remaining(Model.Ticket.Sla) is { } remaining)
             {
                 @($" — {remaining}")
             }
         </div>
         <div class="panel__meta">
-            Due <span class="panel__value mono"><time datetime="@Model.Ticket.Sla.DueAt.ToString("O")" title="@Model.Ticket.Sla.DueAt.ToString("u")">@Model.Ticket.Sla.DueAt.ToString("yyyy-MM-dd HH:mm")</time></span><br>
+            Deadline <span class="panel__value mono"><time datetime="@Model.Ticket.Sla.DueAt.ToString("O")" title="@Model.Ticket.Sla.DueAt.ToString("u")">@Model.Ticket.Sla.DueAt.ToString("yyyy-MM-dd HH:mm")</time></span><br>
             Target <span class="panel__value">@Model.Ticket.Sla.TargetMinutes minutes</span> &middot; Paused <span class="panel__value">@Model.Ticket.Sla.PausedMinutes minutes</span><br>
             Due date
             @if (Model.Ticket.DueDate is { } dueDate)
@@ -82,7 +82,7 @@
                 {
                     @* Phase 25 §9: distinct from SLA breach — this is the planning due date, never
                        derived from Sla.Status, and shown even when SLA itself is still healthy. *@
-                    <span class="badge badge-danger" title="Overdue — this is the planning due date, not the SLA deadline">Overdue</span>
+                    <span class="flag-text flag-text--danger" title="Past due — this is the planning due date, not the service deadline">Past due</span>
                 }
             }
             else
@@ -109,6 +109,33 @@
             Team <span class="panel__value">@Model.Ticket.TeamName</span> &middot;
             Category <span class="panel__value">@Model.Ticket.CategoryName</span><br>
             Project <span class="panel__value @(Model.Ticket.ProjectName is null ? "panel__value--muted" : "")">@(Model.Ticket.ProjectName ?? "None")</span>
+            @if (Model.Ticket.ProjectName is not null)
+            {
+                <br>
+                @* Read-only orientation (Phase 28B): where this ticket sits in project planning. *@
+                @if (Model.Ticket.Sprint is { } sprint)
+                {
+                    @* The sprint's own name usually already says "Sprint" ("Sprint 2 - Pilot devices"); only add the label when it does not. *@
+                    @if (!sprint.Name.Contains("sprint", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <text>Sprint </text>
+                    }
+                    <span class="panel__value">
+                        <a class="text-link" asp-page="/Projects/SprintDetail" asp-route-id="@sprint.ProjectId" asp-route-sprintId="@sprint.SprintId">@sprint.Name</a>
+                        <span class="cell-muted">
+                            &middot; @FlowOps.Web.SprintDisplay.TicketSprintLabel(sprint.Status, sprint.InPlanned) &middot; @FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)
+                        </span>
+                    </span>
+                    @if (sprint.CarriedFromSprint is not null)
+                    {
+                        <span class="carried-note" title="This ticket was unfinished when @sprint.CarriedFromSprint was completed">Carried from @sprint.CarriedFromSprint</span>
+                    }
+                }
+                else
+                {
+                    <span class="panel__value panel__value--muted">No sprint</span>
+                }
+            }
         </div>
         <p class="ticket-subtitle ticket-subtitle--panel">
             Created
@@ -289,7 +316,10 @@
 @* ============ ACTIVITY: what has happened, in one merged timeline ============ *@
 <div class="zone">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("What has happened")); }
-    @if (Model.History.Count == 0)
+    @* "Comment added" audit events are left out here: the comment itself is the timeline entry (and an
+       internal comment must not announce itself to a reader who cannot see it). *@
+    @{ var history = Model.History.Where(e => e.EventType != TicketEventType.CommentAdded).ToList(); }
+    @if (history.Count == 0)
     {
         <p class="empty-state">No history has been recorded for this ticket yet.</p>
     }
@@ -303,10 +333,10 @@
            (TimelinePresentation) over the entry's own Kind/EventType — no new business rule. *@
         <p class="ticket-subtitle">Audit history, most recent first</p>
         <div class="timeline">
-            @for (var i = 0; i < Model.History.Count; i++)
+            @for (var i = 0; i < history.Count; i++)
             {
-                var entry = Model.History[i];
-                var isLast = i == Model.History.Count - 1;
+                var entry = history[i];
+                var isLast = i == history.Count - 1;
                 var tone = FlowOps.Web.TimelinePresentation.Tone(entry);
                 var dotClass = tone switch
                 {
@@ -331,26 +361,16 @@
                         </time>
                         @if (entry.Kind == TicketTimelineEntryKind.Comment)
                         {
-                            <div class="tl-title">@(entry.IsInternal == true ? "Internal comment" : "Comment") &middot; @entry.ActorDisplayName</div>
+                            <div class="tl-title">@FlowOps.Web.TimelineDisplay.Title(entry) &middot; @entry.ActorDisplayName</div>
                             <div class="tl-detail">@entry.Body</div>
                         }
                         else
                         {
-                            <div class="tl-title">@entry.EventType &middot; @entry.ActorDisplayName</div>
-                            <div class="tl-detail">
-                                @if (entry.Field is not null)
-                                {
-                                    @($"{entry.Field}: {entry.OldValue ?? "none"} → {entry.NewValue ?? "none"}")
-                                }
-                                else if (entry.Note is not null)
-                                {
-                                    @entry.Note
-                                }
-                                else
-                                {
-                                    @:—
-                                }
-                            </div>
+                            <div class="tl-title">@FlowOps.Web.TimelineDisplay.Title(entry) &middot; @entry.ActorDisplayName</div>
+                            @if (FlowOps.Web.TimelineDisplay.Detail(entry) is { } detail)
+                            {
+                                <div class="tl-detail">@detail</div>
+                            }
                         }
                     </div>
                 </div>

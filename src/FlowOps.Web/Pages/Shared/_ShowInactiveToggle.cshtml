@@ -1,0 +1,24 @@
+@model FlowOps.Web.ShowInactiveToggleViewModel
+@* Phase 29C: the "Show inactive" switch. A plain GET form (no state is stored); the checkbox submits it
+   through the same external auto-submit script the Work Queue uses, and the Apply button is the
+   always-working fallback when scripting is off. Deactivation is one-way, so this is the only way back
+   to an inactive record's page. *@
+<form method="get" class="show-inactive" data-autosubmit aria-label="Show inactive @Model.Noun">
+    @if (Model.Preserve is not null)
+    {
+        @foreach (var field in Model.Preserve.Where(f => !string.IsNullOrEmpty(f.Value)))
+        {
+            <input type="hidden" name="@field.Key" value="@field.Value" />
+        }
+    }
+    <label class="check-inline">
+        <input type="checkbox" name="showInactive" value="true" checked="@Model.ShowInactive" />
+        Show inactive
+    </label>
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+    @if (!Model.ShowInactive && Model.HiddenCount > 0)
+    {
+        <span class="cell-muted">@Model.HiddenCount inactive @Model.Noun hidden</span>
+    }
+</form>
+<script src="~/js/dashboard-filters.js" asp-append-version="true"></script>

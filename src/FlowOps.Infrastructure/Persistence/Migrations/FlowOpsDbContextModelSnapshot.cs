@@ -338,6 +338,114 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                     b.ToTable("organization_memberships", (string)null);
                 });
 
+            modelBuilder.Entity("FlowOps.Domain.Planning.Sprint", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("activated_at");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_id");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sprints");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sprints_one_active_per_project")
+                        .HasFilter("status = 'Active'");
+
+                    b.HasIndex("ProjectId", "StartDate")
+                        .HasDatabaseName("ix_sprints_project_start");
+
+                    b.ToTable("sprints", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_sprints_cancelled_at", "status <> 'Cancelled' OR cancelled_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_sprints_completed_at", "status <> 'Completed' OR completed_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_sprints_date_range", "start_date <= end_date");
+
+                            t.HasCheckConstraint("ck_sprints_status", "status IN ('Planned', 'Active', 'Completed', 'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Planning.SprintTicketSnapshot", b =>
+                {
+                    b.Property<int>("SprintId")
+                        .HasColumnType("integer")
+                        .HasColumnName("sprint_id");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("integer")
+                        .HasColumnName("ticket_id");
+
+                    b.Property<string>("StatusAtCompletion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status_at_completion");
+
+                    b.Property<bool>("WasDone")
+                        .HasColumnType("boolean")
+                        .HasColumnName("was_done");
+
+                    b.HasKey("SprintId", "TicketId")
+                        .HasName("pk_sprint_ticket_snapshots");
+
+                    b.HasIndex("TicketId")
+                        .HasDatabaseName("ix_sprint_ticket_snapshots_ticket");
+
+                    b.ToTable("sprint_ticket_snapshots", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_sprint_ticket_snapshots_status", "status_at_completion IN ('Open', 'Assigned', 'InProgress', 'Pending', 'Resolved', 'Closed')");
+                        });
+                });
+
             modelBuilder.Entity("FlowOps.Domain.Platform.PlatformAuditEvent", b =>
                 {
                     b.Property<int>("Id")
@@ -578,6 +686,16 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("sla_target_minutes");
 
+                    b.Property<bool>("SprintBacklog")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("sprint_backlog");
+
+                    b.Property<int?>("SprintId")
+                        .HasColumnType("integer")
+                        .HasColumnName("sprint_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -642,6 +760,10 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tickets_open_sla_due")
                         .HasFilter("status NOT IN ('Resolved', 'Closed')");
 
+                    b.HasIndex("SprintId")
+                        .HasDatabaseName("ix_tickets_sprint")
+                        .HasFilter("sprint_id IS NOT NULL");
+
                     b.HasIndex("Title")
                         .HasDatabaseName("gin_tickets_title_trgm");
 
@@ -663,6 +785,8 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_tickets_resolution_present", "status NOT IN ('Resolved', 'Closed') OR (resolved_at IS NOT NULL AND resolution_code IS NOT NULL AND resolution_notes IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_tickets_sla_due_after_started", "sla_due_at > sla_started_at");
+
+                            t.HasCheckConstraint("ck_tickets_sprint_backlog", "sprint_backlog = false OR sprint_id IS NOT NULL");
 
                             t.HasCheckConstraint("ck_tickets_status", "status IN ('Open', 'Assigned', 'InProgress', 'Pending', 'Resolved', 'Closed')");
 
@@ -771,7 +895,7 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
 
                     b.ToTable("ticket_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_ticket_events_event_type", "event_type IN ('Created', 'Assigned', 'Reassigned', 'Unassigned', 'StatusChanged', 'PriorityChanged', 'CategoryChanged', 'TeamChanged', 'DueDateChanged', 'SlaRecalculated', 'PutOnHold', 'Resumed', 'Resolved', 'Reopened', 'Closed', 'CommentAdded')");
+                            t.HasCheckConstraint("ck_ticket_events_event_type", "event_type IN ('Created', 'Assigned', 'Reassigned', 'Unassigned', 'StatusChanged', 'PriorityChanged', 'CategoryChanged', 'TeamChanged', 'DueDateChanged', 'SlaRecalculated', 'PutOnHold', 'Resumed', 'Resolved', 'Reopened', 'Closed', 'CommentAdded', 'SprintChanged')");
                         });
                 });
 
@@ -847,6 +971,14 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("integer")
                         .HasColumnName("access_failed_count");
+
+                    b.Property<string>("Appearance")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("Dark")
+                        .HasColumnName("appearance");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -957,7 +1089,10 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                     b.HasIndex("PrimaryTeamId")
                         .HasDatabaseName("ix_asp_net_users_primary_team_id");
 
-                    b.ToTable("AspNetUsers", (string)null);
+                    b.ToTable("AspNetUsers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_users_appearance", "appearance IN ('Dark', 'Light', 'System')");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -1200,6 +1335,33 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_organization_memberships_asp_net_users_user_id");
                 });
 
+            modelBuilder.Entity("FlowOps.Domain.Planning.Sprint", b =>
+                {
+                    b.HasOne("FlowOps.Domain.Catalog.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sprints_projects_project_id");
+                });
+
+            modelBuilder.Entity("FlowOps.Domain.Planning.SprintTicketSnapshot", b =>
+                {
+                    b.HasOne("FlowOps.Domain.Planning.Sprint", null)
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sprint_ticket_snapshots_sprints_sprint_id");
+
+                    b.HasOne("FlowOps.Domain.Tickets.Ticket", null)
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sprint_ticket_snapshots_tickets_ticket_id");
+                });
+
             modelBuilder.Entity("FlowOps.Domain.Platform.PlatformAuditEvent", b =>
                 {
                     b.HasOne("FlowOps.Infrastructure.Identity.ApplicationUser", null)
@@ -1249,6 +1411,12 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_tickets_asp_net_users_requester_id");
+
+                    b.HasOne("FlowOps.Domain.Planning.Sprint", null)
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_tickets_sprints_sprint_id");
 
                     b.HasOne("FlowOps.Domain.Directory.Team", null)
                         .WithMany()

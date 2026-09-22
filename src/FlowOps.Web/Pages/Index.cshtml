@@ -211,69 +211,6 @@
     </div>
 </form>
 <script src="~/js/dashboard-filters.js" asp-append-version="true"></script>
-
-@* Phase 11/20B: the dashboard opens on the actionable, ranked at-risk list — not the KPI
-   counters — per CLAUDE.md §1/§22. This reuses AttentionQueryService.GetAtRiskAsync exactly as
-   the At-Risk page itself does (same ranking, same authorization scope); only the top few rows
-   are shown. Attention sits one surface tier higher than the analytics below it (.panel--focus) —
-   it is the page's actual operational focus, not one analytical concept among several. Rows reuse
-   the exact .q-row component Work Queue/At-Risk use — one shared row mechanism, not a
-   dashboard-specific composition. *@
-<div class="panel panel--focus">
-    <h2>What needs attention</h2>
-    @if (Model.AtRiskPreview.Count == 0)
-    {
-        <p class="empty-state">No work is at risk right now.</p>
-    }
-    else
-    {
-        <div class="q-list">
-            @foreach (var ticket in Model.AtRiskPreview)
-            {
-                var slaText = ticket.Sla.Status.ToString();
-                var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
-                var topSignal = ticket.Signals.OrderByDescending(s => s.Severity).First();
-                var topSevClass = topSignal.Severity.ToString().ToLowerInvariant() switch
-                {
-                    "critical" => "crit",
-                    "high" => "high",
-                    "medium" => "med",
-                    _ => "low",
-                };
-                <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
-                    <div class="q-main">
-                        <div class="q-title">@ticket.Title</div>
-                        <div class="q-meta">
-                            <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span>@topSignal.Headline</span>
-                            @if (ticket.Signals.Count > 1)
-                            {
-                                <span class="why-secondary">(+@(ticket.Signals.Count - 1) more)</span>
-                            }
-                        </div>
-                    </div>
-                    <div class="q-sev-col">
-                        <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
-                    </div>
-                    <div class="q-rail-col" aria-hidden="true">
-                        @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
-                    </div>
-                    <div class="q-sla" title="SLA due @ticket.Sla.DueAt.ToString("u")">
-                        <span class="q-sla__state">@ticket.Sla.Status</span>
-                        @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
-                        {
-                            <span class="q-sla__time">@remaining</span>
-                        }
-                    </div>
-                </a>
-            }
-        </div>
-    }
-    <p class="page-actions">
-        <a class="btn" asp-page="/Tickets/AtRisk">View all @Model.AtRiskTotalCount at-risk item@(Model.AtRiskTotalCount == 1 ? "" : "s")</a>
-    </p>
-</div>
-
 <div class="dashboard-grid">
     @* Exactly four KPIs (CLAUDE.md §22) — no additional vanity counter. Each links through to
        the filtered work it represents, via the existing Work Queue's closed filter set
@@ -292,13 +229,13 @@
                 <div class="stat__value"><a asp-page="/Tickets/Index" asp-route-filter="OpenWork">@Model.Summary.OpenWorkCount</a></div>
             </div>
             <div class="stat">
-                <div class="fo-label">Overdue</div>
+                <div class="fo-label">Past due</div>
                 <div class="stat__value @(Model.Summary.OverdueCount > 0 ? "stat__value--danger" : "")">
                     <a asp-page="/Tickets/Index" asp-route-filter="Overdue">@Model.Summary.OverdueCount</a>
                 </div>
             </div>
             <div class="stat">
-                <div class="fo-label"><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">SLA Compliance</a></div>
+                <div class="fo-label"><a asp-page="/Tickets/Index" asp-route-filter="ResolvedRecently">Deadlines met</a></div>
                 @if (Model.Summary.SlaCompliance.Percentage is { } slaPercentage)
                 {
                     <div class="stat__value">@($"{slaPercentage:F0}%")</div>
@@ -306,7 +243,7 @@
                 }
                 else
                 {
-                    <div class="stat__delta">No data yet — no tickets resolved in the last 90 days.</div>
+                    <div class="stat__delta">No resolved tickets yet in the last 90 days.</div>
                 }
             </div>
             <div class="stat">
@@ -318,13 +255,78 @@
                 }
                 else
                 {
-                    <div class="stat__delta">No data yet — no tickets resolved in the last 90 days.</div>
+                    <div class="stat__delta">No resolved tickets yet in the last 90 days.</div>
                 }
             </div>
         </div>
     </div>
 
-    <div class="dashboard-row-trend">
+    @* Phase 29B: the KPI summary comes first (visible without scrolling); attention follows, limited to the top few rows with a link to the full At-Risk page. *@
+
+    @* Phase 11/20B: the dashboard opens on the actionable, ranked at-risk list — not the KPI
+       counters — per CLAUDE.md §1/§22. This reuses AttentionQueryService.GetAtRiskAsync exactly as
+       the At-Risk page itself does (same ranking, same authorization scope); only the top few rows
+       are shown. Attention sits one surface tier higher than the analytics below it (.panel--focus) —
+       it is the page's actual operational focus, not one analytical concept among several. Rows reuse
+       the exact .q-row component Work Queue/At-Risk use — one shared row mechanism, not a
+       dashboard-specific composition. *@
+    <div class="panel panel--focus">
+        <h2>What needs attention</h2>
+        @if (Model.AtRiskPreview.Count == 0)
+        {
+            <p class="empty-state">No work is at risk right now.</p>
+        }
+        else
+        {
+            <div class="q-list">
+                @foreach (var ticket in Model.AtRiskPreview)
+                {
+                    var slaText = ticket.Sla.Status.ToString();
+                    var slaClass = slaText == "Breached" ? "is-breached" : slaText == "AtRisk" ? "is-at-risk" : "";
+                    var topSignal = ticket.Signals.OrderByDescending(s => s.Severity).First();
+                    var topSevClass = topSignal.Severity.ToString().ToLowerInvariant() switch
+                    {
+                        "critical" => "crit",
+                        "high" => "high",
+                        "medium" => "med",
+                        _ => "low",
+                    };
+                    <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                        <div class="q-main">
+                            <div class="q-title">@ticket.Title</div>
+                            <div class="q-meta">
+                                <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                                <span>@topSignal.Headline</span>
+                                @if (ticket.Signals.Count > 1)
+                                {
+                                    <span class="why-secondary">(+@(ticket.Signals.Count - 1) more)</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="q-sev-col">
+                            <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
+                        </div>
+                        <div class="q-rail-col" aria-hidden="true">
+                            @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                        </div>
+                        <div class="q-sla" title="Deadline @ticket.Sla.DueAt.ToString("u")">
+                            <span class="q-sla__state">@FlowOps.Web.SlaDisplay.StatusLabel(ticket.Sla.Status)</span>
+                            @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
+                            {
+                                <span class="q-sla__time">@remaining</span>
+                            }
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+        <p class="page-actions">
+            <a class="btn" asp-page="/Tickets/AtRisk">View all @Model.AtRiskTotalCount at-risk item@(Model.AtRiskTotalCount == 1 ? "" : "s")</a>
+        </p>
+    </div>
+
+    @* Phase 29B: ONE two-column analytical grid (equal columns, rows share a height) so every edge lines up: volume | status, then deadline status | workload. *@
+    <div class="dashboard-charts">
         @* Phase 20 §3: server-aggregated ticket volume trend — the hero of this panel — a plain
            inline SVG polyline, no charting library, no JavaScript required. The <details> table
            below carries the identical data for screen readers, keyboard users, and anyone who
@@ -334,7 +336,7 @@
             @{ var totalCreated = Model.VolumeTrend.Sum(p => p.Count); }
             @if (totalCreated == 0)
             {
-                <p class="empty-state">No tickets were created in this period.</p>
+                <p class="empty-state">No tickets created in this period.</p>
             }
             else
             {
@@ -387,7 +389,7 @@
             @{ var statusTotal = Model.StatusBreakdown.Sum(s => s.Count); }
             @if (statusTotal == 0)
             {
-                <p class="empty-state">No tickets were created in this period.</p>
+                <p class="empty-state">No tickets created in this period.</p>
             }
             else
             {
@@ -405,9 +407,57 @@
                 </div>
             }
         </div>
-    </div>
 
-    <div class="dashboard-row-half">
+        @* Phase 20 §6: every ticket created in the period, classified by the existing
+           SlaPolicy.GetStatus — the same five states the ticket detail page itself shows, never a
+           second SLA calculation. Met/Within (good), Paused (neutral), AtRisk/Breached (needs
+           attention) get distinct tones, not a uniform palette, without collapsing the five
+           states into three. The population note keeps this panel's numbers from ever being
+           mistaken for the SLA Compliance KPI above — the two are deliberately different
+           populations (Step 4/11), never a second SLA definition. *@
+        <div class="panel">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Deadline status")); }
+            @if (Model.SlaBreakdown.Total == 0)
+            {
+                <p class="empty-state">No tickets created in this period.</p>
+            }
+            else
+            {
+                var slaMax = new[] { Model.SlaBreakdown.MetCount, Model.SlaBreakdown.WithinCount, Model.SlaBreakdown.PausedCount, Model.SlaBreakdown.AtRiskCount, Model.SlaBreakdown.BreachedCount }.Max();
+                <p class="panel__metric">
+                    Where the <span class="mono">@Model.SlaBreakdown.Total</span> ticket@(Model.SlaBreakdown.Total == 1 ? "" : "s") created in this period stand against their deadlines.
+                    "Deadlines met" above counts only tickets resolved in the last 90 days.
+                </p>
+                <div class="hbar-list" role="img" aria-label="Ticket counts by deadline status">
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Deadline met</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-ok @DashboardCharts.WidthClass(Model.SlaBreakdown.MetCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.MetCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">On track</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-info @DashboardCharts.WidthClass(Model.SlaBreakdown.WithinCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.WithinCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Paused</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-muted @DashboardCharts.WidthClass(Model.SlaBreakdown.PausedCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.PausedCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Deadline soon</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-warn @DashboardCharts.WidthClass(Model.SlaBreakdown.AtRiskCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.AtRiskCount</div>
+                    </div>
+                    <div class="hbar-row">
+                        <div class="hbar-row__label">Deadline missed</div>
+                        <div class="hbar-track"><div class="hbar-fill tone-danger @DashboardCharts.WidthClass(Model.SlaBreakdown.BreachedCount, slaMax)"></div></div>
+                        <div class="hbar-row__value">@Model.SlaBreakdown.BreachedCount</div>
+                    </div>
+                </div>
+            }
+        </div>
+
         @* Phase 20 §5: current open-ticket count per team — a present-tense snapshot (not scoped
            by the selected date range; see AnalyticsQueryService.GetTeamWorkloadBreakdownAsync's
            own doc comment) — restricted to the caller's own role scope, so an Agent or Viewer
@@ -436,56 +486,6 @@
                 </div>
             }
         </div>
-
-        @* Phase 20 §6: every ticket created in the period, classified by the existing
-           SlaPolicy.GetStatus — the same five states the ticket detail page itself shows, never a
-           second SLA calculation. Met/Within (good), Paused (neutral), AtRisk/Breached (needs
-           attention) get distinct tones, not a uniform palette, without collapsing the five
-           states into three. The population note keeps this panel's numbers from ever being
-           mistaken for the SLA Compliance KPI above — the two are deliberately different
-           populations (Step 4/11), never a second SLA definition. *@
-        <div class="panel">
-            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("SLA performance")); }
-            @if (Model.SlaBreakdown.Total == 0)
-            {
-                <p class="empty-state">No tickets were created in this period.</p>
-            }
-            else
-            {
-                var slaMax = new[] { Model.SlaBreakdown.MetCount, Model.SlaBreakdown.WithinCount, Model.SlaBreakdown.PausedCount, Model.SlaBreakdown.AtRiskCount, Model.SlaBreakdown.BreachedCount }.Max();
-                <p class="panel__metric">
-                    Current status of all <span class="mono">@Model.SlaBreakdown.Total</span> ticket@(Model.SlaBreakdown.Total == 1 ? "" : "s") created in this period, open or closed —
-                    a different population from the SLA Compliance KPI above, which tracks only tickets resolved in a fixed 90-day window.
-                </p>
-                <div class="hbar-list" role="img" aria-label="Ticket counts by SLA status">
-                    <div class="hbar-row">
-                        <div class="hbar-row__label">Met</div>
-                        <div class="hbar-track"><div class="hbar-fill tone-ok @DashboardCharts.WidthClass(Model.SlaBreakdown.MetCount, slaMax)"></div></div>
-                        <div class="hbar-row__value">@Model.SlaBreakdown.MetCount</div>
-                    </div>
-                    <div class="hbar-row">
-                        <div class="hbar-row__label">Within SLA</div>
-                        <div class="hbar-track"><div class="hbar-fill tone-info @DashboardCharts.WidthClass(Model.SlaBreakdown.WithinCount, slaMax)"></div></div>
-                        <div class="hbar-row__value">@Model.SlaBreakdown.WithinCount</div>
-                    </div>
-                    <div class="hbar-row">
-                        <div class="hbar-row__label">Paused</div>
-                        <div class="hbar-track"><div class="hbar-fill tone-muted @DashboardCharts.WidthClass(Model.SlaBreakdown.PausedCount, slaMax)"></div></div>
-                        <div class="hbar-row__value">@Model.SlaBreakdown.PausedCount</div>
-                    </div>
-                    <div class="hbar-row">
-                        <div class="hbar-row__label">At risk</div>
-                        <div class="hbar-track"><div class="hbar-fill tone-warn @DashboardCharts.WidthClass(Model.SlaBreakdown.AtRiskCount, slaMax)"></div></div>
-                        <div class="hbar-row__value">@Model.SlaBreakdown.AtRiskCount</div>
-                    </div>
-                    <div class="hbar-row">
-                        <div class="hbar-row__label">Breached</div>
-                        <div class="hbar-track"><div class="hbar-fill tone-danger @DashboardCharts.WidthClass(Model.SlaBreakdown.BreachedCount, slaMax)"></div></div>
-                        <div class="hbar-row__value">@Model.SlaBreakdown.BreachedCount</div>
-                    </div>
-                </div>
-            }
-        </div>
     </div>
 
     @* Phase 20C §12: mean resolution time (ResolvedAt - SlaStartedAt, identical to the KPI
@@ -500,7 +500,7 @@
         @{ var resolvedTotal = Model.ResolutionByWorkType.Sum(r => r.SampleCount); }
         @if (resolvedTotal == 0)
         {
-            <p class="empty-state">No tickets were resolved in this period.</p>
+            <p class="empty-state">No resolved tickets yet in this period.</p>
         }
         else
         {

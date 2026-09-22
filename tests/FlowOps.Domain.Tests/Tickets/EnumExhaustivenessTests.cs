@@ -43,8 +43,8 @@ public class EnumExhaustivenessTests
     }
 
     [Fact] // AUDIT-RULE-03
-    public void TicketEventType_HasExactlySixteenValues()
+    public void TicketEventType_HasExactlySeventeenValues()
     {
-        Assert.Equal(16, Enum.GetValues<TicketEventType>().Length);
+        Assert.Equal(17, Enum.GetValues<TicketEventType>().Length); // +SprintChanged (ADR-0029)
     }
 }

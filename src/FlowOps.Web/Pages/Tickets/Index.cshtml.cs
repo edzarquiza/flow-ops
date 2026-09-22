@@ -57,6 +57,17 @@ public sealed class IndexModel : PageModel
     /// validly request.</summary>
     public DateRangeFilter? DateRange { get; private set; }
 
+    /// <summary>Phase 29B: the Work Queue opens on unfinished work; this asks for Resolved and Closed
+    /// tickets as well. A KPI filter or a search already defines its own population, so both include
+    /// finished tickets without needing the switch.</summary>
+    [BindProperty(SupportsGet = true, Name = "showFinished")]
+    public bool ShowFinished { get; set; }
+
+    public bool IncludesFinished => ShowFinished || Filter != TicketQueueFilter.None || !string.IsNullOrWhiteSpace(Search);
+
+    /// <summary>The "Show finished" switch is only meaningful when neither a KPI filter nor a search is active.</summary>
+    public bool OffersFinishedSwitch => Filter == TicketQueueFilter.None && string.IsNullOrWhiteSpace(Search);
+
     public bool HasDateFilter => DateRangeOption != DateRangeOption.AllTime;
 
     public async Task<IActionResult> OnGetAsync(
@@ -88,7 +99,7 @@ public sealed class IndexModel : PageModel
             DateRange = requestedRange;
         }
 
-        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, DateField, DateRange, cancellationToken);
+        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, DateField, DateRange, IncludesFinished, cancellationToken);
         return Page();
     }
 }

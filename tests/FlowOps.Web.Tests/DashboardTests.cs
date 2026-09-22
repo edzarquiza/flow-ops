@@ -36,8 +36,8 @@ public sealed class DashboardTests : IClassFixture<FlowOpsWebApplicationFactory>
 
         // Exactly the four capped KPIs — CLAUDE.md §22.
         Assert.Contains("Open Work", html, StringComparison.Ordinal);
-        Assert.Contains("Overdue", html, StringComparison.Ordinal);
-        Assert.Contains("SLA Compliance", html, StringComparison.Ordinal);
+        Assert.Contains("Past due", html, StringComparison.Ordinal);
+        Assert.Contains("Deadlines met", html, StringComparison.Ordinal);
         Assert.Contains("Average Resolution Time", html, StringComparison.Ordinal);
         Assert.Contains("Current workload", html, StringComparison.Ordinal);
 
@@ -111,7 +111,7 @@ public sealed class DashboardTests : IClassFixture<FlowOpsWebApplicationFactory>
         var html = await response.Content.ReadAsStringAsync();
 
         Assert.Contains(">0<", html, StringComparison.Ordinal); // Open Work / Overdue render as 0, not blank
-        Assert.Contains("No data yet", html, StringComparison.Ordinal); // SLA/resolution-time honesty
+        Assert.Contains("No resolved tickets yet", html, StringComparison.Ordinal); // SLA/resolution-time honesty
         Assert.Contains("No open work in your scope right now.", html, StringComparison.Ordinal);
         // Scoped to where a computed number would actually render (element text / a percentage),
         // not the whole raw response — an opaque antiforgery token elsewhere on the page can

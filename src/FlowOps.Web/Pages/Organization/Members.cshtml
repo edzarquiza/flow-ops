@@ -17,7 +17,7 @@
             <p class="page-context">People and access in this organization.</p>
         </div>
         <div class="page-header__actions">
-            @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search members...", Model.Search))
+            @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search members...", Model.Search, new Dictionary<string, string?> { ["showInactive"] = Model.ShowInactive ? "true" : null }))
             <a class="btn-primary" href="#invite">Invite member</a>
         </div>
     </div>
@@ -45,6 +45,7 @@
 
 @* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
    list already uses — this table is the page's entire reason for existing. *@
+@await Html.PartialAsync("_ShowInactiveToggle", new FlowOps.Web.ShowInactiveToggleViewModel(Model.ShowInactive, Model.HiddenInactiveCount, "members", new Dictionary<string, string?> { ["search"] = Model.Search }))
 <div class="panel panel--focus">
     @if (Model.Members.Count == 0)
     {

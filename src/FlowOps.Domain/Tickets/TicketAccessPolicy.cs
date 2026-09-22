@@ -71,6 +71,16 @@ public static class TicketAccessPolicy
     /// because they implement two different documented rules that merely agree today, and
     /// collapsing them would let a change to one silently redefine the other (CLAUDE.md §2 rule 7).
     /// </remarks>
+    /// <summary>Planning a ticket into/out of a sprint (ADR-0029): Admin, or a Manager of the
+    /// ticket's team — the same authority as reassigning it. Agents and Viewers may not.</summary>
+    public static bool CanPlan(TicketAuthorizationSnapshot ticket, CurrentUser user) =>
+        user.Role switch
+        {
+            UserRole.Admin => true,
+            UserRole.Manager => user.ManagedTeamIds.Contains(ticket.TeamId),
+            _ => false,
+        };
+
     public static bool CanClose(TicketAuthorizationSnapshot ticket, CurrentUser user) =>
         user.Role switch
         {

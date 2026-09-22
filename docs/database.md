@@ -24,6 +24,7 @@ document. FlowOps extends `AspNetUsers` with additional columns on `ApplicationU
 | `job_title` | `text` | Yes | Descriptive only, no business rule depends on it |
 | `is_active` | `boolean` | No, default `true` | An inactive user cannot be an active team member (`TICKET-INV-03`) or hold assignment; also the mechanism both self-account deletion (Phase 17) and platform user deactivation (Phase 24, ADR-0023) use to stop authentication |
 | `primary_team_id` | `int` (FK → `teams.id`, `ON DELETE SET NULL`) | Yes | Primary team is informational; team *membership* (which drives authorization) is `team_members`, not this column |
+| `appearance` | `varchar(10)` | No, default `'Dark'` | Phase 29C: the user's own Dark / Light / System choice, stored as text (ADR-0009) with check `ck_users_appearance`. `System` is stored as itself, never as a resolved value. Existing users received `Dark` from the column default. |
 | `is_demo_protected` | `boolean` | No, default `false` | CLAUDE.md §14's demo-mode guard — true only for accounts a demo seeding run created |
 | `is_platform_admin` | `boolean` | No, default `false` | Phase 24 (ADR-0023): platform-wide authority, completely independent of `organization_memberships.role`. Set only by the `grant-platform-admin`/`revoke-platform-admin` startup CLI commands — never by any HTTP-reachable path |
 | `registration_approved_at` | `timestamptz` | Yes | Phase 24A (ADR-0024): `NULL` until a Platform Admin approves the account. Together with `is_active`/`registration_rejected_at` this derives the account's four-state status — both null = Pending (cannot authenticate), `registration_rejected_at` set = Rejected (cannot authenticate, terminal), `registration_approved_at` set + `is_active` = Active, `registration_approved_at` set + not `is_active` = Inactive. Set once by `PlatformUserService.ApproveUserAsync`, or immediately at creation for an account created through invitation acceptance. The `approve-account` startup CLI command sets it directly, the same trust tier as `grant-platform-admin` — the only way to approve the very first Platform Admin's own (otherwise Pending) account |
@@ -119,6 +120,32 @@ single global `UNIQUE (name)`, since two unrelated organizations must each be fr
 **Relationships:** `1:many` → `team_members`, `categories`, `tickets` (via `team_id`); `many:1` →
 `organizations`.
 
+## 5a. `sprints` (`SPRINT-INV-01`–`06`, Phase 26, ADR-0029)
+
+**Grain:** one row = one planning period of one project. Ticket membership is *not* a table: it is
+`tickets.sprint_id` (a ticket is in at most one sprint by construction), and every membership change
+is a `SprintChanged` `ticket_events` row.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `id` | `int identity` | No | PK |
+| `project_id` | `int` (FK → `projects.id`, `RESTRICT`) | No | A sprint belongs to exactly one project; the organization is reached through it |
+| `name` | `varchar(80)` | No | `SPRINT-INV-01` |
+| `start_date` | `date` | No | UTC calendar date, inclusive (`SPRINT-INV-02`) |
+| `end_date` | `date` | No | `CHECK (start_date <= end_date)` |
+| `status` | `text` (CHECK: `Planned`, `Active`, `Completed`, `Cancelled`) | No | `SPRINT-INV-03`/`07`; persisted as text (ADR-0009) |
+| `created_at` | `timestamptz` | No | |
+| `activated_at` | `timestamptz` | Yes | Set when started |
+| `completed_at` | `timestamptz` | Yes | `CHECK (status <> 'Completed' OR completed_at IS NOT NULL)` |
+| *(concurrency token)* | PostgreSQL `xmin` | — | Two users starting/completing the same sprint: the loser gets a concurrency conflict (ADR-0011) |
+
+**Constraints/indexes:** `UNIQUE (project_id) WHERE status = 'Active'` (`ux_sprints_one_active_per_project`
+— at most one current sprint per project, on every code path); `(project_id, start_date)` for the
+project's sprint list. Date-overlap between planned/active sprints is checked in `SprintService`, not
+by an exclusion constraint (`SPRINT-INV-05`).
+**Relationships:** `many:1` → `projects`; `1:many` → `tickets` (via `tickets.sprint_id`, `RESTRICT`,
+sprints are never hard-deleted).
+
 ## 3. `team_members`
 
 **Grain:** one row = one user's membership in one team, with a manager flag (CLAUDE.md §4.2:
@@ -175,6 +202,21 @@ becomes reusable without touching that row).
 **Relationships:** `1:many` → `tickets` (optional — `Ticket.ProjectId` is nullable); `many:1` →
 `organizations`.
 
+
+## 5b. `sprint_ticket_snapshots` (`SPRINT-INV-08`, Phase 26B, ADR-0030)
+
+**Grain:** one row = one ticket's frozen result in one *completed* sprint. Append-only: written in the
+same save as the sprint's completion, never updated or deleted. `tickets.sprint_id` is only the
+*current* planning membership and changes on carry-forward; this table is the historical record.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `sprint_id` | `int` (FK → `sprints.id`, `RESTRICT`) | No | PK part |
+| `ticket_id` | `int` (FK → `tickets.id`, `RESTRICT`) | No | PK part; `ix_sprint_ticket_snapshots_ticket` serves "which sprints did this ticket belong to" |
+| `status_at_completion` | `text` (CHECK: `Status` values) | No | |
+| `was_done` | `boolean` | No | Resolved or Closed at completion |
+
+`sprints` also gains `cancelled_at timestamptz NULL` and status `Cancelled` (`CHECK (status <> 'Cancelled' OR cancelled_at IS NOT NULL)`).
 ## 6. `sla_configurations`
 
 **Grain:** one row = one SLA target for a `(WorkType, Priority)` pair, or the `(null, Priority)`
@@ -228,6 +270,8 @@ referencing the configuration row. This is a deliberate absence of a relationshi
 | `updated_at` | `timestamptz` | No | `TICKET-INV-10` |
 | `planned_start_date` | `timestamptz` | Yes | Phase 25: a planning fact, not read by `SlaPolicy`/`AttentionPolicy` (`TICKET-INV-11`) |
 | `due_date` | `timestamptz` | Yes | Feeds the `Overdue` attention signal; also a planning fact, distinct from `sla_due_at` (`TICKET-INV-11`) |
+| `sprint_id` | `int` (FK → `sprints.id`, `RESTRICT`) | Yes | Phase 26 (ADR-0029): planning membership only — never read by workflow/SLA/attention. `NULL` for every pre-existing ticket. Partial index `ix_tickets_sprint WHERE sprint_id IS NOT NULL` serves the board and sprint counts |
+| `sprint_backlog` | `boolean` | No, default `false` | "Selected for the sprint, not yet pulled onto the board" (`TICKET-INV-13`). `CHECK (sprint_backlog = false OR sprint_id IS NOT NULL)` |
 | `sla_target_minutes` | `int` | No | Captured at clock-start; not a live FK to `sla_configurations` (`SLA-RULE-03`) |
 | `sla_started_at` | `timestamptz` | No | `SLA-RULE-05` |
 | `sla_due_at` | `timestamptz` | No | `SLA-RULE-05`, indexed — see §9 |
@@ -280,7 +324,7 @@ referencing the configuration row. This is a deliberate absence of a relationshi
 |---|---|---|---|
 | `id` | `int identity` | No | PK |
 | `ticket_id` | `int` (FK → `tickets.id`, `CASCADE`) | No | Child of the `Ticket` aggregate (`AUDIT-RULE-04`) |
-| `event_type` | `text` (CHECK: the 16 event types) | No | `AUDIT-RULE-03` |
+| `event_type` | `text` (CHECK: the 17 event types) | No | `AUDIT-RULE-03` |
 | `actor_user_id` | `uuid` (FK → `AspNetUsers.Id`, `RESTRICT`) | No | |
 | `occurred_at` | `timestamptz` | No | |
 | `field` | `text` | Yes | Populated for field-change events only |

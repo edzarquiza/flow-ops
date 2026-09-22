@@ -42,6 +42,12 @@ public sealed class FlowOpsDbContext : IdentityDbContext<ApplicationUser, Applic
 
     public DbSet<Project> Projects => Set<Project>();
 
+    /// <summary>ADR-0029: project planning periods. Ticket membership lives on <c>Ticket.SprintId</c>.</summary>
+    public DbSet<FlowOps.Domain.Planning.Sprint> Sprints => Set<FlowOps.Domain.Planning.Sprint>();
+
+    /// <summary>ADR-0030: each ticket's frozen result in a completed sprint (append-only).</summary>
+    public DbSet<FlowOps.Domain.Planning.SprintTicketSnapshot> SprintTicketSnapshots => Set<FlowOps.Domain.Planning.SprintTicketSnapshot>();
+
     public DbSet<SlaConfiguration> SlaConfigurations => Set<SlaConfiguration>();
 
     public DbSet<Ticket> Tickets => Set<Ticket>();

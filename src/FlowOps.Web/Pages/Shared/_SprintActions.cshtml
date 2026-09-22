@@ -1,0 +1,59 @@
+@using FlowOps.Domain.Planning
+@model FlowOps.Web.SprintActionsViewModel
+@* Start / complete / cancel for one sprint — only what its lifecycle allows, and only for a caller
+   who can manage sprints (an affordance; SprintService re-authorizes every one). Cancelling uses the
+   same zero-JS confirm pattern as removing a member (ADR-0030: cancelled sprints are kept, never
+   deleted). *@
+@if (Model.CanManage)
+{
+    <div class="sprint-actions">
+        @if (Model.Status == SprintStatus.Planned && !Model.HasActiveSprint)
+        {
+            <form method="post" asp-page-handler="StartSprint" asp-route-id="@Model.ProjectId">
+                <input type="hidden" name="sprintId" value="@Model.SprintId" />
+                <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                <button type="submit" class="btn">Start sprint</button>
+            </form>
+        }
+        @if (Model.Status == SprintStatus.Active)
+        {
+            @* Completing is final and freezes the sprint's results, so it asks first (same zero-JS
+               confirm as Cancel) and says plainly what happens to unfinished tickets. *@
+            <div class="confirm">
+                <input type="checkbox" id="confirm-complete-sprint-@Model.SprintId" class="confirm-toggle" />
+                <label for="confirm-complete-sprint-@Model.SprintId" class="btn confirm-trigger">Complete sprint</label>
+                <div class="confirm-panel">
+                    <p class="confirm-panel__question">Complete this sprint?</p>
+                    <p class="confirm-panel__detail">The sprint becomes completed and its results are kept as history. Unfinished tickets stay in this sprint's history — they are not moved automatically. You can move them to another sprint afterwards.</p>
+                    <div class="confirm-panel__actions">
+                        <form method="post" asp-page-handler="CompleteSprint" asp-route-id="@Model.ProjectId">
+                            <input type="hidden" name="sprintId" value="@Model.SprintId" />
+                            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                            <button type="submit" class="btn-primary">Yes, complete sprint</button>
+                        </form>
+                        <label for="confirm-complete-sprint-@Model.SprintId" class="btn">Keep sprint active</label>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (Model.Status == SprintStatus.Planned)
+        {
+            <div class="confirm">
+                <input type="checkbox" id="confirm-cancel-sprint-@Model.SprintId" class="confirm-toggle" />
+                <label for="confirm-cancel-sprint-@Model.SprintId" class="btn btn-quiet-danger confirm-trigger">Cancel sprint</label>
+                <div class="confirm-panel">
+                    <p class="confirm-panel__question">Cancel this sprint?</p>
+                    <p class="confirm-panel__detail">It stays in the sprint history as cancelled. Tickets planned into it are released back to the project (each change is recorded on the ticket).</p>
+                    <div class="confirm-panel__actions">
+                        <form method="post" asp-page-handler="CancelSprint" asp-route-id="@Model.ProjectId">
+                            <input type="hidden" name="sprintId" value="@Model.SprintId" />
+                            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                            <button type="submit" class="btn-caution">Yes, cancel sprint</button>
+                        </form>
+                        <label for="confirm-cancel-sprint-@Model.SprintId" class="btn">Keep sprint</label>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

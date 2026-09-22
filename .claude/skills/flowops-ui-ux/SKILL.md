@@ -21,7 +21,8 @@ glassmorphism, more than 4 charts on one page, a KPI card with no drill-through.
 ## Terminology
 
 Use: ticket, work item, requester, assignee, team, category, priority, SLA, resolution.
-**Never**: epic, sprint, story, story points, backlog, velocity, swimlane, burndown. A service
+Project planning (ADR-0029) also uses: sprint, sprint backlog, board.
+**Never**: epic, story, story points, velocity, sprint goal, swimlane, burndown. A service
 desk technician should never hit a word that assumes software-dev context.
 
 ## PageModel discipline

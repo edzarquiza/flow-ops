@@ -1,0 +1,157 @@
+@page "{id:int}"
+@using FlowOps.Application.Planning
+@using FlowOps.Domain.Planning
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.Pages.Projects.TicketsModel
+@{
+    ViewData["Title"] = $"{Model.View.Header.Name} — Tickets";
+    var projectId = Model.View.Header.ProjectId;
+    var result = Model.View.Tickets;
+
+    var routeValues = new Microsoft.AspNetCore.Routing.RouteValueDictionary
+    {
+        { "sprint", Model.SprintFilter == SprintScope.All ? null : Model.SprintFilter.ToString() },
+        { "status", Model.StatusFilter?.ToString() },
+        { "priority", Model.PriorityFilter?.ToString() },
+        { "assignee", string.IsNullOrEmpty(Model.AssigneeFilter) ? null : Model.AssigneeFilter },
+    };
+    routeValues["id"] = projectId;
+    // Where a row action returns to: this exact page, filters and page number kept.
+    var returnUrl = Url.Page("/Projects/Tickets", new { id = projectId, sprint = routeValues["sprint"], status = routeValues["status"], priority = routeValues["priority"], assignee = routeValues["assignee"], pageNumber = result.PageNumber });
+}
+@await Html.PartialAsync("_ProjectHeader", new FlowOps.Web.ProjectHeaderViewModel(Model.View.Header, "tickets"))
+@await Html.PartialAsync("_PlanningNotices", Model)
+
+<form method="get" class="filter-bar" aria-label="Ticket filters" data-autosubmit>
+    <div class="filter-bar__field">
+        <label for="sprint">Sprint</label>
+        <select id="sprint" name="sprint">
+            <option value="@SprintScope.All" selected="@(Model.SprintFilter == SprintScope.All)">All sprints</option>
+            <option value="@SprintScope.Current" selected="@(Model.SprintFilter == SprintScope.Current)">Current sprint</option>
+            <option value="@SprintScope.NoSprint" selected="@(Model.SprintFilter == SprintScope.NoSprint)">No sprint</option>
+            <option value="@SprintScope.Future" selected="@(Model.SprintFilter == SprintScope.Future)">Planned sprints</option>
+            <option value="@SprintScope.Completed" selected="@(Model.SprintFilter == SprintScope.Completed)">Completed sprints</option>
+        </select>
+    </div>
+    <div class="filter-bar__field">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+            <option value="">Any status</option>
+            @foreach (var status in Enum.GetValues<Status>())
+            {
+                <option value="@status" selected="@(Model.StatusFilter == status)">@FlowOps.Web.WorkflowRail.Label(status)</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__field">
+        <label for="assignee">Assignee</label>
+        <select id="assignee" name="assignee">
+            <option value="">Anyone</option>
+            <option value="none" selected="@(string.Equals(Model.AssigneeFilter, "none", StringComparison.OrdinalIgnoreCase))">Unassigned</option>
+            @foreach (var assignee in Model.View.Assignees)
+            {
+                <option value="@assignee.UserId" selected="@(string.Equals(Model.AssigneeFilter, assignee.UserId.ToString(), StringComparison.OrdinalIgnoreCase))">@assignee.DisplayName</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__field">
+        <label for="priority">Priority</label>
+        <select id="priority" name="priority">
+            <option value="">Any priority</option>
+            @foreach (var priority in Enum.GetValues<Priority>())
+            {
+                <option value="@priority" selected="@(Model.PriorityFilter == priority)">@priority</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__actions">
+        <button type="submit" class="btn">Apply</button>
+        @if (Model.HasFilter)
+        {
+            <a class="btn" asp-page="/Projects/Tickets" asp-route-id="@projectId">Reset</a>
+        }
+    </div>
+</form>
+<script src="~/js/dashboard-filters.js" asp-append-version="true"></script>
+
+@if (result.TotalCount == 0)
+{
+    <div class="panel panel--focus">
+        <p class="empty-state">
+            @(Model.HasFilter ? "No tickets match these filters." : "No tickets in this project yet. Attach a project when you create a ticket.")
+        </p>
+    </div>
+}
+else
+{
+    await Html.RenderPartialAsync("_Pagination", FlowOps.Web.PaginationViewModel.For("/Projects/Tickets", result, routeValues, "Project tickets pagination", FlowOps.Web.PaginationPlacement.Top));
+
+    <div class="panel panel--focus">
+        <div class="table-responsive">
+            <table class="plan-table plan-table--tickets">
+                <caption class="sr-only">Tickets in @Model.View.Header.Name</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Key</th>
+                        <th scope="col">Summary</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Priority</th>
+                        <th scope="col">Assignee</th>
+                        <th scope="col">Due</th>
+                        <th scope="col">Sprint</th>
+                        <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in result.Items)
+                    {
+                        var overdue = row.DueDate is { } due && due < DateTimeOffset.UtcNow && row.Status is not (Status.Resolved or Status.Closed);
+                        <tr>
+                            <td class="plan-table__key mono"><span class="q-ref">@row.Reference</span></td>
+                            <td class="plan-table__main"><a asp-page="/Tickets/Details" asp-route-id="@row.TicketId">@row.Title</a></td>
+                            <td data-label="Status"><span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(row.Status)">@FlowOps.Web.WorkflowRail.Label(row.Status)</span></td>
+                            <td data-label="Priority">@row.Priority</td>
+                            <td data-label="Assignee">@(row.AssigneeName ?? "—")</td>
+                            <td data-label="Due" class="mono">
+                                @if (row.DueDate is { } dueDate)
+                                {
+                                    <time datetime="@dueDate.ToString("O")" title="@dueDate.ToString("u")">@dueDate.ToString("MMM d")</time>
+                                    @if (overdue)
+                                    {
+                                        <span class="flag-text flag-text--danger">Past due</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="cell-muted">—</span>
+                                }
+                            </td>
+                            <td data-label="Sprint">
+                                @if (row.SprintId is not null && row.SprintStart is { } s && row.SprintEnd is { } e)
+                                {
+                                    <span class="plan-sprint plan-sprint--@row.SprintStatus.ToString()!.ToLowerInvariant()">
+                                        <span class="plan-sprint__name">@row.SprintName</span>
+                                        <span class="plan-sprint__meta">@FlowOps.Web.SprintDisplay.TicketSprintLabel(row.SprintStatus!.Value, row.SprintBacklog && row.Status is Status.Open or Status.Assigned) &middot; @FlowOps.Web.SprintDisplay.Range(s, e)</span>
+                                        @if (row.CarriedFromSprint is not null)
+                                        {
+                                            <span class="carried-note" title="Unfinished when @row.CarriedFromSprint was completed">Carried from @row.CarriedFromSprint</span>
+                                        }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="cell-muted">No sprint</span>
+                                }
+                            </td>
+                            <td class="plan-table__actions">
+                                @await Html.PartialAsync("_PlanningTicketMenu", new FlowOps.Web.PlanningMenuViewModel(projectId, row.TicketId, row.TeamId, row.RequesterId, row.AssigneeId, row.Status, row.SprintId, row.SprintBacklog, returnUrl!, Model.View.MoveTargets, Model.Caller))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    await Html.RenderPartialAsync("_Pagination", FlowOps.Web.PaginationViewModel.For("/Projects/Tickets", result, routeValues, "Project tickets pagination"));
+}

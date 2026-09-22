@@ -40,17 +40,17 @@ public static class AttentionPolicy
         if (slaStatus == SlaStatus.Breached)
         {
             var overdueBy = now - ticket.SlaDueAt;
-            signals.Add(new AttentionSignal(AttentionSignalCode.SlaBreached, AttentionSeverity.Critical, $"SLA breached {Format(overdueBy)} ago", now));
+            signals.Add(new AttentionSignal(AttentionSignalCode.SlaBreached, AttentionSeverity.Critical, $"Deadline missed {Format(overdueBy)} ago", now));
         }
         else if (slaStatus == SlaStatus.AtRisk)
         {
             var remaining = ticket.SlaDueAt - now;
-            signals.Add(new AttentionSignal(AttentionSignalCode.SlaAtRisk, AttentionSeverity.High, $"SLA breach in {Format(remaining)}", now));
+            signals.Add(new AttentionSignal(AttentionSignalCode.SlaAtRisk, AttentionSeverity.High, $"Deadline in {Format(remaining)}", now));
         }
 
         if (ticket.DueDate is { } dueDate && dueDate < now)
         {
-            signals.Add(new AttentionSignal(AttentionSignalCode.Overdue, AttentionSeverity.High, $"{Format(now - dueDate)} overdue", now));
+            signals.Add(new AttentionSignal(AttentionSignalCode.Overdue, AttentionSeverity.High, $"{Format(now - dueDate)} past due", now));
         }
 
         if (ticket.AssigneeId is null
@@ -73,7 +73,7 @@ public static class AttentionPolicy
 
         if (ticket.AssignmentChangeCount >= options.ChurnAssignmentChangeThreshold)
         {
-            signals.Add(new AttentionSignal(AttentionSignalCode.Churn, AttentionSeverity.Medium, $"{ticket.AssignmentChangeCount} reassignment events", now));
+            signals.Add(new AttentionSignal(AttentionSignalCode.Churn, AttentionSeverity.Medium, $"Reassigned {ticket.AssignmentChangeCount} times", now));
         }
 
         if (ticket.ReopenCount >= 1)
@@ -128,7 +128,8 @@ public static class AttentionPolicy
     {
         if (span.TotalDays >= 1)
         {
-            return $"{(int)span.TotalDays}d {span.Hours}h";
+            // Whole days read cleanly ("37d"); hours are shown only when they add information.
+            return span.Hours == 0 ? $"{(int)span.TotalDays}d" : $"{(int)span.TotalDays}d {span.Hours}h";
         }
 
         if (span.TotalHours >= 1)

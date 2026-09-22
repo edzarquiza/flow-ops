@@ -8,7 +8,7 @@
 (function () {
     "use strict";
 
-    var selects = document.querySelectorAll("[data-autosubmit] select");
+    var selects = document.querySelectorAll("[data-autosubmit] select, [data-autosubmit] input[type=checkbox]");
     for (var i = 0; i < selects.length; i++) {
         selects[i].addEventListener("change", function () {
             this.form.submit();

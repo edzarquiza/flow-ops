@@ -1,0 +1,182 @@
+@page "{id:int}/{sprintId:int}"
+@using FlowOps.Application.Planning
+@using FlowOps.Domain.Planning
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.Pages.Projects.SprintDetailModel
+@{
+    var d = Model.Detail;
+    var projectId = d.Header.ProjectId;
+    var sprint = d.Sprint;
+    ViewData["Title"] = $"{d.Header.Name} — {sprint.Name}";
+    var returnUrl = Url.Page("/Projects/SprintDetail", new { id = projectId, sprintId = sprint.SprintId })!;
+    var isCompleted = sprint.Status == SprintStatus.Completed;
+    // Only tickets still sitting in this completed sprint (not yet carried on) and not finished.
+    var carryable = isCompleted
+        ? d.Unfinished.Where(t => t.CurrentSprintId == sprint.SprintId && t.CurrentStatus is not (Status.Resolved or Status.Closed)).ToList()
+        : new List<SprintTicketRow>();
+}
+@await Html.PartialAsync("_ProjectHeader", new FlowOps.Web.ProjectHeaderViewModel(d.Header, "sprints"))
+@await Html.PartialAsync("_PlanningNotices", Model)
+
+<p class="page-crumb"><a class="text-link" asp-page="/Projects/Sprints" asp-route-id="@projectId">&larr; All sprints</a></p>
+
+<div class="sprint-strip">
+    <span class="status-badge status-badge--compact @FlowOps.Web.SprintDisplay.StatusBadgeClass(sprint.Status)">@FlowOps.Web.SprintDisplay.StatusLabel(sprint.Status)</span>
+    <span class="sprint-strip__name">@sprint.Name</span>
+    <span class="sprint-strip__dates mono">@FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)</span>
+    <span class="sprint-strip__spacer"></span>
+    @await Html.PartialAsync("_SprintActions", new FlowOps.Web.SprintActionsViewModel(projectId, sprint.SprintId, sprint.Status, Model.CanManageSprints, d.ActiveSprint is not null, returnUrl))
+</div>
+
+<dl class="sprint-stats">
+    <div><dd class="mono">@sprint.TotalTickets</dd><dt>total</dt></div>
+    <div><dd class="mono">@sprint.DoneTickets</dd><dt>done</dt></div>
+    <div><dd class="mono">@sprint.UnfinishedTickets</dd><dt>not completed</dt></div>
+</dl>
+
+@if (isCompleted && !d.IsSnapshot && sprint.TotalTickets > 0)
+{
+    <p class="board-note">This sprint was completed before completion snapshots existed, so it shows where its tickets are now.</p>
+}
+
+@if (sprint.Status == SprintStatus.Cancelled)
+{
+    <div class="panel panel--focus">
+        <div class="empty-state">
+            <p class="empty-state__title">Cancelled sprint</p>
+            <p>This sprint was cancelled before it started. It is kept as a record; nothing was planned or completed in it.</p>
+        </div>
+    </div>
+}
+else if (sprint.TotalTickets == 0)
+{
+    <div class="panel panel--focus">
+        <div class="empty-state">
+            <p class="empty-state__title">No tickets in this sprint</p>
+            <p>@(sprint.Status == SprintStatus.Planned ? "Plan tickets into it from the project's Tickets page." : "No tickets you can see belonged to this sprint.")</p>
+        </div>
+    </div>
+}
+else
+{
+    @* Both lists open tickets on the existing Ticket Detail page. *@
+    <div class="panel-stack">
+    <section class="panel panel--focus" aria-labelledby="sprint-done">
+        <h2 class="panel__title" id="sprint-done">Completed <span class="mono cell-muted">@d.Done.Count</span></h2>
+        @if (d.Done.Count == 0)
+        {
+            <p class="empty-state">Nothing was completed in this sprint.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="plan-table plan-table--wide">
+                    <caption class="sr-only">Tickets completed in this sprint</caption>
+                    <thead><tr><th scope="col">Key</th><th scope="col">Summary</th><th scope="col">Status</th><th scope="col">Assignee</th><th scope="col">Due</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in d.Done)
+                        {
+                            <tr>
+                                <td class="plan-table__key"><span class="q-ref">@t.Reference</span></td>
+                                <td class="plan-table__main"><a asp-page="/Tickets/Details" asp-route-id="@t.TicketId">@t.Title</a></td>
+                                <td data-label="Status"><span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(t.CurrentStatus)">@FlowOps.Web.WorkflowRail.Label(t.CurrentStatus)</span></td>
+                                <td data-label="Assignee">@(t.AssigneeName ?? "—")</td>
+                                <td data-label="Due" class="mono">@(t.DueDate is { } due ? due.ToString("MMM d") : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="panel panel--focus" aria-labelledby="sprint-unfinished">
+        <div class="panel__head">
+            <h2 class="panel__title" id="sprint-unfinished">Not completed <span class="mono cell-muted">@d.Unfinished.Count</span></h2>
+            @if (Model.CanManageSprints && isCompleted && carryable.Count > 0)
+            {
+                @if (d.ActiveSprint is not null)
+                {
+                    <form method="post" asp-page-handler="CarryForward" asp-route-id="@projectId">
+                        <input type="hidden" name="sprintId" value="@sprint.SprintId" />
+                        <input type="hidden" name="returnUrl" value="@returnUrl" />
+                        <button type="submit" class="btn">Move @carryable.Count unfinished to current sprint</button>
+                    </form>
+                }
+                else
+                {
+                    <span class="cell-muted">Start a sprint to carry these forward.</span>
+                }
+            }
+        </div>
+        @if (d.Unfinished.Count == 0)
+        {
+            <p class="empty-state">Everything in this sprint was completed.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="plan-table plan-table--wide">
+                    <caption class="sr-only">Tickets not completed in this sprint</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Key</th><th scope="col">Summary</th><th scope="col">@(isCompleted ? "At completion" : "Status")</th>
+                            @if (isCompleted)
+                            {
+                                <th scope="col">Now</th>
+                            }
+                            <th scope="col">Assignee</th><th scope="col">Due</th><th scope="col"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in d.Unfinished)
+                        {
+                            var stillHere = t.CurrentSprintId == sprint.SprintId;
+                            var finishedSince = t.CurrentStatus is Status.Resolved or Status.Closed;
+                            <tr>
+                                <td class="plan-table__key"><span class="q-ref">@t.Reference</span></td>
+                                <td class="plan-table__main"><a asp-page="/Tickets/Details" asp-route-id="@t.TicketId">@t.Title</a></td>
+                                <td data-label="@(isCompleted ? "At completion" : "Status")"><span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(t.StatusInSprint)">@FlowOps.Web.WorkflowRail.Label(t.StatusInSprint)</span></td>
+                                @if (isCompleted)
+                                {
+                                    <td data-label="Now">
+                                        @if (finishedSince)
+                                        {
+                                            <span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(t.CurrentStatus)">@FlowOps.Web.WorkflowRail.Label(t.CurrentStatus)</span>
+                                        }
+                                        else if (stillHere)
+                                        {
+                                            <span class="cell-muted">Still here — not moved on</span>
+                                        }
+                                        else if (t.CurrentSprintName is not null)
+                                        {
+                                            <span>Moved to @t.CurrentSprintName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="cell-muted">No sprint</span>
+                                        }
+                                    </td>
+                                }
+                                <td data-label="Assignee">@(t.AssigneeName ?? "—")</td>
+                                <td data-label="Due" class="mono">@(t.DueDate is { } due ? due.ToString("MMM d") : "—")</td>
+                                <td class="plan-table__actions">
+                                    @if (Model.CanManageSprints && isCompleted && stillHere && !finishedSince && d.ActiveSprint is not null)
+                                    {
+                                        <form method="post" asp-page-handler="MoveToSprint" asp-route-id="@projectId">
+                                            <input type="hidden" name="ticketId" value="@t.TicketId" />
+                                            <input type="hidden" name="sprintId" value="@d.ActiveSprint.SprintId" />
+                                            <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                            <button type="submit" class="btn">Move to current sprint</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+    </div>
+}

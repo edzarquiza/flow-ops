@@ -1,0 +1,133 @@
+@page "{id:int}"
+@using FlowOps.Domain.Planning
+@model FlowOps.Web.Pages.Projects.DetailsModel
+@{
+    ViewData["Title"] = $"{Model.Overview.Header.Name} — Overview";
+    var active = Model.Overview.ActiveSprint;
+    var progress = Model.Overview.Progress;
+    var projectId = Model.Overview.Header.ProjectId;
+    var returnUrl = Url.Page("/Projects/Details", new { id = projectId })!;
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var recent = Model.Overview.Sprints.Take(3).ToList();
+
+    // A rejected Create Sprint submit keeps what the user typed (ProjectPlanningPageModel.SprintForm*).
+    // Suggested values start after the last planned/active sprint (so the first submit does not
+    // collide with it) and run two weeks; every field stays editable.
+    var suggested = FlowOps.Application.Planning.SprintDefaults.Suggest(Model.Overview.Sprints, today);
+    var formName = Model.SprintFormName ?? suggested.Name;
+    var formStart = Model.SprintFormStartIso ?? suggested.Start.ToString("yyyy-MM-dd");
+    var formEnd = Model.SprintFormEndIso ?? suggested.End.ToString("yyyy-MM-dd");
+}
+@await Html.PartialAsync("_ProjectHeader", new FlowOps.Web.ProjectHeaderViewModel(Model.Overview.Header, "overview"))
+@await Html.PartialAsync("_PlanningNotices", Model)
+
+<div class="plan-grid@(Model.CanManageSprints ? "" : " plan-grid--single")">
+        <div class="panel panel--focus">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Current sprint")); }
+            @if (active is null)
+            {
+                <div class="empty-state">
+                    <p class="empty-state__title">No active sprint</p>
+                    <p>Create a sprint to start planning this project's work.</p>
+                </div>
+            }
+            else
+            {
+                <div class="sprint-strip">
+                    <span class="status-badge status-badge--compact status-badge--teal">Active</span>
+                    <span class="sprint-strip__name">@active.Name</span>
+                    <span class="sprint-strip__dates mono">@FlowOps.Web.SprintDisplay.Range(active.StartDate, active.EndDate)</span>
+                </div>
+                <dl class="sprint-stats">
+                    <div><dd class="mono">@progress!.Total</dd><dt>tickets</dt></div>
+                    <div><dd class="mono">@progress.Backlog</dd><dt>planned</dt></div>
+                    <div><dd class="mono">@progress.InProgress</dd><dt>in progress</dt></div>
+                    <div><dd class="mono">@progress.Pending</dd><dt>pending</dt></div>
+                    <div><dd class="mono">@progress.Done</dd><dt>done</dt></div>
+                </dl>
+                <div class="page-actions">
+                    <a class="btn-primary" asp-page="/Projects/Board" asp-route-id="@projectId">View board</a>
+                    <a class="btn" asp-page="/Projects/Tickets" asp-route-id="@projectId">View tickets</a>
+                </div>
+            }
+            @* Not in any sprint: the same "No sprint" filter the Tickets page offers, so the number and the list agree. *@
+            <p class="panel__foot">
+                @if (Model.Overview.UnplannedTickets > 0)
+                {
+                    <a class="text-link" asp-page="/Projects/Tickets" asp-route-id="@projectId" asp-route-sprint="@FlowOps.Application.Planning.SprintScope.NoSprint">@Model.Overview.UnplannedTickets ticket@(Model.Overview.UnplannedTickets == 1 ? "" : "s") not in a sprint &rarr;</a>
+                }
+                else
+                {
+                    <span class="cell-muted">Every ticket is in a sprint.</span>
+                }
+            </p>
+        </div>
+
+        <div class="panel panel--focus plan-grid__wide">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Recent sprints")); }
+            @if (recent.Count == 0)
+            {
+                <p class="empty-state">No sprints yet.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="plan-table">
+                        <caption class="sr-only">The most recent sprints in this project</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Sprint</th>
+                                <th scope="col">Dates</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Tickets</th>
+                                <th scope="col"><span class="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sprint in recent)
+                            {
+                                <tr>
+                                    <td class="plan-table__main"><a asp-page="/Projects/SprintDetail" asp-route-id="@projectId" asp-route-sprintId="@sprint.SprintId">@sprint.Name</a></td>
+                                    <td data-label="Dates" class="mono cell-muted">@FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)</td>
+                                    <td data-label="Status"><span class="status-badge status-badge--compact @FlowOps.Web.SprintDisplay.StatusBadgeClass(sprint.Status)">@FlowOps.Web.SprintDisplay.StatusLabel(sprint.Status)</span></td>
+                                    <td data-label="Tickets" class="mono">@sprint.TicketCount</td>
+                                    <td class="plan-table__actions">
+                                        @await Html.PartialAsync("_SprintActions", new FlowOps.Web.SprintActionsViewModel(projectId, sprint.SprintId, sprint.Status, Model.CanManageSprints, active is not null, returnUrl))
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="panel__foot"><a class="text-link" asp-page="/Projects/Sprints" asp-route-id="@projectId">View all sprints &rarr;</a></p>
+            }
+        </div>
+
+    @if (Model.CanManageSprints)
+    {
+        <div class="panel panel--focus">
+            @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Create sprint")); }
+            @* Native inputs, no JS. The sprint starts Planned; start it when the team is ready.
+               Dates are UTC calendar dates and must not overlap another planned or active sprint. *@
+            <form method="post" asp-page-handler="CreateSprint" asp-route-id="@projectId">
+                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                <div class="field">
+                    <label for="sprint-name">Name<span class="field-required" aria-hidden="true">*</span></label>
+                    <input id="sprint-name" name="name" type="text" maxlength="80" required value="@formName" />
+                </div>
+                <div class="field-grid">
+                    <div class="field">
+                        <label for="sprint-start">Start<span class="field-required" aria-hidden="true">*</span></label>
+                        <input id="sprint-start" name="start" type="date" required value="@formStart" />
+                    </div>
+                    <div class="field">
+                        <label for="sprint-end">End<span class="field-required" aria-hidden="true">*</span></label>
+                        <input id="sprint-end" name="end" type="date" required value="@formEnd" />
+                    </div>
+                </div>
+                <p class="field-hint">Dates are UTC. Sprints in one project can't overlap.</p>
+                <button type="submit" class="btn-primary">Create sprint</button>
+            </form>
+        </div>
+    }
+</div>

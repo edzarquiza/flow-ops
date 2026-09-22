@@ -254,6 +254,8 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<AttentionOpti
 
 // Phase 8 attention/at-risk read path.
 builder.Services.AddScoped<AttentionQueryService>();
+builder.Services.AddScoped<FlowOps.Application.Planning.ProjectPlanningQueryService>();
+builder.Services.AddScoped<FlowOps.Application.Planning.SprintService>();
 
 // Phase 10 dashboard/analytics read path.
 builder.Services.AddScoped<AnalyticsQueryService>();

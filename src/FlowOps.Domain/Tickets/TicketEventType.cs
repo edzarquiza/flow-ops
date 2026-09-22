@@ -1,7 +1,7 @@
 namespace FlowOps.Domain.Tickets;
 
 /// <summary>
-/// Rule AUDIT-RULE-03. Exactly the sixteen event types named in docs/domain-model.md.
+/// Rule AUDIT-RULE-03. Exactly the seventeen event types named in docs/domain-model.md.
 /// <see cref="SlaRecalculated"/> exists because AUDIT-RULE-03 requires the type, but no method
 /// appends it standalone: a priority change folds its SLA recompute into the single
 /// <see cref="PriorityChanged"/> event, since TICKET-INV-09 permits exactly one event per method
@@ -25,4 +25,5 @@ public enum TicketEventType
     Reopened,
     Closed,
     CommentAdded,
+    SprintChanged,
 }

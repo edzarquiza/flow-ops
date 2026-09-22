@@ -30,15 +30,15 @@ public sealed partial class TicketSlaPagesTests : IClassFixture<FlowOpsWebApplic
         var detail = await detailResponse.Content.ReadAsStringAsync();
 
         // Badge-fix pass: SLA state is now a plain <h3>SLA</h3> panel (sla-state text directly
-        // beneath it), not a separately-labelled "SLA status" row.
-        Assert.Contains(">SLA<", detail, StringComparison.Ordinal);
+        // beneath it), not a separately-labelled "SLA status" row. Phase 28B: worded as "Service deadline".
+        Assert.Contains(">Service deadline<", detail, StringComparison.Ordinal);
         // Freshly created and well inside its target, so the live branch is Within.
-        Assert.Contains("Within", detail, StringComparison.Ordinal);
+        Assert.Contains("On track", detail, StringComparison.Ordinal);
         // The seeded ticket is High priority: the 480-minute default row (SLA-RULE-02).
         Assert.Contains("480 minutes", detail, StringComparison.Ordinal);
         Assert.Contains("Paused", detail, StringComparison.Ordinal);
         Assert.Contains("0 minutes", detail, StringComparison.Ordinal);
-        Assert.Contains("Due ", detail, StringComparison.Ordinal);
+        Assert.Contains("Deadline ", detail, StringComparison.Ordinal);
         // Remaining is rendered as a relative duration, e.g. "7h 59m left".
         Assert.Matches(@"\d+[dhm][^<]*left", detail);
 
@@ -51,7 +51,7 @@ public sealed partial class TicketSlaPagesTests : IClassFixture<FlowOpsWebApplic
         // Phase 11: Work Queue rows are composed anchors (.q-row), not a <table> — the SLA state
         // renders in its own dedicated element rather than a column header.
         Assert.Contains("q-sla__state", queue, StringComparison.Ordinal);
-        Assert.Contains("Within", queue, StringComparison.Ordinal);
+        Assert.Contains("On track", queue, StringComparison.Ordinal);
         Assert.Matches(@"\d+[dhm][^<]*left", queue);
 
         // Status is carried as text, and the absolute deadline is available in a title attribute
@@ -73,11 +73,11 @@ public sealed partial class TicketSlaPagesTests : IClassFixture<FlowOpsWebApplic
         Assert.Equal(HttpStatusCode.OK, queueResponse.StatusCode);
 
         var queue = await queueResponse.Content.ReadAsStringAsync();
-        Assert.Contains("No tickets are visible to you right now", queue, StringComparison.Ordinal);
-        Assert.DoesNotContain("Within", queue, StringComparison.Ordinal);
+        Assert.Contains("No active work right now", queue, StringComparison.Ordinal);
+        Assert.DoesNotContain("On track", queue, StringComparison.Ordinal);
         Assert.DoesNotContain("left", queue, StringComparison.Ordinal);
     }
 
-    [GeneratedRegex("""title="SLA due \d{4}-\d{2}-\d{2}""")]
+    [GeneratedRegex("""title="Deadline \d{4}-\d{2}-\d{2}""")]
     private static partial Regex SlaTitlePattern();
 }

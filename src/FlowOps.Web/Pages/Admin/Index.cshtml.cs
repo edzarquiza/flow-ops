@@ -41,6 +41,13 @@ public sealed class IndexModel : PageModel
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
+    /// <summary>Phase 29C: a view choice (<c>?showInactive=true</c>), off by default. It only hides or shows
+    /// rows the caller may already see; it changes no lifecycle state and no authorization.</summary>
+    [BindProperty(SupportsGet = true, Name = "showInactive")]
+    public bool ShowInactive { get; set; }
+
+    public int HiddenInactiveCount { get; private set; }
+
     public IReadOnlyList<TeamListItem> Teams { get; private set; } = [];
 
     public string? StatusMessage { get; set; }
@@ -57,7 +64,7 @@ public sealed class IndexModel : PageModel
             return Forbid();
         }
 
-        Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+        Teams = ApplyInactiveFilter(await _teamService.GetTeamsAsync(user, cancellationToken));
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
@@ -72,7 +79,7 @@ public sealed class IndexModel : PageModel
 
         if (!ModelState.IsValid)
         {
-            Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+            Teams = ApplyInactiveFilter(await _teamService.GetTeamsAsync(user, cancellationToken));
             return Page();
         }
 
@@ -80,7 +87,7 @@ public sealed class IndexModel : PageModel
         if (!teamResult.Succeeded)
         {
             ModelState.AddModelError(nameof(Input.TeamName), teamResult.Error!);
-            Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+            Teams = ApplyInactiveFilter(await _teamService.GetTeamsAsync(user, cancellationToken));
             return Page();
         }
 
@@ -91,7 +98,7 @@ public sealed class IndexModel : PageModel
         if (!categoryResult.Succeeded)
         {
             ModelState.AddModelError(nameof(Input.CategoryName), categoryResult.Error!);
-            Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+            Teams = ApplyInactiveFilter(await _teamService.GetTeamsAsync(user, cancellationToken));
             return Page();
         }
 
@@ -100,7 +107,7 @@ public sealed class IndexModel : PageModel
         // instance, and StatusMessage (a plain property, not TempData) would not survive it, the
         // same lesson the Web-layer team-membership tests caught for Admin/Teams/Details.cshtml.cs.
         Input = new InputModel();
-        Teams = await _teamService.GetTeamsAsync(user, cancellationToken);
+        Teams = ApplyInactiveFilter(await _teamService.GetTeamsAsync(user, cancellationToken));
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
     }
@@ -118,6 +125,12 @@ public sealed class IndexModel : PageModel
 
         var next = SetupSteps.FirstIncomplete(status);
         return next is null ? null : new SetupNextStepViewModel(next);
+    }
+
+    private IReadOnlyList<TeamListItem> ApplyInactiveFilter(IReadOnlyList<TeamListItem> all)
+    {
+        HiddenInactiveCount = ShowInactive ? 0 : all.Count(x => !x.IsActive);
+        return ShowInactive ? all : all.Where(x => x.IsActive).ToList();
     }
 
     public sealed class InputModel

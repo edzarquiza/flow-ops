@@ -33,7 +33,7 @@ namespace FlowOps.Web.Pages;
 public sealed class IndexModel : PageModel
 {
     /// <summary>How many at-risk tickets the dashboard previews before linking to the full queue.</summary>
-    public const int AtRiskPreviewCount = 5;
+    public const int AtRiskPreviewCount = 3;
 
     private readonly CurrentUserAccessor _currentUserAccessor;
     private readonly PlatformUserAccessor _platformUserAccessor;

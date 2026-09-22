@@ -1,3 +1,4 @@
+using FlowOps.Domain.Accounts;
 using Microsoft.AspNetCore.Identity;
 
 namespace FlowOps.Infrastructure.Identity;
@@ -34,6 +35,9 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     /// UI, no self-service path, ever writes this flag.
     /// </summary>
     public bool IsPlatformAdmin { get; set; }
+
+    /// <summary>Phase 29C: this user's own Dark / Light / System choice. Defaults to Dark.</summary>
+    public AppearancePreference Appearance { get; set; } = AppearancePreference.Dark;
 
     /// <summary>
     /// Phase 24A (ADR-0024): <see langword="null"/> until a Platform Admin approves this account —

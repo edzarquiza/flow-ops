@@ -1,0 +1,9 @@
+@model FlowOps.Web.Pages.Projects.ProjectPlanningPageModel
+@if (Model.PlanningError is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.PlanningError, FlowOps.Web.NoticeTone.Danger, Urgent: true));
+}
+@if (Model.PlanningNotice is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.PlanningNotice));
+}

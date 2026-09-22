@@ -49,7 +49,11 @@ FlowOps answers, for a specific logged-in person:
 
 ### FlowOps is not
 
-- a Jira clone (no epics, sprints, story points, velocity, backlog grooming, burndown)
+- a Jira clone. **Product-scope update (Phase 26, ADR-0029):** lightweight *project planning* is now
+  in scope — projects, weekly sprints, a sprint backlog, a project board, and a project ticket
+  planning list, all layered on the one existing ticket workflow. Still out of scope: epics, story
+  points, estimation, velocity, burndown, scrum ceremonies, releases/versions, components, subtasks,
+  and dependency graphs. (Board drag-and-drop was added in Phase 26B, ADR-0030, as a mouse-only enhancement over explicit actions.)
 - a generic admin dashboard (no decorative KPI cards, no charts without a decision attached)
 - a chat product (comments are an operational record, not messaging)
 - a developer tool (see §2)
@@ -60,8 +64,10 @@ FlowOps answers, for a specific logged-in person:
 able to use every module without translation. This has concrete consequences:
 
 - **Terminology is operational, not engineering.** Use: ticket, work item, requester, assignee, team,
-  category, priority, due date, SLA, resolution. **Banned in UI, DB, code, and docs:** epic, sprint,
-  story, story points, backlog, velocity, sprint goal, groomed, swimlane, burndown.
+  category, priority, due date, SLA, resolution — and, for project planning (ADR-0029): sprint,
+  sprint backlog, board. **Banned in UI, DB, code, and docs:** epic, story, story points, velocity,
+  sprint goal, groomed, swimlane, burndown. ("Backlog" only ever means the *sprint* backlog — tickets
+  selected for a sprint but not yet pulled onto the board — never "every open ticket".)
 - The default seeded content, the example categories, and the empty-state copy are IT-support
   flavoured (VPN, password reset, laptop hardware, access provisioning, printer, outage).
 - Development, QA, project, and business-operations work is supported by the **same model** — via
@@ -725,6 +731,19 @@ an information-dense, form-and-table business application; this is what Razor Pa
     such component must still degrade to a plain, fully functional native `<select>` with
     JavaScript disabled — never broken, only less styled. This is the one deliberate carve-out;
     it does not extend to forms, workflow actions, or confirmations, which stay zero-JS.
+  - **Exception (ADR-0030):** two further, equally narrow carve-outs, both pure progressive
+    enhancement over server-rendered pages that work without them: (1) `row-menu.js` — action menus
+    are native `<details>` elements, and a native `<details>` cannot close its siblings, on outside
+    click, or on Escape, so this small file adds exactly that; (2) `board-dnd.js` — mouse
+    drag-and-drop on the project sprint board using the browser's native drag events (no library).
+    Drag-and-drop must never be the only way to do anything: every drag has an explicit menu action,
+    a drop only submits the page's real form (the server plans, authorizes, and re-renders — nothing
+    is applied optimistically), and it never decides a transition itself. Neither extends to any
+    other feature.
+  - **Exception (ADR-0031):** `appearance-preview.js` — on Profile & Settings only, it sets `<html data-theme>`
+    when a radio changes so the user can preview Light/Dark/System before saving. It is not the source of
+    truth (the server renders the saved theme on every request, so there is no flash and no inline
+    script), stores nothing, and the form works identically with JavaScript disabled.
 - CSS: locally hosted Bootstrap 5 + `flowops.css` with design tokens for status/priority/SLA colour
   semantics. **No CDN links** (CSP, offline dev, availability). **No Node build step.**
 - Charts: Chart.js, locally hosted, data supplied as a JSON payload from the PageModel. Maximum four
@@ -839,38 +858,54 @@ Three distinct tiers — do not collapse them:
 
 ## 14. Demo data & personas
 
-Seeding runs at startup when `FlowOps__Demo__Enabled=true`, idempotent (skips if tickets exist),
-inside a transaction, logged.
+Seeding runs at startup when `FlowOps__Demo__Enabled=true` (and via `init-database`), inside a
+transaction, logged. **Idempotent, keyed on the demo organization:** if "Demo Organization" already
+exists the seeder does nothing — it never adds to, edits, or removes an existing database.
 
-**Volume:** 5 teams · 25 users · 8 projects · ~600 tickets · ~1500 comments · full history.
+**Principle: the smallest dataset that demonstrates the product well.** The demo tells one coherent
+story; it is not a load test. Volume: **1 organization · 4 users · 2 teams · 4 categories · 2 projects ·
+3 sprints · 22 tickets**, a handful of hand-written comments. No random or generated tickets, no filler
+comments, no cancelled sprint.
 
-**Composition:** IT Support (~45%), Development (~20%), QA (~10%), Project delivery (~15%), Business
-Operations (~10%). Teams: *Service Desk*, *IT Infrastructure*, *Application Support*, *Platform
-Engineering*, *Business Operations*.
+**Structure:**
+
+- Teams: *Service Desk*, *Application Support*. Every persona is a member of both.
+- Project **Laptop Refresh 2026** (the full planning demo): Sprint 1 *Completed* (6 tickets: 4 done,
+  2 unfinished, frozen in snapshots) → explicit carry-forward of the 2 unfinished → Sprint 2 *Active*
+  (2 carried + 7 new = 9: Backlog 2 · Open 2 · In progress 2 · Pending 1 · Done 2) · Sprint 3 *Planned*
+  (3 tickets).
+- Project **Billing Portal Stabilization**: 4 ordinary tickets, no sprints (a project is useful without
+  sprint planning).
+- 2 tickets belong to no project.
 
 **Requirements that make the demo actually demonstrate something:**
 
-- Timestamps are **relative to seed time**, not absolute. Freshly deployed or seeded months later, the
-  dashboard always shows live breaches, at-risk items minutes from breach, and a meaningful 90-day
-  trend. Absolute dates would make the demo dead on arrival.
-- Deterministic: fixed RNG seed, so the same data set is reproducible for screenshots and tests.
-- Every signal in §9.1 has at least three examples. SLA compliance lands around 80–88% — a credible
-  number, neither perfect nor broken.
-- Resolved tickets carry realistic resolution codes and notes; history reflects plausible paths
-  including reassignments and reopens.
-- **Seeded tickets are created through the domain methods**, not by inserting rows that bypass
-  invariants. If the seeder cannot produce a state through legal transitions, the state is illegal and
-  the seeder is right to fail.
+- Timestamps are **relative to seed time**, not absolute, so a fresh seed always looks current.
+- **Deterministic:** no randomness at all — fixed titles, statuses, and offsets from the seed moment.
+- SLA and attention signals are **genuine**, produced by backdated timestamps through the normal
+  services, never set as flags. The durable ones (SLA breached, Overdue, Unassigned urgent, Stalled,
+  Aging, Reopened) only get older, so they stay true whenever the demo is opened. The one "SLA at risk"
+  ticket is a short-lived bonus (there is no scheduler, ADR-0006, and none was added for the demo).
+- **Everything goes through the domain path** (`TicketService`, `SprintService`, including
+  `CompleteSprintAsync` snapshots and `CarryForwardAsync`), never raw inserts that bypass invariants. If
+  the seeder cannot produce a state through legal transitions, the state is illegal and the seeder is
+  right to fail.
 
-**Personas** (credentials supplied via environment variables, displayed on the login page, never in
-git):
+**Personas** (one per role; credentials supplied via environment variables, displayed on the login
+page, never in git; no other demo users):
 
 | Persona | Role | Shows |
 |---|---|---|
-| Service Desk Manager | Manager | At-risk queue, team workload, SLA performance |
+| Demo Admin | Admin | Full organization setup: teams, categories, members, projects, sprints |
+| Service Desk Manager | Manager | At-risk queue, sprint planning, board, team workload, SLA performance |
 | IT Support Agent | Agent | Personal queue, ticket handling, resolution flow |
-| Application Support Agent | Agent | Cross-category work, escalation, reassignment |
 | Executive Viewer | Viewer | Read-only analytics and authorization boundaries |
+
+**Seed definition vs. an existing database.** The seed defines what a *fresh* environment gets. It does
+not reconcile an existing database with a newer definition, and there is no destructive startup reset.
+To get the current demo locally: `docker compose down -v`, then `docker compose up` (fresh database,
+`init-database`, new demo). Stale organizations left by tests or older seeds are never deleted
+automatically; `docs/deployment.md` has the read-only listing and the explicit manual cleanup.
 
 **Demo mode guard:** when `Demo:Enabled`, seeded persona accounts cannot be deleted, renamed,
 role-changed, or password-changed, by anyone including Admin. A persistent banner identifies the site

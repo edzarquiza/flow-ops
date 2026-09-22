@@ -26,6 +26,7 @@ database also reinforces a domain rule, that reinforcement is catalogued separat
 | `AUDIT-RULE-*` | Audit history | CLAUDE.md §10 |
 | `PERSIST-RULE-*` | Database constraints that *reinforce* a domain rule above | CLAUDE.md §7.4 |
 | `ORG-RULE-*` | Multi-tenancy & organizations | CLAUDE.md §6.3 |
+| `SPRINT-INV-*` | Project sprint planning | ADR-0029 |
 
 IDs are permanent once assigned. If a rule is removed, its ID is retired, not reused. If a rule is
 split or clarified, it gains a new ID rather than silently changing meaning under the old one.
@@ -178,13 +179,13 @@ early return for `Resolved`/`Closed`, applied uniformly rather than signal-by-si
 |---|---|---|
 | `AUDIT-RULE-01` | `TicketEvent` is append-only. There is no update path and no delete path — in the domain or in any service. | Ticket aggregate |
 | `AUDIT-RULE-02` | `TicketEvent` carries `Id`, `TicketId`, `EventType`, `ActorUserId`, `OccurredAt`, and optional `Field`, `OldValue`, `NewValue`, `Note`. | Ticket aggregate |
-| `AUDIT-RULE-03` | Sixteen event types are defined: `Created`, `Assigned`, `Reassigned`, `Unassigned`, `StatusChanged`, `PriorityChanged`, `CategoryChanged`, `TeamChanged`, `DueDateChanged`, `SlaRecalculated`, `PutOnHold`, `Resumed`, `Resolved`, `Reopened`, `Closed`, `CommentAdded`. | Ticket aggregate |
+| `AUDIT-RULE-03` | Seventeen event types are defined: `Created`, `Assigned`, `Reassigned`, `Unassigned`, `StatusChanged`, `PriorityChanged`, `CategoryChanged`, `TeamChanged`, `DueDateChanged`, `SlaRecalculated`, `PutOnHold`, `Resumed`, `Resolved`, `Reopened`, `Closed`, `CommentAdded`, `SprintChanged` (ADR-0029). | Ticket aggregate |
 | `AUDIT-RULE-04` | Events are children of the `Ticket` aggregate. A state-changing method mutates `Ticket` state and appends its `TicketEvent` in the same object graph, persisted by one `SaveChangesAsync`. There is no domain-event dispatcher, outbox, or interceptor, and no code path exists where a status change occurs without its audit row. | Ticket aggregate |
 | `AUDIT-RULE-05` | Audit records business changes only. Page views, filter changes, sorts, and expansions are never logged as `TicketEvent`s. | Ticket aggregate |
 | `AUDIT-RULE-06` | `TicketComment` (human operational context) and `TicketEvent` (machine record) are stored and queried separately, even though they render together in one merged, chronological activity timeline on the ticket page. | Ticket aggregate (both `TicketComment` and `TicketEvent` are its children; the UI only merges for display) |
 
 **`AUDIT-RULE-03` / `TICKET-INV-09` resolution for `SlaRecalculated`:** `SlaRecalculated` is defined
-as one of the sixteen event types because AUDIT-RULE-03 requires the type to exist, but no method
+as one of the seventeen event types because AUDIT-RULE-03 requires the type to exist, but no method
 appends it standalone. A priority change (`SLA-RULE-06`) both changes `Priority` and recomputes
 `SlaDueAt` in the same call — under `TICKET-INV-09` ("every state-changing method appends *exactly
 one* `TicketEvent`"), that one call may only append one event, so the SLA recompute is folded into
@@ -219,7 +220,7 @@ independent enforcement layer, per CLAUDE.md §7.4 ("Application code is not the
 |---|---:|---|
 | `TICKET-ENT` | 5 | `TICKET-ENT-01`–`05` |
 | `TICKET-ENUM` | 4 | `TICKET-ENUM-01`–`04` |
-| `TICKET-INV` | 11 | `TICKET-INV-01`–`11` |
+| `TICKET-INV` | 13 | `TICKET-INV-01`–`13` |
 | `TICKET-WF` | 13 | `TICKET-WF-01`–`13` |
 | `AUTH-RULE` | 11 | `AUTH-RULE-01`–`11` |
 | `SLA-RULE` | 12 | `SLA-RULE-01`–`12` |
@@ -227,7 +228,8 @@ independent enforcement layer, per CLAUDE.md §7.4 ("Application code is not the
 | `AUDIT-RULE` | 6 | `AUDIT-RULE-01`–`06` |
 | `PERSIST-RULE` | 6 | `PERSIST-RULE-01`–`06` |
 | `ORG-RULE` | 14 | `ORG-RULE-01`–`14` |
-| **Total** | **88** | — |
+| `SPRINT-INV` | 8 | `SPRINT-INV-01`–`08` |
+| **Total** | **99** | — |
 
 Every rule above has a stable ID and a stated, non-UI, non-database-only owner where the rule is a
 genuine domain rule (`PERSIST-RULE` entries are the deliberate exception, explicitly scoped to
@@ -261,3 +263,47 @@ replaced the original deterministic current-organization pick with explicit, per
 | `ORG-RULE-12` | No action (account deletion, membership role change, member removal) may leave an organization with zero Admins. | `SoleAdminGuard` (Application) |
 | `ORG-RULE-13` | Removing a member deletes only the `OrganizationMembership` row — the user's identity, other-organization memberships, and historical ticket/comment/event records are untouched. | `MembershipService` (Application) |
 | `ORG-RULE-14` | Organization context is explicit, persisted, and re-validated on every use; a selected value is never itself an authorization grant. Switching is allowed only among the caller's own real memberships, fails identically for an inaccessible or nonexistent id, accepts no client-supplied return path, and is cleared on logout. | `CurrentUserAccessor` (Application) |
+
+---
+
+## 11. Project planning: sprints & backlog (`SPRINT-INV`, Phase 26 / ADR-0029)
+
+Lightweight project sprint planning, added by an explicit product-owner decision that supersedes the
+earlier "not a Jira clone / no sprints, no backlog" scope statement. It does **not** add a second
+workflow: a sprint is a planning period, sprint membership is a planning fact on the ticket, and the
+ticket `Status` state machine (`TICKET-WF-*`) is unchanged and remains the only workflow.
+`TICKET-INV-12`/`13` are ticket-side rules, listed here beside the sprint rules they belong with.
+
+| ID | Rule | Owner |
+|---|---|---|
+| `SPRINT-INV-01` | A sprint belongs to exactly one Project and has a name of 1–80 characters (trimmed). | `Sprint` (Domain) |
+| `SPRINT-INV-02` | `StartDate <= EndDate`. Dates are UTC calendar dates, inclusive; there is no time-of-day or timezone concept (`TICKET-INV-10`). Also enforced by `ck_sprints_date_range`. | `Sprint` (Domain), `PERSIST` constraint |
+| `SPRINT-INV-03` | Lifecycle is `Planned → Active → Completed`, one direction only; a project has **at most one** Active sprint (the "current sprint"). Nothing advances a sprint automatically (ADR-0006) — starting and completing are explicit actions. The one-active rule is enforced by the partial unique index `ux_sprints_one_active_per_project` regardless of code path. | `Sprint` (Domain), `SprintService`, DB index |
+| `SPRINT-INV-04` | A Completed sprint accepts no new tickets, but stays queryable as history. | `Sprint`, `Ticket.MoveToSprint` |
+| `SPRINT-INV-05` | Planned/Active sprints of one project do not overlap by date. Completed sprints never block planning the same dates again. Checked in `SprintService` (no exclusion constraint — a concurrent overlapping create is an accepted, low-impact race; the one-active rule is the invariant that must never break). | `SprintService` |
+| `SPRINT-INV-06` | Completing a sprint never moves or deletes membership: unfinished tickets stay attached to the completed sprint as history and are carried into a planned sprint only by an explicit move. | `SprintService.CompleteSprintAsync` |
+| `TICKET-INV-12` | Sprint changes (`MoveToSprint`, `PullFromSprintBacklog`) are rejected on Resolved/Closed tickets — finished work is history (same rationale as `TICKET-INV-08`). A sprint change never touches `Status`, assignee, SLA, or dates, and appends exactly one `SprintChanged` event (`TICKET-INV-09`); moving to the sprint a ticket is already in appends nothing. | Ticket aggregate |
+| `TICKET-INV-13` | Only a ticket with a `ProjectId` can join a sprint, and the sprint must belong to that same project and the caller's organization. `SprintBacklog` means "selected for the sprint, not yet pulled onto the board": set on entering a sprint, cleared by `PullFromSprintBacklog`, never a status. | Ticket aggregate, `TicketService.MoveToSprintAsync` |
+
+**Board columns** are derived, never stored: Sprint backlog = Open/Assigned with `SprintBacklog`; then
+Open (Open + Assigned — an assigned ticket shows its assignee on the card), In progress, Pending; Done = Resolved + Closed.
+
+**Authorization.** Viewing a project's Overview/Board/Tickets needs only organization membership, and
+every list is scoped by the ordinary ticket visibility scope (a caller never sees, or is counted,
+tickets they could not open). Creating/starting/completing sprints: Admin or Manager
+(`PlanningAccessPolicy.CanManageSprints`). Planning a ticket into/out of a sprint:
+`TicketAccessPolicy.CanPlan` — Admin, or a Manager of the ticket's team. Status changes from the
+planning pages call the existing ticket transitions and their existing policies.
+
+**Audit.** Ticket membership changes are `TicketEvent`s (`SprintChanged`). Sprint lifecycle
+(create/start/complete) is not a ticket change: it is recorded on the sprint row
+(`CreatedAt`/`ActivatedAt`/`CompletedAt`) and in structured logs — no second audit system.
+
+### Phase 26B additions (ADR-0030)
+
+| ID | Rule | Owner |
+|---|---|---|
+| `SPRINT-INV-07` | Only a `Planned` sprint can be cancelled (`Planned → Cancelled`); an `Active` sprint is completed instead and a `Completed`/`Cancelled` sprint is read-only history. A cancelled sprint accepts no tickets, is never a move target, and is never deleted. Cancelling releases the sprint's non-finished tickets (each an audited `SprintChanged`). | `Sprint`, `SprintService.CancelSprintAsync` |
+| `SPRINT-INV-08` | Completing a sprint writes an append-only `SprintTicketSnapshot` (status at completion, done or not) for every member ticket in the same save. The snapshot — never the ticket's current `SprintId` — is the historical record; carrying a ticket forward does not alter it. Carry-forward is an explicit action, moves only non-finished tickets still in that sprint that the caller may plan, and never happens automatically. | `SprintService.CompleteSprintAsync` / `CarryForwardAsync` |
+| `BOARD-MOVE` | A board drag is only ever a composition of existing operations (`BoardMovePlanner`): pull/return-to-backlog, assign to caller, start work, resume, put on hold, resolve, reopen. Each step is authorized by its own `TicketAccessPolicy` call and validated by its own `Ticket` method; an unsupported drag is rejected with a message and changes nothing. Not a workflow transition of its own. | `BoardMovePlanner`, `TicketService.MoveOnBoardAsync` |
+| `TICKET-INV-13` (addendum) | `ReturnToSprintBacklog` is the inverse of `PullFromSprintBacklog`: legal only for an Open/Assigned ticket on a sprint's board, status untouched, one `SprintChanged` event. | Ticket aggregate |

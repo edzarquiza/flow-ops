@@ -34,7 +34,7 @@ else
 
     <div class="validation-summary-errors" asp-validation-summary="All" role="alert"></div>
 
-    <form method="post">
+    <form method="post" class="form-wide">
         <div class="zone">
             @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("What needs to be done")); }
             <div class="field">
@@ -51,6 +51,44 @@ else
 
         <div class="zone">
             @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Where the work belongs")); }
+            @* Phase 11 (C-3): one selector, grouped by team via native <optgroup> — no JavaScript,
+               no cascading round-trip. Only teams/categories in Model.Options (the caller's own
+               eligible teams) appear; TeamId itself is derived server-side from the chosen category
+               in CreateModel.OnPostAsync, per TICKET-INV-02. *@
+            @* Named selector, same pattern as Category above — Project has no team relation, so every
+               project in the caller's own organization is offered directly (no grouping needed).
+               TicketService.CreateAsync's own organization check (Phase 16) remains the real
+               boundary; this is a UI convenience only, resolving the "why do I have to type a raw
+               number" usability defect the numeric input previously had. *@
+            <div class="field-grid">
+                <div class="field">
+                    <label asp-for="Input.CategoryId">Category<span class="field-required" aria-hidden="true">*</span></label>
+                    <select asp-for="Input.CategoryId" aria-describedby="category-error">
+                        <option value="">Select a category</option>
+                        @foreach (var team in Model.Options.Teams)
+                        {
+                            <optgroup label="@team.TeamName">
+                                @foreach (var category in team.Categories)
+                                {
+                                    <option value="@category.CategoryId">@category.CategoryName</option>
+                                }
+                            </optgroup>
+                        }
+                    </select>
+                    <span id="category-error" class="field-validation-error" asp-validation-for="Input.CategoryId"></span>
+                </div>
+                <div class="field">
+                    <label asp-for="Input.ProjectId">Project (optional)</label>
+                    <select asp-for="Input.ProjectId">
+                        <option value="">No project</option>
+                        @foreach (var project in Model.Options.Projects)
+                        {
+                            <option value="@project.ProjectId">@project.ProjectName</option>
+                        }
+                    </select>
+                    <span class="field-validation-error" asp-validation-for="Input.ProjectId"></span>
+                </div>
+            </div>
             <div class="field-grid">
                 <div class="field">
                     <label asp-for="Input.WorkType">Work type<span class="field-required" aria-hidden="true">*</span></label>
@@ -67,42 +105,6 @@ else
                     <select asp-for="Input.Priority" asp-items="Html.GetEnumSelectList<Priority>()"></select>
                     <span class="field-validation-error" asp-validation-for="Input.Priority"></span>
                 </div>
-            </div>
-            @* Phase 11 (C-3): one selector, grouped by team via native <optgroup> — no JavaScript,
-               no cascading round-trip. Only teams/categories in Model.Options (the caller's own
-               eligible teams) appear; TeamId itself is derived server-side from the chosen category
-               in CreateModel.OnPostAsync, per TICKET-INV-02. *@
-            <div class="field">
-                <label asp-for="Input.CategoryId">Category<span class="field-required" aria-hidden="true">*</span></label>
-                <select asp-for="Input.CategoryId" aria-describedby="category-error">
-                    <option value="">Select a category</option>
-                    @foreach (var team in Model.Options.Teams)
-                    {
-                        <optgroup label="@team.TeamName">
-                            @foreach (var category in team.Categories)
-                            {
-                                <option value="@category.CategoryId">@category.CategoryName</option>
-                            }
-                        </optgroup>
-                    }
-                </select>
-                <span id="category-error" class="field-validation-error" asp-validation-for="Input.CategoryId"></span>
-            </div>
-            @* Named selector, same pattern as Category above — Project has no team relation, so every
-               project in the caller's own organization is offered directly (no grouping needed).
-               TicketService.CreateAsync's own organization check (Phase 16) remains the real
-               boundary; this is a UI convenience only, resolving the "why do I have to type a raw
-               number" usability defect the numeric input previously had. *@
-            <div class="field">
-                <label asp-for="Input.ProjectId">Project (optional)</label>
-                <select asp-for="Input.ProjectId">
-                    <option value="">No project</option>
-                    @foreach (var project in Model.Options.Projects)
-                    {
-                        <option value="@project.ProjectId">@project.ProjectName</option>
-                    }
-                </select>
-                <span class="field-validation-error" asp-validation-for="Input.ProjectId"></span>
             </div>
         </div>
 
@@ -123,7 +125,7 @@ else
                     <span class="field-validation-error" asp-validation-for="Input.DueDate"></span>
                 </div>
             </div>
-            <p class="field-hint">Not the SLA deadline — this is your own planning target. Times are UTC.</p>
+            <p class="field-hint">Not the service deadline — this is your own planning target. Times are UTC.</p>
         </div>
 
         <button type="submit" class="btn-primary">Create ticket</button>

@@ -1,0 +1,183 @@
+@page "{id:int}"
+@using FlowOps.Application.Planning
+@using FlowOps.Domain.Sla
+@using FlowOps.Domain.Tickets
+@model FlowOps.Web.Pages.Projects.BoardModel
+@{
+    ViewData["Title"] = $"{Model.Board.Header.Name} — Board";
+    var active = Model.Board.ActiveSprint;
+    var projectId = Model.Board.Header.ProjectId;
+    var returnUrl = Url.Page("/Projects/Board", new { id = projectId })!;
+    var total = Model.Board.Columns.Sum(c => c.Cards.Count);
+    var done = Model.Board.Columns.First(c => c.Key == BoardColumnKey.Done).Cards.Count;
+
+    // Drag-and-drop is an enhancement (ADR-0030): offered to roles that can act on tickets at all;
+    // every drop is re-planned and re-authorized on the server, and every drag has a menu twin.
+    var canDrag = Model.Caller.Role is UserRole.Admin or UserRole.Manager or UserRole.Agent;
+}
+@await Html.PartialAsync("_ProjectHeader", new FlowOps.Web.ProjectHeaderViewModel(Model.Board.Header, "board"))
+@await Html.PartialAsync("_PlanningNotices", Model)
+
+@if (active is null)
+{
+    @* Setup state, never an auto-created sprint (ADR-0029). *@
+    <div class="panel panel--focus">
+        <div class="empty-state">
+            <p class="empty-state__title">No active sprint</p>
+            <p>Create a sprint to start planning this project's work.</p>
+            @if (Model.CanManageSprints && Model.Board.PlannedSprints.Count == 0)
+            {
+                <p><a class="btn-primary" asp-page="/Projects/Details" asp-route-id="@projectId">Create a sprint</a></p>
+            }
+            else if (!Model.CanManageSprints)
+            {
+                <p class="cell-muted">Ask an Admin or Manager to start one.</p>
+            }
+        </div>
+        @if (Model.Board.PlannedSprints.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="plan-table">
+                    <caption class="sr-only">Planned sprints ready to start</caption>
+                    <thead><tr><th scope="col">Planned sprint</th><th scope="col">Dates</th><th scope="col">Tickets</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var sprint in Model.Board.PlannedSprints)
+                        {
+                            <tr>
+                                <td class="plan-table__main"><a asp-page="/Projects/SprintDetail" asp-route-id="@projectId" asp-route-sprintId="@sprint.SprintId">@sprint.Name</a></td>
+                                <td data-label="Dates" class="mono cell-muted">@FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)</td>
+                                <td data-label="Tickets" class="mono">@sprint.TicketCount</td>
+                                <td class="plan-table__actions">
+                                    @await Html.PartialAsync("_SprintActions", new FlowOps.Web.SprintActionsViewModel(projectId, sprint.SprintId, sprint.Status, Model.CanManageSprints, false, returnUrl))
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="sprint-strip">
+        <span class="status-badge status-badge--compact status-badge--teal">Active</span>
+        <span class="sprint-strip__name">@active.Name</span>
+        <span class="sprint-strip__dates mono">@FlowOps.Web.SprintDisplay.Range(active.StartDate, active.EndDate)</span>
+        <span class="sprint-strip__progress mono" title="Tickets you can see in this sprint">@done of @total done</span>
+        <span class="sprint-strip__spacer"></span>
+        @await Html.PartialAsync("_SprintActions", new FlowOps.Web.SprintActionsViewModel(projectId, active.SprintId, active.Status, Model.CanManageSprints, true, returnUrl))
+    </div>
+
+    <div class="board" data-board>
+        @foreach (var column in Model.Board.Columns)
+        {
+            var key = column.Key.ToString().ToLowerInvariant();
+            <section class="board-col board-col--@key" aria-labelledby="col-@key" data-column="@column.Key">
+                <h2 class="board-col__head" id="col-@key">
+                    <i class="board-col__dot" aria-hidden="true"></i>@FlowOps.Web.SprintDisplay.ColumnLabel(column.Key)
+                    <span class="board-col__count mono">@column.Cards.Count</span>
+                </h2>
+                <div class="board-col__cards">
+                    @if (column.Cards.Count == 0)
+                    {
+                        <p class="board-col__empty">@(column.Key == BoardColumnKey.Backlog ? "Nothing planned" : "None")</p>
+                    }
+                    @foreach (var card in column.Cards)
+                    {
+                        var slaFlag = card.Sla.Status switch
+                        {
+                            SlaStatus.Breached => "Deadline missed",
+                            SlaStatus.AtRisk => "Deadline soon",
+                            _ => null,
+                        };
+                        var overdue = card.DueDate is { } due && due < DateTimeOffset.UtcNow && card.Status is not (Status.Resolved or Status.Closed);
+                        var targets = string.Join(",", BoardMovePlanner.AllowedTargets(card.Status, card.SprintBacklog));
+                        <article class="board-card board-card--@card.Priority.ToString().ToLowerInvariant()"
+                                 data-ticket-id="@card.TicketId" data-targets="@targets" draggable="@(canDrag ? "true" : "false")">
+                            <div class="board-card__top">
+                                <span class="q-ref">@card.Reference</span>
+                                @await Html.PartialAsync("_PlanningTicketMenu", new FlowOps.Web.PlanningMenuViewModel(projectId, card.TicketId, card.TeamId, card.RequesterId, card.AssigneeId, card.Status, active.SprintId, card.SprintBacklog, returnUrl, Model.MoveTargets, Model.Caller))
+                            </div>
+                            <a class="board-card__title" title="@card.Title" asp-page="/Tickets/Details" asp-route-id="@card.TicketId">@card.Title</a>
+                            <div class="board-card__meta">
+                                <span>@(card.AssigneeName ?? "Unassigned")</span>
+                                <span>@card.Priority</span>
+                            </div>
+                            @if (slaFlag is not null || overdue || card.DueDate is not null || card.CarriedFromSprint is not null)
+                            {
+                                <div class="board-card__flags">
+                                    @if (slaFlag is not null)
+                                    {
+                                        <span class="flag-text @(card.Sla.Status == SlaStatus.Breached ? "flag-text--danger" : "flag-text--warn")">@slaFlag</span>
+                                    }
+                                    @if (card.CarriedFromSprint is not null)
+                                    {
+                                        <span class="carried-note" title="Unfinished when @card.CarriedFromSprint was completed">Carried from @card.CarriedFromSprint</span>
+                                    }
+                                    @if (overdue)
+                                    {
+                                        <span class="flag-text flag-text--danger" title="Past its planned due date (separate from the service deadline)">Past due</span>
+                                    }
+                                    else if (card.DueDate is { } dueDate)
+                                    {
+                                        <span class="flag-text"><time datetime="@dueDate.ToString("O")" title="@dueDate.ToString("u")">Due @dueDate.ToString("MMM d")</time></span>
+                                    }
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+    <p class="board-note">
+        <strong>Planned</strong> means the ticket is in this sprint but hasn't been moved onto the board yet — it keeps its real status. Tickets with no sprint, or in a future sprint, aren't on this board; find them under Tickets. Cards show only tickets you can see.
+        @if (canDrag)
+        {
+            <text> Drag a card to another column with a mouse, or use its <strong>&hellip;</strong> menu — both do exactly the same thing.</text>
+        }
+    </p>
+
+    @if (canDrag)
+    {
+        @* ADR-0030. One real form: the drop handler fills ticketId/target and submits it, so the move
+           is a normal server round trip (no optimistic UI). The <dialog> collects the reason /
+           resolution the existing ticket forms also require; without JavaScript this form is simply
+           never used and the card menus do everything. *@
+        <form method="post" asp-page-handler="BoardMove" asp-route-id="@projectId" id="board-move-form" class="board-move-form">
+            <input type="hidden" name="ticketId" value="" />
+            <input type="hidden" name="target" value="" />
+            <input type="hidden" name="returnUrl" value="@returnUrl" />
+            <dialog id="board-move-dialog" class="board-dialog" aria-labelledby="board-move-title">
+                <h2 id="board-move-title" class="board-dialog__title">Move ticket</h2>
+                <p id="board-move-help" class="board-dialog__help"></p>
+                <div class="field" data-field="reason" hidden>
+                    <label for="board-move-reason" id="board-move-reason-label">Reason</label>
+                    <textarea id="board-move-reason" name="reason" rows="3" maxlength="500" disabled></textarea>
+                </div>
+                <div data-field="resolve" hidden>
+                    <div class="field">
+                        <label for="board-move-code">Resolution</label>
+                        <select id="board-move-code" name="resolutionCode" disabled>
+                            @foreach (var resolution in Enum.GetValues<Resolution>())
+                            {
+                                <option value="@resolution">@FlowOps.Web.ResolutionDisplay.ToDisplayName(resolution)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="board-move-notes">Resolution notes</label>
+                        <textarea id="board-move-notes" name="resolutionNotes" rows="3" minlength="10" maxlength="4000" disabled></textarea>
+                    </div>
+                </div>
+                <div class="board-dialog__actions">
+                    <button type="button" class="btn" data-dialog-cancel>Cancel</button>
+                    <button type="submit" class="btn-primary">Confirm move</button>
+                </div>
+            </dialog>
+        </form>
+        <p class="sr-only" role="status" id="board-dnd-status"></p>
+        <script src="~/js/board-dnd.js" asp-append-version="true"></script>
+    }
+}

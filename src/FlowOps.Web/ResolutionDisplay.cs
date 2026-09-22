@@ -13,8 +13,8 @@ public static class ResolutionDisplay
 {
     public static string ToDisplayName(Resolution resolution) => resolution switch
     {
-        Resolution.WorkaroundProvided => "Workaround Provided",
-        Resolution.NoFaultFound => "No Fault Found",
+        Resolution.WorkaroundProvided => "Workaround provided",
+        Resolution.NoFaultFound => "No fault found",
         var r => r.ToString(),
     };
 }

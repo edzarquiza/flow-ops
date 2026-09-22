@@ -1,0 +1,85 @@
+@page
+@model FlowOps.Web.Pages.Projects.IndexModel
+@{
+    ViewData["Title"] = "Projects";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Projects</h1>
+                <div class="page-header__metric">
+                    <span class="page-header__metric-value">@Model.Projects.Count</span>
+                    <span class="page-header__metric-label">project@(Model.Projects.Count == 1 ? "" : "s")</span>
+                </div>
+            </div>
+            <p class="page-context">Plan project work in weekly sprints, or see every ticket a project holds.</p>
+        </div>
+        @if (Model.CanManageProjects)
+        {
+            <div class="page-header__actions">
+                <a class="btn" asp-page="/Admin/Projects/Index">Manage projects</a>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="panel panel--focus">
+    @if (Model.Projects.Count == 0)
+    {
+        <div class="empty-state">
+            <p class="empty-state__title">No projects yet</p>
+            @if (Model.CanManageProjects)
+            {
+                <p>Create a project, then attach tickets to it and plan them into sprints.</p>
+                <p><a class="btn-primary" asp-page="/Admin/Projects/Index">Create a project</a></p>
+            }
+            else
+            {
+                <p>Ask an organization Admin to create a project.</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="plan-table">
+                <caption class="sr-only">Projects and their current sprint</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Project</th>
+                        <th scope="col">Current sprint</th>
+                        <th scope="col">In sprint</th>
+                        <th scope="col">All tickets</th>
+                        <th scope="col"><span class="sr-only">Views</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var project in Model.Projects)
+                    {
+                        <tr>
+                            <td class="plan-table__main"><a class="text-link" asp-page="/Projects/Details" asp-route-id="@project.ProjectId">@project.Name</a></td>
+                            <td data-label="Current sprint">
+                                @if (project.ActiveSprint is { } sprint)
+                                {
+                                    <span class="status-badge status-badge--compact status-badge--teal">Active</span>
+                                    <span class="cell-muted">@sprint.Name &middot; @FlowOps.Web.SprintDisplay.Range(sprint.StartDate, sprint.EndDate)</span>
+                                }
+                                else
+                                {
+                                    <span class="cell-muted">No active sprint</span>
+                                }
+                            </td>
+                            <td data-label="In sprint" class="mono">@(project.ActiveSprint?.TicketCount.ToString() ?? "—")</td>
+                            <td data-label="All tickets" class="mono">@project.VisibleTicketCount</td>
+                            <td class="plan-table__actions">
+                                <a class="btn" asp-page="/Projects/Board" asp-route-id="@project.ProjectId">Board</a>
+                                <a class="btn" asp-page="/Projects/Tickets" asp-route-id="@project.ProjectId">Tickets</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

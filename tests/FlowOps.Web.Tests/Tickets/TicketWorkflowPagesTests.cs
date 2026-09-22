@@ -35,7 +35,7 @@ public sealed class TicketWorkflowPagesTests : IClassFixture<FlowOpsWebApplicati
         await PostAsync(client, ticketId, "StartWork", HttpStatusCode.Redirect);
 
         var afterStart = await GetDetailAsync(client, ticketId);
-        Assert.Contains("InProgress", afterStart, StringComparison.Ordinal);
+        Assert.Contains("In Progress", afterStart, StringComparison.Ordinal);
 
         await PostAsync(
             client,
@@ -54,7 +54,8 @@ public sealed class TicketWorkflowPagesTests : IClassFixture<FlowOpsWebApplicati
         Assert.Contains("Audit history", afterResolve, StringComparison.Ordinal);
         Assert.Contains("Created", afterResolve, StringComparison.Ordinal);
         Assert.Contains("Assigned", afterResolve, StringComparison.Ordinal);
-        Assert.Contains("StatusChanged", afterResolve, StringComparison.Ordinal);
+        Assert.Contains("Status changed", afterResolve, StringComparison.Ordinal); // plain-language event title
+        Assert.DoesNotContain("StatusChanged", afterResolve, StringComparison.Ordinal);
         Assert.Contains(TestUsers.AgentEmail, afterResolve, StringComparison.Ordinal);
 
         // The Close button is not offered — TICKET-WF-08 reserves closing for a Manager/Admin or
@@ -103,11 +104,12 @@ public sealed class TicketWorkflowPagesTests : IClassFixture<FlowOpsWebApplicati
                 new("Input.ResolutionNotes", "Attempting to resolve a ticket that is still Open."),
             ]);
 
-        // Re-rendered page carrying the domain rule's own code, not a 500.
+        // Re-rendered page carrying the domain rule's own message (without the developer-facing code), not a 500.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var html = await response.Content.ReadAsStringAsync();
-        Assert.Contains("TICKET-WF-07", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("TICKET-WF-07", html, StringComparison.Ordinal);
+        Assert.Contains("Cannot resolve", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Stack trace", html, StringComparison.OrdinalIgnoreCase);
 
         var detail = await GetDetailAsync(client, ticketId);
