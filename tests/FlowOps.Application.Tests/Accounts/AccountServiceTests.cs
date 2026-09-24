@@ -174,7 +174,7 @@ public sealed class AccountServiceTests
         var otherCategoryId = await TicketTestData.AddCategoryAsync(context, otherTeamId);
         var otherOrganizationId = await TicketTestData.GetOrganizationIdAsync(context);
         var otherRequester = TicketTestData.User(await TicketTestData.AddUserAsync(context), UserRole.Agent, otherTeamId);
-        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         await ticketService.CreateAsync(
             new CreateTicketRequest("Unrelated org's ticket", "Should never be visible to the new org.", WorkType.Incident, Priority.Medium, otherTeamId, otherCategoryId, null),
             otherRequester);
@@ -436,7 +436,7 @@ public sealed class AccountServiceTests
         await context.SaveChangesAsync();
 
         var requester = new CurrentUser(userId, organizationId, UserRole.Admin, new HashSet<int> { team.Id }, new HashSet<int>());
-        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, reference) = await ticketService.CreateAsync(
             new CreateTicketRequest("Ticket created before account deletion", "Must remain intact afterward.", WorkType.Incident, Priority.Medium, team.Id, category.Id, null),
             requester);

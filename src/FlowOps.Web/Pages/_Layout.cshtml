@@ -3,11 +3,13 @@
 @using FlowOps.Application.Demo
 @using FlowOps.Domain.Accounts
 @using FlowOps.Application.Platform
+@using FlowOps.Application.Planning
 @using FlowOps.Application.Tickets
 @inject DemoOptions DemoOptions
 @inject CurrentUserAccessor CurrentUserAccessor
 @inject PlatformUserAccessor PlatformUserAccessor
 @inject AccountService AccountService
+@inject ProjectPlanningQueryService ProjectPlanningQueryService
 @{
     var pageTitle = ViewData["Title"] as string;
     var isAuthenticated = User.Identity?.IsAuthenticated == true;
@@ -33,6 +35,31 @@
         ? availableOrganizations.FirstOrDefault(o => o.Id == currentUser.OrganizationId)?.Name
         : null;
     var current = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+
+    // Phase 29D: the sidebar's own project quick-navigation list — gated the same as every other
+    // tenant-scoped sidebar item (an organization-less Platform Admin has none to show).
+    IReadOnlyList<ProjectNavOption> sidebarProjects = currentUser is not null
+        ? await ProjectPlanningQueryService.GetProjectNavOptionsAsync(currentUser)
+        : Array.Empty<ProjectNavOption>();
+
+    // Every project sub-page (Overview/Board/Tickets/Sprints/SprintDetail) shares the same
+    // {id:int} first route segment — the project's id. The Projects management page itself
+    // (/Projects/Index) has no id and is deliberately NOT treated as "inside a project": it is
+    // the management/browse destination, not a project's own page (Phase 29D design decision —
+    // "Projects" is a navigation group, individual projects are destinations, the management page
+    // is a separate, third destination).
+    int? insideProjectId = current.StartsWith("/Projects/", StringComparison.Ordinal)
+        && int.TryParse(ViewContext.RouteData.Values["id"]?.ToString(), out var routeProjectId)
+        ? routeProjectId
+        : null;
+
+    // Phase F1-B: whether the "Administration" nav group has anything to show at all — the exact
+    // same three conditions each of its own links already checks below, OR'd together, so the
+    // group's eyebrow label never renders orphaned above an empty group for an Agent/Viewer.
+    var canCreateTicket = currentUser is not null && FlowOps.Domain.Tickets.TicketAccessPolicy.CanCreate(currentUser);
+    var showAdministrationGroup = platformAdmin is not null
+        || (currentUser is not null && (FlowOps.Domain.Organizations.OrganizationAccessPolicy.CanManageMembers(currentUser)
+            || FlowOps.Domain.Directory.DirectoryAccessPolicy.CanManageTeams(currentUser)));
 
     // Phase 29C: the saved appearance is rendered straight into <html data-theme="...">, so the right
     // theme is present on the first byte (no flash, no script, nothing for the CSP to object to).
@@ -143,6 +170,7 @@
                        case) always has a non-null currentUser and sees these exactly as before. *@
                     @if (currentUser is not null)
                     {
+                        <p class="fo-sidebar__nav-label">Work</p>
                         <a asp-page="/Index" aria-current="@(current == "/Index" ? "page" : null)">
                             @Html.Raw(Icons.Dashboard)
                             <span>Dashboard</span>
@@ -155,17 +183,89 @@
                             @Html.Raw(Icons.AtRisk)
                             <span>At-Risk</span>
                         </a>
-                        <a asp-page="/Tickets/Create" aria-current="@(current == "/Tickets/Create" ? "page" : null)">
-                            @Html.Raw(Icons.Create)
-                            <span>Create Ticket</span>
+                        @* Phase F1-B: shown only when TicketAccessPolicy.CanCreate allows it (the
+                           same policy Tickets/Create.cshtml.cs itself enforces server-side) — a
+                           Viewer previously saw this link despite being blocked from submitting it. *@
+                        @if (canCreateTicket)
+                        {
+                            <a asp-page="/Tickets/Create" aria-current="@(current == "/Tickets/Create" ? "page" : null)">
+                                @Html.Raw(Icons.Create)
+                                <span>Create Ticket</span>
+                            </a>
+                        }
+                        @* Phase 29D: Projects is a navigation group (ADR-0029's planning surfaces —
+                           Overview/Board/Tickets/Sprints), not a direct link — a native <details>
+                           disclosure, the same no-JavaScript pattern the org switcher above
+                           already uses (CLAUDE.md §11.1), styled to sit inline in the link list
+                           rather than as a floating dropdown. Open to every organization member —
+                           what a caller sees inside is ordinary ticket visibility, and every
+                           action is re-authorized server-side regardless of what this affordance
+                           shows. Auto-expanded (`open`) when the caller is already inside one of
+                           their own projects; collapsed everywhere else by default. *@
+                        <details class="fo-sidebar__nav-group" data-inside-project="@(insideProjectId is not null ? "true" : "false")" open="@(insideProjectId is not null)">
+                            <summary aria-expanded="@(insideProjectId is not null ? "true" : "false")" aria-current="@(insideProjectId is not null ? "page" : null)">
+                                @Html.Raw(Icons.Project)
+                                <span>Projects</span>
+                            </summary>
+                            <div class="fo-sidebar__nav-sub">
+                                @foreach (var project in sidebarProjects)
+                                {
+                                    <a asp-page="/Projects/Details" asp-route-id="@project.ProjectId"
+                                       aria-current="@(insideProjectId == project.ProjectId ? "page" : null)"
+                                       title="@project.Name">
+                                        @project.Name
+                                    </a>
+                                }
+                                @* The escape hatch back to browsing/administering every project
+                                   (Phase 29D §3/§20) — always present, so "Projects" never has to
+                                   double as both a toggle and a direct link. *@
+                                <a class="fo-sidebar__nav-sub-all" asp-page="/Projects/Index" aria-current="@(current == "/Projects/Index" ? "page" : null)">
+                                    View all projects
+                                </a>
+                            </div>
+                        </details>
+                        @* ADR-0036: Team Workload — shown to every organization member, same as
+                           the rest of the "Work" group; the page itself narrows what each role sees
+                           (Agent gets their own workload only, no team table) via the existing Team
+                           Analytics scope, never via hiding this link. *@
+                        <a asp-page="/TeamWorkload/Index" aria-current="@(current == "/TeamWorkload/Index" ? "page" : null)">
+                            @Html.Raw(Icons.DataKpi)
+                            <span>Team Workload</span>
                         </a>
-                        @* ADR-0029: project planning (board, ticket list, sprints). Open to every
-                           organization member — what a caller sees inside is ordinary ticket
-                           visibility, and every action is re-authorized server-side. *@
-                        <a asp-page="/Projects/Index" aria-current="@(current.StartsWith("/Projects", StringComparison.Ordinal) ? "page" : null)">
-                            @Html.Raw(Icons.Project)
-                            <span>Projects</span>
-                        </a>
+                        @* Guide: a global product resource, not tenant/role administration, so it
+                           sits with Work rather than under the Administration group or Settings
+                           (reached via the identity block below, not this nav list). *@
+                        <div class="fo-sidebar__guide-anchor">
+                            <a asp-page="/Guide/Index" aria-current="@(current.StartsWith("/Guide", StringComparison.Ordinal) ? "page" : null)">
+                                @Html.Raw(Icons.Guide)
+                                <span>Guide</span>
+                            </a>
+                            @* First-time discovery cue (verification-pass follow-on feature): rendered
+                               inline, in the sidebar's own normal flow — never an absolutely-positioned
+                               floating popover — so it can never overflow the viewport at any width,
+                               including 390/430px, and needs no JavaScript to position itself. Shown
+                               exactly once, ever, per user: IndexModel.OnGetAsync already consumed the
+                               one-shot flag server-side by the time this renders, so simply navigating
+                               away (without clicking anything below) is itself a valid, permanent dismissal. *@
+                            @if (ViewData["ShowGuideCue"] is true)
+                            {
+                                <div class="fo-guide-cue" role="status">
+                                    <p class="fo-guide-cue__title">New to FlowOps?</p>
+                                    <p class="fo-guide-cue__body">Start with the Guide to learn how everything works.</p>
+                                    <div class="fo-guide-cue__actions">
+                                        <a class="fo-guide-cue__open" asp-page="/Guide/Index">Open Guide &rarr;</a>
+                                        <label class="fo-guide-cue__dismiss" for="fo-guide-cue-dismiss">Dismiss</label>
+                                    </div>
+                                    <input type="checkbox" id="fo-guide-cue-dismiss" class="fo-guide-cue__dismiss-input" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    @* Phase F1-B: one shared eyebrow label for the Members/Admin/Platform group —
+                       only rendered when at least one of them will actually show below it. *@
+                    @if (showAdministrationGroup)
+                    {
+                        <p class="fo-sidebar__nav-label">Administration</p>
                     }
                     @* Phase 18: member management is Admin/Manager-only (ORG-RULE-11) — hidden for
                        everyone else as an affordance; Members.cshtml.cs re-checks server-side
@@ -210,6 +310,13 @@
                             @Html.Raw(Icons.Members)
                             <span>Users</span>
                         </a>
+                        @* Phase 30D (ADR-0034): the one shared SLA table every organization's
+                           tickets resolve against (ADR-0015: deliberately global) — a Platform,
+                           not tenant, concern. *@
+                        <a asp-page="/Platform/Sla/Index" aria-current="@(current.StartsWith("/Platform/Sla", StringComparison.Ordinal) ? "page" : null)">
+                            @Html.Raw(Icons.Sla)
+                            <span>SLA Configuration</span>
+                        </a>
                     }
                 </nav>
 
@@ -243,6 +350,10 @@
                 </main>
             </div>
         </div>
+        @* Phase 29D: only needed alongside the Projects nav group above, so it is loaded only on
+           the authenticated branch — never on the anonymous Login/Register/etc. pages, which have
+           no sidebar at all. Progressive enhancement only; see the file's own doc comment. *@
+        <script src="~/js/sidebar-projects.js" asp-append-version="true"></script>
     }
     else
     {

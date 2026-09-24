@@ -191,6 +191,84 @@ public sealed class ProjectServiceTests
             () => service.DeactivateProjectAsync(nonAdmin, created.ProjectId!.Value));
     }
 
+    [Fact] // Phase 30B (ADR-0032): deactivation is no longer terminal.
+    public async Task ReactivateProjectAsync_Admin_ReactivatesOwnProject()
+    {
+        var world = await NewOrganizationAsync("Proj12");
+        var admin = AsCurrentUser(world);
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateProjectAsync(admin, "Alpha Rollout");
+        await service.DeactivateProjectAsync(admin, created.ProjectId!.Value);
+
+        var result = await service.ReactivateProjectAsync(admin, created.ProjectId!.Value);
+
+        Assert.True(result.Succeeded);
+        var project = await world.Context.Projects.AsNoTracking().SingleAsync(p => p.Id == created.ProjectId);
+        Assert.True(project.IsActive);
+    }
+
+    [Fact]
+    public async Task ReactivateProjectAsync_AlreadyActive_Fails()
+    {
+        var world = await NewOrganizationAsync("Proj13");
+        var admin = AsCurrentUser(world);
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateProjectAsync(admin, "Alpha Rollout");
+
+        var result = await service.ReactivateProjectAsync(admin, created.ProjectId!.Value);
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task ReactivateProjectAsync_NameNowTakenByAnActiveProject_FailsWithFriendlyMessage()
+    {
+        var world = await NewOrganizationAsync("Proj14");
+        var admin = AsCurrentUser(world);
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var first = await service.CreateProjectAsync(admin, "Alpha Rollout");
+        await service.DeactivateProjectAsync(admin, first.ProjectId!.Value);
+        await service.CreateProjectAsync(admin, "Alpha Rollout");
+
+        var result = await service.ReactivateProjectAsync(admin, first.ProjectId!.Value);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task ReactivateProjectAsync_AnotherOrganizationsProject_ThrowsAndDoesNotMutate()
+    {
+        var worldA = await NewOrganizationAsync("Proj15A");
+        var worldB = await NewOrganizationAsync("Proj15B");
+        var serviceB = new CatalogService(worldB.Context, new TicketTestData.FixedTimeProvider(Now));
+        var projectInB = await serviceB.CreateProjectAsync(AsCurrentUser(worldB), "Beta Rollout");
+        await serviceB.DeactivateProjectAsync(AsCurrentUser(worldB), projectInB.ProjectId!.Value);
+        var serviceA = new CatalogService(worldA.Context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ProjectAccessDeniedException>(
+            () => serviceA.ReactivateProjectAsync(AsCurrentUser(worldA), projectInB.ProjectId!.Value));
+
+        var project = await worldB.Context.Projects.AsNoTracking().SingleAsync(p => p.Id == projectInB.ProjectId);
+        Assert.False(project.IsActive);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Manager)]
+    [InlineData(UserRole.Agent)]
+    [InlineData(UserRole.Viewer)]
+    public async Task ReactivateProjectAsync_NonAdmin_Throws(UserRole role)
+    {
+        var world = await NewOrganizationAsync("Proj16" + role);
+        var admin = AsCurrentUser(world);
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateProjectAsync(admin, "Alpha Rollout");
+        await service.DeactivateProjectAsync(admin, created.ProjectId!.Value);
+        var nonAdmin = new CurrentUser(Guid.NewGuid(), world.OrganizationId, role, new HashSet<int>(), new HashSet<int>());
+
+        await Assert.ThrowsAsync<ProjectAccessDeniedException>(() => service.ReactivateProjectAsync(nonAdmin, created.ProjectId!.Value));
+    }
+
     private static CurrentUser AsCurrentUser(World world) =>
         new(world.AdminId, world.OrganizationId, UserRole.Admin, new HashSet<int>(), new HashSet<int>());
 

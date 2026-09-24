@@ -439,7 +439,7 @@ public sealed partial class AnalyticsQueryServiceTests
         new(context, new TicketTestData.FixedTimeProvider(now ?? Now));
 
     private static TicketService ServiceAt(FlowOpsDbContext context, DateTimeOffset instant) =>
-        new(context, new TicketTestData.FixedTimeProvider(instant));
+        new(context, new TicketTestData.FixedTimeProvider(instant), TestEmail.Sender, TestEmail.Options);
 
     private static async Task<int> CreateTicketAsync(FlowOpsDbContext context, World world, DateTimeOffset instant) =>
         (await ServiceAt(context, instant).CreateAsync(Request(world.TeamId, world.CategoryId), world.Requester)).Id;
@@ -549,7 +549,7 @@ public sealed partial class AnalyticsQueryServiceTests
         await TicketTestData.AddTeamMembershipAsync(context, teamId, managerId, isTeamManager: true);
 
         var clock = new TicketTestData.FixedTimeProvider(Now);
-        var service = new TicketService(context, clock);
+        var service = new TicketService(context, clock, TestEmail.Sender, TestEmail.Options);
 
         _ = createNoTickets; // no ticket is created in the common seed path regardless — kept for
                              // the empty-data test's readability at the call site.

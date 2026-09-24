@@ -46,6 +46,9 @@
 @* Visual-consistency pass: the same .panel--focus surface the dashboard's "What needs attention"
    list already uses — this table is the page's entire reason for existing. *@
 @await Html.PartialAsync("_ShowInactiveToggle", new FlowOps.Web.ShowInactiveToggleViewModel(Model.ShowInactive, Model.HiddenInactiveCount, "members", new Dictionary<string, string?> { ["search"] = Model.Search }))
+@* Phase 29B: panels carry no global sibling margin of their own — a vertical stack of panels
+   must opt into it via .panel-stack, or they sit flush against each other with zero gap. *@
+<div class="panel-stack">
 <div class="panel panel--focus">
     @if (Model.Members.Count == 0)
     {
@@ -165,12 +168,81 @@
     }
 </div>
 
+@* Verification pass: an invitation someone hasn't accepted yet was previously invisible on this
+   page — the only trace of it was the one-time "Invitation created" notice, gone the moment the
+   inviter navigated away. This mirrors the Members table's own panel/table shape exactly, and is
+   omitted entirely (not an empty state) when there is nothing outstanding to show. *@
+@if (Model.PendingInvitations.Count > 0)
+{
+    <div class="panel panel--focus">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Pending invitations")); }
+        <div class="table-responsive">
+            <table>
+                <caption class="sr-only">Pending invitations</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Email</th>
+                        <th scope="col">Role</th>
+                        <th scope="col">Team</th>
+                        <th scope="col">Invited by</th>
+                        <th scope="col">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invitation in Model.PendingInvitations)
+                    {
+                        <tr>
+                            <td>@invitation.Email</td>
+                            <td class="cell-muted">@FlowOps.Web.RoleDisplay.ToDisplayName(invitation.Role)</td>
+                            <td class="cell-muted">@(invitation.TeamName ?? "—")</td>
+                            <td class="cell-muted">@invitation.InvitedByDisplayName</td>
+                            <td>
+                                @if (invitation.IsExpired)
+                                {
+                                    <span class="fo-status-dot fo-status-dot--muted" aria-hidden="true"></span>
+                                    <span>Expired</span>
+                                }
+                                else
+                                {
+                                    <span class="fo-status-dot fo-status-dot--ok" aria-hidden="true"></span>
+                                    <span>Pending</span>
+                                    <span class="cell-muted">· expires <time datetime="@invitation.ExpiresAt.ToString("O")" title="@invitation.ExpiresAt.ToString("u")">@invitation.ExpiresAt.ToString("MMM d")</time></span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+</div>
+
 <div class="zone" id="invite">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Invite a new member")); }
 
     @if (Model.CreatedInvitationLink is not null)
     {
-        await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel("Invitation created. Copy the link below and send it to the invited person — FlowOps does not send email."));
+        @* Phase 30 (ADR-0035): FlowOps now emails the invitation automatically — but the link
+           stays visible either way, both as a manual-share fallback and, when delivery itself
+           failed, as the only way the invited person actually receives it. Email failure never
+           blocks or reverses the invitation itself (it already exists by the time this renders).
+           Verification pass: a third, honest state for the common case where no live provider is
+           configured at all (every local/CI environment by default) — previously indistinguishable
+           from "emailed successfully" in the wording below, which told every such caller an email
+           had gone out when nothing was ever sent. *@
+        if (Model.InvitationEmailProviderNotConfigured)
+        {
+            await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel("Invitation created. Email is not configured in this environment, so copy the link below and share it directly."));
+        }
+        else if (Model.InvitationEmailDeliveryFailed)
+        {
+            await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel("Invitation created, but the email could not be sent. Copy the link below and share it directly.", FlowOps.Web.NoticeTone.Danger));
+        }
+        else
+        {
+            await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel("Invitation created and emailed to the invited address. You can also copy the link below to share it directly."));
+        }
         <div class="field">
             <label for="invitation-link">Invitation link</label>
             @* Phase 24A: a real copy button (wwwroot/js/copy-button.js) replaces the old

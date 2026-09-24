@@ -21,7 +21,10 @@
         </div>
         @await Html.PartialAsync("_SearchBox", new FlowOps.Web.SearchBoxViewModel("Search at-risk work...", Model.Search))
     </div>
-    <p class="page-actions"><a class="back-link" asp-page="/Tickets/Index">&larr; Work queue</a></p>
+    <p class="page-actions">
+        <a class="back-link" asp-page="/Tickets/Index">&larr; Work queue</a>
+        <a class="guide-help-link" asp-page="/Guide/SlaAndAttention">How is attention determined?</a>
+    </p>
 </div>
 
 @* Phase 25 §16: narrower than the Work Queue's date filter by design — one quick-range selector,
@@ -124,36 +127,72 @@ else
                     "medium" => "med",
                     _ => "low",
                 };
-                <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
-                    <div class="q-main">
-                        <div class="q-title">@ticket.Title</div>
-                        <div class="q-meta">
-                            <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(ticket.Status)">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
-                            <span>Priority: @ticket.Priority</span>
-                            @for (var signalIndex = 0; signalIndex < ticket.Signals.Count; signalIndex++)
+                <div class="q-row-wrap">
+                    <a class="q-row @slaClass" asp-page="/Tickets/Details" asp-route-id="@ticket.Id">
+                        <div class="q-main">
+                            <div class="q-title">@ticket.Title</div>
+                            <div class="q-meta">
+                                <span class="q-ref">@ticket.Reference</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                                <span>@ticket.TeamName</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                                <span>@(ticket.AssigneeDisplayName ?? "Unassigned")</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                                <span class="status-badge status-badge--compact @FlowOps.Web.StatusBadgeDisplay.CssClass(ticket.Status)">@FlowOps.Web.WorkflowRail.Label(ticket.Status)</span><span class="q-dot" aria-hidden="true">&middot;</span>
+                                <span>Priority: @ticket.Priority</span>
+                                @for (var signalIndex = 0; signalIndex < ticket.Signals.Count; signalIndex++)
+                                {
+                                    <span class="q-dot" aria-hidden="true">&middot;</span>
+                                    <span class="@(signalIndex == 0 ? "" : "why-secondary")">@ticket.Signals[signalIndex].Headline</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="q-sev-col">
+                            <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
+                        </div>
+                        <div class="q-rail-col" aria-hidden="true">
+                            @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
+                        </div>
+                        <div class="q-sla" title="Deadline @ticket.Sla.DueAt.ToString("u")">
+                            <span class="q-sla__state">@FlowOps.Web.SlaDisplay.StatusLabel(ticket.Sla.Status)</span>
+                            @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
                             {
-                                <span class="q-dot" aria-hidden="true">&middot;</span>
-                                <span class="@(signalIndex == 0 ? "" : "why-secondary")">@ticket.Signals[signalIndex].Headline</span>
+                                <span class="q-sla__time">@remaining</span>
                             }
                         </div>
-                    </div>
-                    <div class="q-sev-col">
-                        <div class="sev @topSevClass"><i aria-hidden="true"></i><span>@topSignal.Severity</span></div>
-                    </div>
-                    <div class="q-rail-col" aria-hidden="true">
-                        @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(ticket.Status, ticket.Sla)); }
-                    </div>
-                    <div class="q-sla" title="Deadline @ticket.Sla.DueAt.ToString("u")">
-                        <span class="q-sla__state">@FlowOps.Web.SlaDisplay.StatusLabel(ticket.Sla.Status)</span>
-                        @if (FlowOps.Web.SlaDisplay.Remaining(ticket.Sla) is { } remaining)
-                        {
-                            <span class="q-sla__time">@remaining</span>
-                        }
-                    </div>
-                </a>
+                    </a>
+                    @* Phase 30: the compact Attention Brief — Signals (repeated here as a clean
+                       list, not the inline-joined line above) plus the deterministic Suggested
+                       next step. "What changed" is Ticket Detail's own, one click away — not
+                       worth an extra per-row history query on a page of up to 25 tickets. *@
+                    <details class="attention-disclosure">
+                        <summary>View attention brief</summary>
+                        <div class="attention-disclosure__body panel">
+                            <div class="attention-brief__section">
+                                <h3>Signals</h3>
+                                <ul class="attention-brief__signals">
+                                    @foreach (var signal in ticket.Signals)
+                                    {
+                                        var signalSevClass = signal.Severity.ToString().ToLowerInvariant() switch
+                                        {
+                                            "critical" => "crit",
+                                            "high" => "high",
+                                            _ => "med",
+                                        };
+                                        <li>
+                                            <span class="sev @signalSevClass" aria-hidden="true"><i></i><span>@signal.Severity</span></span>
+                                            <span>@signal.Headline</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                            @if (ticket.SuggestedNextStep is { } nextStep)
+                            {
+                                <div class="attention-brief__section attention-brief__next-step">
+                                    <h3>Suggested next step</h3>
+                                    <p>@nextStep</p>
+                                </div>
+                            }
+                        </div>
+                    </details>
+                </div>
             }
         </div>
     </div>

@@ -158,6 +158,29 @@ public sealed class IndexModel : PageModel
         return Page();
     }
 
+    public async Task<IActionResult> OnPostReactivateAsync(int projectId, CancellationToken cancellationToken)
+    {
+        var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
+        if (user is null || user.Role != UserRole.Admin)
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _catalogService.ReactivateProjectAsync(user, projectId, cancellationToken);
+            StatusMessage = result.Succeeded ? "Project reactivated." : result.Error;
+            StatusIsError = !result.Succeeded;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            return Forbid();
+        }
+
+        Projects = ApplyInactiveFilter(await _catalogService.GetProjectsAsync(user, cancellationToken));
+        return Page();
+    }
+
     private IReadOnlyList<ProjectListItem> ApplyInactiveFilter(IReadOnlyList<ProjectListItem> all)
     {
         HiddenInactiveCount = ShowInactive ? 0 : all.Count(x => !x.IsActive);

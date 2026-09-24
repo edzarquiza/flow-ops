@@ -42,7 +42,7 @@
                     <p class="confirm-panel__question">Deactivate @Model.Team.TeamName?</p>
                     <p class="confirm-panel__detail">
                         Existing tickets and historical data will remain intact, but the team will no
-                        longer be available for new ticket creation. This can be reversed at any time.
+                        longer be available for new ticket creation. It can be reactivated later.
                     </p>
                     <div class="confirm-panel__actions">
                         <form method="post" asp-page-handler="DeactivateTeam" asp-route-id="@Model.Team.TeamId">
@@ -58,6 +58,10 @@
     else
     {
         <p class="page-context">This team is inactive. It no longer appears when creating a new ticket, but its history, members, and categories remain unchanged.</p>
+        <form method="post" asp-page-handler="ReactivateTeam" asp-route-id="@Model.Team.TeamId">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-primary">Reactivate team</button>
+        </form>
     }
 </div>
 
@@ -203,7 +207,7 @@
                                                 <p class="confirm-panel__question">Deactivate @category.Name?</p>
                                                 <p class="confirm-panel__detail">
                                                     It no longer appears when creating a new ticket, but its history
-                                                    remains unchanged. This can be reversed at any time.
+                                                    remains unchanged. It can be reactivated later.
                                                 </p>
                                                 <div class="confirm-panel__actions">
                                                     <form method="post" asp-page-handler="DeactivateCategory" asp-route-id="@Model.Team.TeamId">
@@ -219,7 +223,15 @@
                                 }
                                 else
                                 {
-                                    <span class="cell-muted">&mdash;</span>
+                                    <form method="post" asp-page-handler="ReactivateCategory" asp-route-id="@Model.Team.TeamId">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="categoryId" value="@category.CategoryId" />
+                                        <button type="submit" class="btn-primary">Reactivate</button>
+                                    </form>
+                                    @if (!Model.Team.IsActive)
+                                    {
+                                        <p class="cell-muted">Won't appear in Create Ticket until @Model.Team.TeamName is also active.</p>
+                                    }
                                 }
                             </td>
                         </tr>

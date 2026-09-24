@@ -108,6 +108,54 @@ public sealed class ProjectManagementTests : IClassFixture<FlowOpsWebApplication
         }
     }
 
+    [Fact] // Phase 30B (ADR-0032): deactivation is no longer terminal.
+    public async Task Admin_CanReactivateADeactivatedProject_AndItReappearsOnCreateTicket()
+    {
+        var client = RegisterAsync("ProjectMgmt Admin4", out _);
+        await CreateTeamAsync(client); // Create Ticket offers nothing at all without an active team.
+        var projectName = $"Alpha Rollout {Guid.NewGuid():N}";
+        var createToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, "/Admin/Projects/Index"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/Admin/Projects/Index?handler=Create")
+        {
+            Content = new FormUrlEncodedContent([new("CreateInput.Name", projectName), new("__RequestVerificationToken", createToken)]),
+        });
+        int projectId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            projectId = await db.Projects.Where(p => p.Name == projectName).Select(p => p.Id).SingleAsync();
+        }
+
+        var deactivateToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, "/Admin/Projects/Index"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/Admin/Projects/Index?handler=Deactivate")
+        {
+            Content = new FormUrlEncodedContent([new("projectId", projectId.ToString()), new("__RequestVerificationToken", deactivateToken)]),
+        });
+
+        // The deactivated row is hidden by default (Show inactive is off) — fetch it with the
+        // toggle on, the same way an Admin would need to in order to find it and reactivate it.
+        var afterDeactivateHtml = await GetHtmlAsync(client, "/Admin/Projects/Index?showInactive=true");
+        Assert.Contains("Reactivate", afterDeactivateHtml, StringComparison.Ordinal);
+
+        var reactivateToken = ExtractAntiForgeryToken(afterDeactivateHtml);
+        var afterReactivate = await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/Admin/Projects/Index?handler=Reactivate")
+        {
+            Content = new FormUrlEncodedContent([new("projectId", projectId.ToString()), new("__RequestVerificationToken", reactivateToken)]),
+        });
+        var afterReactivateHtml = await afterReactivate.Content.ReadAsStringAsync();
+        Assert.Contains("Project reactivated.", afterReactivateHtml, StringComparison.Ordinal);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            var project = await db.Projects.AsNoTracking().SingleAsync(p => p.Id == projectId);
+            Assert.True(project.IsActive);
+        }
+
+        var createOptionsHtml = await GetHtmlAsync(client, "/Tickets/Create");
+        Assert.Contains($"value=\"{projectId}\"", createOptionsHtml, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task DeactivatedProject_NoLongerOfferedOnCreateTicket_ButExistingTicketKeepsDisplayingIt()
     {

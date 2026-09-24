@@ -95,7 +95,7 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
         var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
 
         var longAgo = TimeProvider.System.GetUtcNow().AddDays(-3);
-        var ticketService = new TicketService(db, new BackdatedTimeProvider(longAgo));
+        var ticketService = new TicketService(db, new BackdatedTimeProvider(longAgo), TestEmail.Sender, TestEmail.Options);
 
         var (ticketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest(
@@ -135,6 +135,14 @@ public sealed class FlowOpsWebApplicationFactory : WebApplicationFactory<Program
         // default) would throttle test setup, not a real attacker. No appsettings.*.json file sets
         // this key, so a real deployment is entirely unaffected.
         builder.UseSetting("RateLimiting:Login:PermitLimitPerMinute", "1000");
+
+        // Phase F1-B: same reasoning as the login override above, now for the "sensitive" policy
+        // (Register/ResetPassword/Members' invite + generate-reset-link) — this shared factory's
+        // tests register/invite far more than 5 times/minute from one synthetic test-host IP.
+        // A dedicated test that wants to actually observe throttling overrides this back down via
+        // its own WithWebHostBuilder(...) call, the same way Phase12SecurityTests does for other
+        // one-off settings.
+        builder.UseSetting("RateLimiting:Sensitive:PermitLimitPerMinute", "1000");
     }
 
     async Task IAsyncLifetime.DisposeAsync()

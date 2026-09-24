@@ -58,6 +58,11 @@ public enum TicketQueueFilter
     /// are computed over the same population — tickets whose <c>ResolvedAt</c> falls in the
     /// 90-day reporting window (see <see cref="AnalyticsQueryService"/>).</summary>
     ResolvedRecently,
+
+    /// <summary>ADR-0036: the Team Workload "Unassigned" metric — <c>AssigneeId IS NULL</c> and
+    /// not terminal. Reuses the existing <c>ix_tickets_open_unassigned</c> index, provisioned for
+    /// exactly this predicate but previously unused by any queue filter.</summary>
+    Unassigned,
 }
 
 public sealed record TicketListItem(
@@ -101,7 +106,28 @@ public sealed record AttentionListItem(
 {
     /// <summary>The most severe signal on this ticket — what put it where it is in the ranking.</summary>
     public AttentionSeverity HighestSeverity => Signals.Max(s => s.Severity);
+
+    /// <summary>Phase 30: the At-Risk row's own compact attention brief — computed for free from
+    /// <see cref="Signals"/>/<see cref="Status"/>, already on this record, so no extra query is
+    /// needed per row. Deliberately excludes "What changed" (Ticket Detail's own, one extra
+    /// per-ticket query, worth it for one ticket, not for a whole page of rows).</summary>
+    public string? SuggestedNextStep => AttentionSuggestion.SuggestNextStep(Signals.Select(s => s.Code).ToList(), Status);
 }
+
+/// <summary>
+/// Phase 30: explains one ticket's existing attention decision — never a second decision.
+/// <see cref="Signals"/> is exactly what <see cref="AttentionPolicy.Evaluate"/> already found (the
+/// same values <see cref="AttentionListItem.Signals"/> carries); <see cref="RecentEvents"/> is the
+/// "What changed" section — real, already-recorded ticket events (never comments, never a
+/// fabricated historical attention timeline — FlowOps does not persist one); <see cref="SuggestedNextStep"/>
+/// is <see cref="Attention.AttentionSuggestion.SuggestNextStep"/>'s deterministic output. Returned
+/// only when the ticket genuinely has signals right now (see <c>AttentionQueryService.GetBriefAsync</c>) —
+/// a ticket with no signals has no brief, not an empty one.
+/// </summary>
+public sealed record AttentionBrief(
+    IReadOnlyList<AttentionSignalView> Signals,
+    IReadOnlyList<TicketTimelineEntry> RecentEvents,
+    string? SuggestedNextStep);
 
 /// <summary>Ticket detail for the ticket detail page.</summary>
 /// <remarks>
@@ -120,6 +146,7 @@ public sealed record TicketDetail(
     Status Status,
     int TeamId,
     string TeamName,
+    int CategoryId,
     string CategoryName,
     string? ProjectName,
     Guid RequesterId,
@@ -354,6 +381,55 @@ public sealed record DashboardStatusCount(Status Status, int Count);
 /// <see cref="AnalyticsQueryService.GetTeamWorkloadBreakdownAsync"/> for why "who is carrying the
 /// work right now" is not a question a creation-date window can answer).</summary>
 public sealed record DashboardTeamWorkload(int TeamId, string TeamName, int OpenTicketCount);
+
+/// <summary>
+/// ADR-0036: the Team Workload page's own summary strip. <see cref="AtRiskCount"/> is computed
+/// exclusively by <see cref="Attention.AttentionPolicy"/> (via <see cref="AttentionQueryService"/>)
+/// — this record never carries a field derived any other way. Deliberately just counts, the same
+/// restraint <see cref="WorkloadItem"/>'s own doc comment states: no workload score, no capacity
+/// percentage.
+/// </summary>
+public sealed record TeamWorkloadSummary(
+    int OpenCount,
+    int UnassignedCount,
+    int AtRiskCount,
+    int OverdueCount,
+    int HighCriticalCount);
+
+/// <summary>
+/// ADR-0036: one row of the Team Workload table — the same "current open work" snapshot
+/// <see cref="GetTeamWorkloadBreakdownAsync"/> already computes, extended with the columns Team
+/// Workload adds. <see cref="AssignedCount"/> is "open tickets that already have an assignee"
+/// (<see cref="OpenCount"/> minus <see cref="UnassignedCount"/>), not the <c>Status.Assigned</c>
+/// enum value specifically. <see cref="AtRiskCount"/> arrives from
+/// <see cref="AttentionQueryService.GetAtRiskSummaryAsync"/>'s per-team breakdown, merged in by the
+/// caller — this record's own construction from <see cref="AnalyticsQueryService"/> alone always
+/// carries <c>AtRiskCount: 0</c> until that merge happens.
+/// </summary>
+public sealed record TeamWorkloadRow(
+    int TeamId,
+    string TeamName,
+    int OpenCount,
+    int AssignedCount,
+    int UnassignedCount,
+    int AtRiskCount,
+    int OverdueCount);
+
+/// <summary>
+/// ADR-0036: one row of a team's member workload, shown only once that team is explicitly
+/// expanded (never fetched for every team on the page's initial load). Authorized by
+/// <see cref="TicketAccessPolicy.CanViewTeamWorkload"/> — read-only, and deliberately not the same
+/// authority as <see cref="Directory.TeamService.GetTeamDetailAsync"/>'s team-management roster.
+/// <see cref="AtRiskCount"/> is merged in the same way <see cref="TeamWorkloadRow.AtRiskCount"/> is.
+/// </summary>
+public sealed record TeamMemberWorkloadRow(
+    Guid UserId,
+    string DisplayName,
+    int OpenCount,
+    int InProgressCount,
+    int PendingCount,
+    int AtRiskCount,
+    int OverdueCount);
 
 /// <summary>
 /// Phase 20 §6: every ticket created within the selected range, classified by

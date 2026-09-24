@@ -273,4 +273,51 @@ public class TicketAccessPolicyTests
         Assert.Equal(AnalyticsScopeKind.MemberTeams, scope.Kind);
         Assert.Equal(user.MemberTeamIds, scope.TeamIds);
     }
+
+    // ---- CanViewTeamWorkload (ADR-0036) ----
+
+    [Fact]
+    public void CanViewTeamWorkload_Admin_SeesAnyTeam()
+    {
+        var admin = User(UserRole.Admin);
+
+        Assert.True(TicketAccessPolicy.CanViewTeamWorkload(admin, Team));
+        Assert.True(TicketAccessPolicy.CanViewTeamWorkload(admin, OtherTeam));
+    }
+
+    [Fact]
+    public void CanViewTeamWorkload_Manager_SeesOnlyManagedTeam()
+    {
+        var manager = User(UserRole.Manager, memberOfTeam: true, managesTeam: true);
+
+        Assert.True(TicketAccessPolicy.CanViewTeamWorkload(manager, Team));
+        Assert.False(TicketAccessPolicy.CanViewTeamWorkload(manager, OtherTeam));
+    }
+
+    [Fact] // Merely being a member (not the manager) of a team grants no read access here either —
+           // the same "managed, not member" distinction GetAnalyticsScope itself already draws.
+    public void CanViewTeamWorkload_ManagerOfNoTeam_SeesNoTeam()
+    {
+        var manager = User(UserRole.Manager, memberOfTeam: true, managesTeam: false);
+
+        Assert.False(TicketAccessPolicy.CanViewTeamWorkload(manager, Team));
+    }
+
+    [Fact] // Agent's analytics scope has no team concept at all — no team id ever qualifies.
+    public void CanViewTeamWorkload_Agent_NeverSeesAnyTeam()
+    {
+        var agent = User(UserRole.Agent, memberOfTeam: true);
+
+        Assert.False(TicketAccessPolicy.CanViewTeamWorkload(agent, Team));
+        Assert.False(TicketAccessPolicy.CanViewTeamWorkload(agent, OtherTeam));
+    }
+
+    [Fact]
+    public void CanViewTeamWorkload_Viewer_SeesOnlyMemberTeam()
+    {
+        var viewer = User(UserRole.Viewer, memberOfTeam: true);
+
+        Assert.True(TicketAccessPolicy.CanViewTeamWorkload(viewer, Team));
+        Assert.False(TicketAccessPolicy.CanViewTeamWorkload(viewer, OtherTeam));
+    }
 }

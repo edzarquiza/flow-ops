@@ -455,7 +455,7 @@ public sealed class OrganizationContextTests
         context.TeamMembers.Add(new Domain.Directory.TeamMember(teamInOrgB.Id, userId, isTeamManager: false, Now));
         await context.SaveChangesAsync();
 
-        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var orgBAdmin = new CurrentUser(userId, orgBId, UserRole.Admin, new HashSet<int> { teamInOrgB.Id }, new HashSet<int>());
         await ticketService.CreateAsync(new CreateTicketRequest("Org B only ticket", "Visible only after switching to Org B.", WorkType.Incident, Priority.Medium, teamInOrgB.Id, categoryInOrgB.Id, null), orgBAdmin);
 

@@ -234,6 +234,85 @@ public sealed class TeamServiceTests
         await Assert.ThrowsAsync<TeamAccessDeniedException>(() => service.DeactivateAsync(nonAdmin, created.TeamId!.Value));
     }
 
+    [Fact] // Phase 30B (ADR-0032): deactivation is no longer terminal.
+    public async Task ReactivateAsync_Admin_ReactivatesOwnTeam()
+    {
+        var world = await NewOrganizationAsync("Team15");
+        var admin = AsCurrentUser(world);
+        var service = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateAsync(admin, "Service Desk");
+        await service.DeactivateAsync(admin, created.TeamId!.Value);
+
+        var result = await service.ReactivateAsync(admin, created.TeamId!.Value);
+
+        Assert.True(result.Succeeded);
+        var team = await world.Context.Teams.AsNoTracking().SingleAsync(t => t.Id == created.TeamId);
+        Assert.True(team.IsActive);
+    }
+
+    [Fact]
+    public async Task ReactivateAsync_AlreadyActiveTeam_Fails()
+    {
+        var world = await NewOrganizationAsync("Team16");
+        var admin = AsCurrentUser(world);
+        var service = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateAsync(admin, "Service Desk");
+
+        var result = await service.ReactivateAsync(admin, created.TeamId!.Value);
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact] // A name freed by deactivation may have been claimed by a new team in the meantime —
+           // reactivating must reject with a friendly message, never a raw constraint violation.
+    public async Task ReactivateAsync_NameNowTakenByAnActiveTeam_FailsWithFriendlyMessage()
+    {
+        var world = await NewOrganizationAsync("Team17");
+        var admin = AsCurrentUser(world);
+        var service = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var first = await service.CreateAsync(admin, "Service Desk");
+        await service.DeactivateAsync(admin, first.TeamId!.Value);
+        await service.CreateAsync(admin, "Service Desk");
+
+        var result = await service.ReactivateAsync(admin, first.TeamId!.Value);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task ReactivateAsync_AnotherOrganizationsTeam_ThrowsAndDoesNotMutate()
+    {
+        var worldA = await NewOrganizationAsync("Team18A");
+        var worldB = await NewOrganizationAsync("Team18B");
+        var serviceB = new TeamService(worldB.Context, new TicketTestData.FixedTimeProvider(Now));
+        var teamInB = await serviceB.CreateAsync(AsCurrentUser(worldB), "Org B Team");
+        await serviceB.DeactivateAsync(AsCurrentUser(worldB), teamInB.TeamId!.Value);
+        var serviceA = new TeamService(worldA.Context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<TeamAccessDeniedException>(
+            () => serviceA.ReactivateAsync(AsCurrentUser(worldA), teamInB.TeamId!.Value));
+
+        var team = await worldB.Context.Teams.AsNoTracking().SingleAsync(t => t.Id == teamInB.TeamId);
+        Assert.False(team.IsActive);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Manager)]
+    [InlineData(UserRole.Agent)]
+    [InlineData(UserRole.Viewer)]
+    public async Task ReactivateAsync_NonAdmin_Throws(UserRole role)
+    {
+        var world = await NewOrganizationAsync("Team19" + role);
+        var admin = AsCurrentUser(world);
+        var service = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateAsync(admin, "Service Desk");
+        await service.DeactivateAsync(admin, created.TeamId!.Value);
+        var nonAdmin = new CurrentUser(Guid.NewGuid(), world.OrganizationId, role, new HashSet<int>(), new HashSet<int>());
+
+        await Assert.ThrowsAsync<TeamAccessDeniedException>(() => service.ReactivateAsync(nonAdmin, created.TeamId!.Value));
+    }
+
     [Fact] // Deactivating a team must never affect its members, categories, or historical tickets.
     public async Task DeactivateAsync_DoesNotAffectMembersCategoriesOrTickets()
     {
@@ -245,7 +324,7 @@ public sealed class TeamServiceTests
         var categoryResult = await catalogService.CreateCategoryAsync(admin, created.TeamId!.Value, "Incidents", WorkType.Incident);
         var memberId = await AddOrganizationMemberAsync(world, "Agent One", UserRole.Agent);
         await teamService.AddMemberAsync(admin, created.TeamId!.Value, memberId);
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var agent = new CurrentUser(memberId, world.OrganizationId, UserRole.Agent, new HashSet<int> { created.TeamId!.Value }, new HashSet<int>());
         var (ticketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest("Printer jam", "The printer on the third floor is jammed.", WorkType.Incident, Priority.Medium, created.TeamId.Value, categoryResult.CategoryId!.Value, null),
@@ -274,7 +353,7 @@ public sealed class TeamServiceTests
         var catalogService = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
         var created = await teamService.CreateAsync(admin, "Service Desk");
         var categoryResult = await catalogService.CreateCategoryAsync(admin, created.TeamId!.Value, "Incidents", WorkType.Incident);
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest("Printer jam", "The printer on the third floor is jammed.", WorkType.Incident, Priority.Medium, created.TeamId.Value, categoryResult.CategoryId!.Value, null),
             admin);

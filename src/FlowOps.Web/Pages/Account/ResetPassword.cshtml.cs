@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace FlowOps.Web.Pages.Account;
 
@@ -15,6 +16,7 @@ namespace FlowOps.Web.Pages.Account;
 /// No email capability exists anywhere in this app; this page never assumes one.
 /// </summary>
 [AllowAnonymous]
+[EnableRateLimiting("sensitive")]
 public sealed class ResetPasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;

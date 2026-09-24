@@ -44,16 +44,24 @@ public static class Icons
 
     public const string Members = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><circle cx=\"9\" cy=\"8.3\" r=\"3\" {S} /><circle cx=\"17\" cy=\"9.8\" r=\"2.3\" {S} /><path d=\"M3.6 19c0-3 2.4-5.3 5.4-5.3s5.4 2.3 5.4 5.3\" {S} /><path d=\"M15 19c0-2.2 1.3-4 3.4-4.7\" {S} /></svg>";
 
-    public const string Settings = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><circle cx=\"12\" cy=\"12\" r=\"3.1\" {S} /><path d=\"M12 3.4v2.6M12 18v2.6M20.6 12H18M6 12H3.4M18 6l-1.8 1.8M7.8 16.2 6 18M18 18l-1.8-1.8M7.8 7.8 6 6\" {S} /></svg>";
-
-    /// <summary>Three sliders at different settings — organization-wide controls, distinct from
-    /// the personal-account gear (<see cref="Settings"/>).</summary>
+    /// <summary>Three sliders at different settings — organization-wide controls.</summary>
     public const string Admin = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><path d=\"M4 6h6.5M14.5 6H20M4 12h1.5M9.5 12H20M4 18h11.5M19.5 18H20\" {S} /><circle cx=\"12.5\" cy=\"6\" r=\"1.8\" fill=\"currentColor\" /><circle cx=\"7\" cy=\"12\" r=\"1.8\" fill=\"currentColor\" /><circle cx=\"17.5\" cy=\"18\" r=\"1.8\" fill=\"currentColor\" /></svg>";
 
     /// <summary>Concentric rings — instance-wide scope, above any one organization. Distinct from
-    /// <see cref="Admin"/>'s sliders (one organization's controls) and <see cref="Team"/>'s three
-    /// units (one team) — this is the one glyph that means "every organization."</summary>
+    /// <see cref="Admin"/>'s sliders (one organization's controls) — this is the one glyph that
+    /// means "every organization."</summary>
     public const string Platform = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><circle cx=\"12\" cy=\"12\" r=\"8.2\" {S} /><circle cx=\"12\" cy=\"12\" r=\"4\" {S} /><circle cx=\"12\" cy=\"12\" r=\"1\" fill=\"currentColor\" /></svg>";
+
+    /// <summary>Phase 30D: a clock face with a hand — SLA target/deadline time, for the Platform
+    /// sidebar's SLA Configuration link. Distinct from the smaller 14px SLA badge glyphs
+    /// (<see cref="SlaWithin"/> and its siblings), which are sized for inline ticket-list use, not
+    /// the ~20px sidebar nav convention every other link here follows.</summary>
+    public const string Sla = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><circle cx=\"12\" cy=\"12\" r=\"8.2\" {S} /><path d=\"M12 7.6V12l3 1.8\" {S} /></svg>";
+
+    /// <summary>An open book — the Guide's own nav icon. Two page-curves meeting at a spine, the
+    /// same "shape carries the meaning, not a literal glyph" restraint every other nav icon here
+    /// follows.</summary>
+    public const string Guide = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><path d=\"M12 7c-1.9-1.4-4.2-2.1-6.8-2.1v12.6c2.6 0 4.9.7 6.8 2.1\" {S} /><path d=\"M12 7c1.9-1.4 4.2-2.1 6.8-2.1v12.6c-2.6 0-4.9.7-6.8 2.1\" {S} /><path d=\"M12 7v12.6\" {S} /></svg>";
 
     public const string SignOut = $"<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" {A}><path d=\"M9.5 4.5H5.8a1.3 1.3 0 0 0-1.3 1.3v12.4a1.3 1.3 0 0 0 1.3 1.3h3.7\" {S} /><path d=\"M10 12h10M16.5 7.5 20 12l-3.5 4.5\" {S} /></svg>";
 
@@ -63,34 +71,11 @@ public static class Icons
 
     // ---- Dashboard section icons — one per major concept, used strategically on panel heads. ----
 
-    public const string Operations = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M2.5 12h4l2-6 4 12 2-9 1.5 3h5.5\" {S} /></svg>";
-
-    public const string Attention = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><circle cx=\"12\" cy=\"12\" r=\"2.2\" fill=\"currentColor\" /><path d=\"M12 4v2.4M12 17.6V20M20 12h-2.4M6.4 12H4M17.3 6.7l-1.7 1.7M8.4 15.6l-1.7 1.7M17.3 17.3l-1.7-1.7M8.4 8.4 6.7 6.7\" {S} /></svg>";
-
-    public const string Performance = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M5 19V13M11 19V8M17 19v-6.5M4 19h16\" {S} /></svg>";
-
-    public const string Demand = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M3.5 16 9 9.5l4 4 7-8.5\" {S} /><path d=\"M15.5 5h4.5v4.5\" {S} /></svg>";
-
-    /// <summary>Connected stages, left to right — the same "chain of steps" idea as the workflow
-    /// rail, drawn small enough for a section head.</summary>
-    public const string Pipeline = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><circle cx=\"4.5\" cy=\"12\" r=\"2.1\" {S} /><circle cx=\"12\" cy=\"12\" r=\"2.1\" {S} /><circle cx=\"19.5\" cy=\"12\" r=\"2.1\" fill=\"currentColor\" /><path d=\"M6.6 12h3.3M14.1 12h3.3\" {S} /></svg>";
-
-    public const string Capacity = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><rect x=\"5\" y=\"14.5\" width=\"14\" height=\"4\" rx=\"1.2\" {S} /><rect x=\"5\" y=\"9.5\" width=\"14\" height=\"4\" rx=\"1.2\" {S} /><rect x=\"5\" y=\"4.5\" width=\"14\" height=\"4\" rx=\"1.2\" {S} /></svg>";
-
-    /// <summary>A shield protecting the flow's own timing — SLA/Compliance.</summary>
-    public const string Sla = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M12 3.4 18.5 6v5.2c0 4.4-2.9 7.4-6.5 8.4-3.6-1-6.5-4-6.5-8.4V6L12 3.4Z\" {S} /><path d=\"M8.8 12l2.2 2.2 4.2-4.8\" {S} /></svg>";
-
     /// <summary>A gauge with a fast, forward-leaning needle — optimized flow.</summary>
     public const string Efficiency = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M4 15.5a8 8 0 0 1 16 0\" {S} /><path d=\"M12 15.5 16 10\" {S} /><circle cx=\"12\" cy=\"15.5\" r=\"1.3\" fill=\"currentColor\" /></svg>";
 
-    public const string Workload = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><circle cx=\"8.5\" cy=\"9\" r=\"2.6\" {S} /><circle cx=\"16\" cy=\"9\" r=\"2.6\" {S} /><path d=\"M3.6 19c0-2.8 2.2-5 4.9-5s4.9 2.2 4.9 5M12.6 14.3c.6-.2 1.3-.3 1.9-.3 2.7 0 4.9 2.2 4.9 5\" {S} /></svg>";
-
     /// <summary>Stacked structured records — Data/KPIs.</summary>
     public const string DataKpi = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><ellipse cx=\"12\" cy=\"6\" rx=\"7\" ry=\"2.6\" {S} /><path d=\"M5 6v6c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6\" {S} /><path d=\"M5 12v6c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6v-6\" {S} /></svg>";
-
-    /// <summary>Three units meeting at one point — a team as a working group, distinct from the
-    /// even 2x2 grid <see cref="Dashboard"/> already uses.</summary>
-    public const string Team = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><rect x=\"3.5\" y=\"3.5\" width=\"7\" height=\"7\" rx=\"1.6\" {S} /><rect x=\"13.5\" y=\"3.5\" width=\"7\" height=\"7\" rx=\"1.6\" {S} /><rect x=\"8.5\" y=\"13.5\" width=\"7\" height=\"7\" rx=\"1.6\" {S} /></svg>";
 
     /// <summary>A folder — a project as a container of work, the Catalog module's Project icon.</summary>
     public const string Project = $"<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" {A}><path d=\"M3.5 8V6.3A1.8 1.8 0 0 1 5.3 4.5h3.8l2 2.1h7.6a1.8 1.8 0 0 1 1.8 1.8V17a1.8 1.8 0 0 1-1.8 1.8H5.3A1.8 1.8 0 0 1 3.5 17V8Z\" {S} /></svg>";
@@ -150,26 +135,7 @@ public static class Icons
 
     public const string Search = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\" {S} /><path d=\"M15.5 15.5 21 21\" {S} /></svg>";
 
-    public const string Filter = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><path d=\"M4 5h16l-6 7.5V19l-4 2v-8.5L4 5Z\" {S} /></svg>";
-
-    public const string Calendar = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><rect x=\"3.5\" y=\"5\" width=\"17\" height=\"15\" rx=\"2\" {S} /><path d=\"M3.5 9.5h17M8 3.2v3M16 3.2v3\" {S} /></svg>";
-
-    public const string View = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><path d=\"M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z\" {S} /><circle cx=\"12\" cy=\"12\" r=\"2.4\" {S} /></svg>";
-
     public const string More = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><circle cx=\"5.5\" cy=\"12\" r=\"1.3\" fill=\"currentColor\" /><circle cx=\"12\" cy=\"12\" r=\"1.3\" fill=\"currentColor\" /><circle cx=\"18.5\" cy=\"12\" r=\"1.3\" fill=\"currentColor\" /></svg>";
 
-    public const string Chevron = $"<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" {A}><path d=\"M6 9.5l6 6 6-6\" {S} /></svg>";
-
-    public const string Back = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><path d=\"M15 5.5 8 12l7 6.5\" {S} /></svg>";
-
     public const string Forward = $"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" {A}><path d=\"M9 5.5 16 12l-7 6.5\" {S} /></svg>";
-
-    public const string ExternalLink = $"<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" {A}><path d=\"M9 6H5.5A1.5 1.5 0 0 0 4 7.5v11A1.5 1.5 0 0 0 5.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15\" {S} /><path d=\"M13 4h7v7M20 4l-9.5 9.5\" {S} /></svg>";
-
-    // ---- Metric icons: analytical/operational, deliberately distinct from the nav glyphs even
-    // where the underlying concept overlaps (Step 11). ----
-
-    public const string MetricOpenWork = $"<svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" {A}><path d=\"M4 12h4l1.5 3h5L16 12h4\" {S} /><path d=\"M4 12v6a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18v-6l-3-6H7l-3 6Z\" {S} /></svg>";
-
-    public const string MetricOverdue = $"<svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" {A}><circle cx=\"12\" cy=\"13\" r=\"7.2\" {S} /><path d=\"M12 9v4l2.6 1.6M9.5 3.5h5\" {S} /></svg>";
 }

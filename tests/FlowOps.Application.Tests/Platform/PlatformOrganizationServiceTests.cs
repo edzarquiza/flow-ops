@@ -145,7 +145,7 @@ public sealed class PlatformOrganizationServiceTests
         var catalogService = new FlowOps.Application.Catalog.CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
         var teamResult = await teamService.CreateAsync(admin, "Support");
         var categoryResult = await catalogService.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", FlowOps.Domain.Tickets.WorkType.Incident);
-        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, _) = await ticketService.CreateAsync(
             new FlowOps.Application.Tickets.CreateTicketRequest("Server down", "The primary server is unresponsive.", FlowOps.Domain.Tickets.WorkType.Incident, FlowOps.Domain.Tickets.Priority.Critical, teamResult.TeamId.Value, categoryResult.CategoryId!.Value, null),
             new FlowOps.Domain.Tickets.CurrentUser(world.AdminId, world.OrganizationId, FlowOps.Domain.Tickets.UserRole.Admin, new HashSet<int>(), new HashSet<int>()));
@@ -209,7 +209,7 @@ public sealed class PlatformOrganizationServiceTests
         services.AddLogging();
         services.AddIdentityCore<ApplicationUser>().AddRoles<ApplicationRole>().AddEntityFrameworkStores<FlowOpsDbContext>();
         var provider = services.BuildServiceProvider();
-        var invitations = new InvitationService(world.Context, provider.GetRequiredService<UserManager<ApplicationUser>>(), provider.GetRequiredService<ILookupNormalizer>(), new TicketTestData.FixedTimeProvider(Now));
+        var invitations = new InvitationService(world.Context, provider.GetRequiredService<UserManager<ApplicationUser>>(), provider.GetRequiredService<ILookupNormalizer>(), new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var admin = AsCurrentUser(world);
         var pendingEmail = $"{Guid.NewGuid():N}@platformorgservice.test.local";
         await invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(pendingEmail, UserRole.Agent));
@@ -267,7 +267,7 @@ public sealed class PlatformOrganizationServiceTests
         var catalogService = new FlowOps.Application.Catalog.CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
         var teamResult = await teamService.CreateAsync(admin, "Support");
         var categoryResult = await catalogService.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", FlowOps.Domain.Tickets.WorkType.Incident);
-        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var service = new PlatformOrganizationService(world.Context, new TicketTestData.FixedTimeProvider(Now));
         var before = await service.GetTicketSummaryAsync();
 

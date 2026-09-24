@@ -116,3 +116,20 @@ public sealed record PlatformAuditEventListItem(
     PlatformEventType EventType,
     string ActorDisplayName,
     DateTimeOffset OccurredAt);
+
+/// <summary>Phase 30D (ADR-0034): one row of the SLA configuration screen. <see cref="WorkType"/>
+/// null means this is the priority's own default row (SLA-RULE-01) — every priority always has
+/// exactly one; a non-null <see cref="WorkType"/> is an override that only applies to that exact
+/// (WorkType, Priority) pair, resolved first when one exists (see <c>SlaPolicy.ResolveConfiguration</c>).
+/// <see cref="IsDefault"/> is the same fact as <c>WorkType is null</c>, surfaced directly so the
+/// view never re-derives it — and it is exactly what gates whether a Delete action is offered
+/// (the default row for a priority may never be removed).</summary>
+public sealed record SlaConfigurationListItem(
+    int Id,
+    FlowOps.Domain.Tickets.WorkType? WorkType,
+    FlowOps.Domain.Tickets.Priority Priority,
+    int TargetMinutes,
+    int RiskThresholdPercent)
+{
+    public bool IsDefault => WorkType is null;
+}

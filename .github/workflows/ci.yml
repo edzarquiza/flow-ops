@@ -37,10 +37,19 @@ jobs:
       - name: Build
         run: dotnet build FlowOps.sln --no-restore
 
+      # Phase 30A: FlowOps.E2E.Tests drives a real Chromium against the real (Kestrel) app —
+      # Microsoft.Playwright ships its own browser binaries (not a Node/npm toolchain, CLAUDE.md
+      # §11.1) but they still need a one-time install; playwright.ps1 is generated into the test
+      # project's own build output, and runs under pwsh (preinstalled on GitHub-hosted runners)
+      # regardless of OS.
+      - name: Install Playwright browsers
+        run: pwsh tests/FlowOps.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+
       # FlowOps.Application.Tests and FlowOps.Web.Tests provision real PostgreSQL via
-      # Testcontainers (CLAUDE.md §15 — no in-memory/SQLite substitute). The ubuntu-latest runner
-      # has Docker preinstalled and running, which is all Testcontainers needs; no service
-      # container, wait-script, or test-code change is introduced here.
+      # Testcontainers (CLAUDE.md §15 — no in-memory/SQLite substitute). FlowOps.E2E.Tests does the
+      # same for its own real-browser run. The ubuntu-latest runner has Docker preinstalled and
+      # running, which is all Testcontainers needs; no service container, wait-script, or test-code
+      # change is introduced here.
       - name: Test
         run: dotnet test FlowOps.sln --no-build
 

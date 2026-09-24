@@ -18,6 +18,11 @@ namespace FlowOps.Domain.Directory;
 /// "eligible team" options; it never cascades to Category or TeamMember rows (see ADR-0022 for why).
 /// Defaults to <see langword="true"/> so every existing call site keeps constructing active teams.
 /// </remarks>
+/// <remarks>
+/// Phase 30B (ADR-0032): <see cref="Reactivate"/> restores <see cref="IsActive"/> — deactivation is
+/// no longer terminal. Nothing else about ADR-0022 changes: reactivating still never cascades to
+/// Category/TeamMember/Ticket rows, since none of them were ever touched by deactivation either.
+/// </remarks>
 public sealed class Team
 {
     public int Id { get; }
@@ -37,8 +42,14 @@ public sealed class Team
 
     public void Rename(string name) => Name = name;
 
-    /// <summary>Terminal: makes the team unavailable for new ticket creation and new-category
-    /// creation. Never reverses, never deletes, never cascades — existing tickets, categories, and
-    /// team memberships all remain exactly as they were (ADR-0022).</summary>
+    /// <summary>Makes the team unavailable for new ticket creation and new-category creation. Never
+    /// deletes, never cascades — existing tickets, categories, and team memberships all remain
+    /// exactly as they were (ADR-0022). Reversible via <see cref="Reactivate"/> (ADR-0032).</summary>
     public void Deactivate() => IsActive = false;
+
+    /// <summary>Restores the team to normal use. The caller is responsible for the one invariant this
+    /// method itself cannot see — that no other active team in the same organization already holds
+    /// this name (the database's own filtered unique index is the final guard; the application layer
+    /// turns a violation into a friendly message, per ADR-0032).</summary>
+    public void Reactivate() => IsActive = true;
 }

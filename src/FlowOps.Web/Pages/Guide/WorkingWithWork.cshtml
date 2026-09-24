@@ -1,0 +1,62 @@
+@page
+@{
+    ViewData["Title"] = "Working with Work — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Working with Work</h1>
+        <p class="page-context">Create, assign, update and resolve operational work.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <div class="guide-flow">
+        <div class="guide-flow__step">Create</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Classify</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Assign</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Work</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Resolve</div>
+    </div>
+
+    <div class="guide-term-grid">
+        <div class="guide-term">
+            <p class="guide-term__name">Create</p>
+            <p class="guide-term__body">Describe the work, then route it to the team that owns it. A title, a description, a team and a category are required.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Classify</p>
+            <p class="guide-term__body">Choose a work type (Incident, Service Request, Task, Problem) and a priority (Critical, High, Medium, Low). Priority sets the SLA target.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Assign</p>
+            <p class="guide-term__body">A ticket moves from Open to Assigned once someone owns it. Only an active member of the ticket's own team can be assigned.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Work</p>
+            <p class="guide-term__body">The assignee starts work (In Progress), or puts it On Hold with a reason if it's waiting on someone else — the SLA clock pauses while it's on hold.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Resolve</p>
+            <p class="guide-term__body">Resolving requires a resolution and a note. A Manager or Admin (or the requester) then closes it. A closed or resolved ticket can be reopened if the work isn't actually done.</p>
+        </div>
+    </div>
+
+    <p class="prose">
+        Every change — assignment, status, priority, comments — is recorded on the ticket's own
+        activity timeline, so the history of a piece of work is always visible on its Ticket
+        Detail page.
+    </p>
+
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/Tickets/Create">Create work</a>
+        <a class="btn" asp-page="/Tickets/Index">Open Work Queue</a>
+    </p>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

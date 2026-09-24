@@ -61,6 +61,54 @@ public sealed class TeamAndCategoryLifecycleTests : IClassFixture<FlowOpsWebAppl
         Assert.Equal(renamedName, team.Name);
     }
 
+    [Fact] // Phase 30B (ADR-0032): reactivation now exists for teams/categories/projects, so neither
+           // page may still claim deactivation is one-way — and a Reactivate button must actually work.
+    public async Task DeactivateConfirmationCopy_DoesNotClaimOneWay_AndReactivateActuallyWorks_ForTeamsCategoriesOrProjects()
+    {
+        var client = RegisterAsync("TeamLifecycle CopyCheck", out _);
+        var teamId = await CreateTeamAsync(client);
+
+        // The team confirm-panel (rendered unconditionally on its own page) and the category
+        // confirm-panel (rendered for the one category CreateTeamAsync's own handler adds) must not
+        // claim deactivation is permanent.
+        var teamHtml = await GetHtmlAsync(client, $"/Admin/Teams/Details/{teamId}");
+        Assert.DoesNotContain("one-way", teamHtml, StringComparison.OrdinalIgnoreCase);
+
+        var deactivateTeamToken = ExtractAntiForgeryToken(teamHtml);
+        var deactivateResponse = await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=DeactivateTeam")
+        {
+            Content = new FormUrlEncodedContent([new("__RequestVerificationToken", deactivateTeamToken)]),
+        });
+        var afterDeactivateHtml = await deactivateResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Reactivate team", afterDeactivateHtml, StringComparison.Ordinal);
+
+        var reactivateTeamToken = ExtractAntiForgeryToken(afterDeactivateHtml);
+        var reactivateResponse = await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=ReactivateTeam")
+        {
+            Content = new FormUrlEncodedContent([new("__RequestVerificationToken", reactivateTeamToken)]),
+        });
+        var afterReactivateHtml = await reactivateResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Team reactivated.", afterReactivateHtml, StringComparison.Ordinal);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            var team = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == teamId);
+            Assert.True(team.IsActive);
+        }
+
+        var projectName = $"Copy Check Project {Guid.NewGuid():N}";
+        var createToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, "/Admin/Projects/Index"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/Admin/Projects/Index?handler=Create")
+        {
+            Content = new FormUrlEncodedContent([new("CreateInput.Name", projectName), new("__RequestVerificationToken", createToken)]),
+        });
+
+        var projectsHtml = await GetHtmlAsync(client, "/Admin/Projects/Index");
+        Assert.Contains(projectName, projectsHtml, StringComparison.Ordinal); // the project's own confirm-panel is actually present
+        Assert.DoesNotContain("one-way", projectsHtml, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Admin_CanAddRenameAndDeactivateACategoryOnAnExistingTeam()
     {
@@ -126,6 +174,64 @@ public sealed class TeamAndCategoryLifecycleTests : IClassFixture<FlowOpsWebAppl
         var category = await db2.Categories.AsNoTracking().SingleAsync(c => c.Id == categoryId);
         Assert.False(category.IsActive);
         Assert.Equal(renamedName, category.Name);
+    }
+
+    [Fact] // Phase 30B (ADR-0032): ADR-0022's independence rule is unchanged — a category can be
+           // reactivated while its own team is still inactive, and the UI says so.
+    public async Task Admin_CanReactivateACategory_EvenWhileItsTeamIsStillInactive()
+    {
+        var client = RegisterAsync("TeamLifecycle Admin3", out _);
+        var teamId = await CreateTeamAsync(client);
+        var categoryName = $"Requests {Guid.NewGuid():N}";
+
+        var addToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, $"/Admin/Teams/Details/{teamId}"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=AddCategory")
+        {
+            Content = new FormUrlEncodedContent(
+            [
+                new("CreateCategoryInput.Name", categoryName),
+                new("CreateCategoryInput.DefaultWorkType", "ServiceRequest"),
+                new("__RequestVerificationToken", addToken),
+            ]),
+        });
+
+        int categoryId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            categoryId = await db.Categories.Where(c => c.Name == categoryName).Select(c => c.Id).SingleAsync();
+        }
+
+        var deactivateCategoryToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, $"/Admin/Teams/Details/{teamId}"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=DeactivateCategory")
+        {
+            Content = new FormUrlEncodedContent([new("categoryId", categoryId.ToString()), new("__RequestVerificationToken", deactivateCategoryToken)]),
+        });
+
+        var deactivateTeamToken = ExtractAntiForgeryToken(await GetHtmlAsync(client, $"/Admin/Teams/Details/{teamId}"));
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=DeactivateTeam")
+        {
+            Content = new FormUrlEncodedContent([new("__RequestVerificationToken", deactivateTeamToken)]),
+        });
+
+        // The deactivated category row is hidden by default (Show inactive is off) — fetch it with
+        // the toggle on, the same way an Admin would need to in order to find it and reactivate it.
+        var afterDeactivateTeamHtml = await GetHtmlAsync(client, $"/Admin/Teams/Details/{teamId}?showInactive=true");
+        Assert.Contains("Won't appear in Create Ticket until", afterDeactivateTeamHtml, StringComparison.Ordinal);
+
+        var reactivateCategoryToken = ExtractAntiForgeryToken(afterDeactivateTeamHtml);
+        var afterReactivateCategoryHtml = await (await client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/Admin/Teams/Details/{teamId}?handler=ReactivateCategory")
+        {
+            Content = new FormUrlEncodedContent([new("categoryId", categoryId.ToString()), new("__RequestVerificationToken", reactivateCategoryToken)]),
+        })).Content.ReadAsStringAsync();
+        Assert.Contains("Category reactivated.", afterReactivateCategoryHtml, StringComparison.Ordinal);
+
+        using var scope2 = _factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var category = await db2.Categories.AsNoTracking().SingleAsync(c => c.Id == categoryId);
+        var team = await db2.Teams.AsNoTracking().SingleAsync(t => t.Id == teamId);
+        Assert.True(category.IsActive);
+        Assert.False(team.IsActive); // reactivating the category never cascades to its team
     }
 
     [Fact] // Phase 16 organization boundary: Org A's Admin must not manage Org B's team/category.

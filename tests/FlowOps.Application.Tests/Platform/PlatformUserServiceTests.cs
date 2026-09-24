@@ -183,7 +183,7 @@ public sealed class PlatformUserServiceTests
         var admin = new CurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin, new HashSet<int>(), new HashSet<int>());
         var teamResult = await teamService.CreateAsync(admin, "Support");
         var categoryResult = await catalogService.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
-        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new FlowOps.Application.Tickets.TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, _) = await ticketService.CreateAsync(
             new FlowOps.Application.Tickets.CreateTicketRequest("Printer jam", "The printer is jammed.", WorkType.Incident, Priority.Low, teamResult.TeamId.Value, categoryResult.CategoryId!.Value, null),
             admin);

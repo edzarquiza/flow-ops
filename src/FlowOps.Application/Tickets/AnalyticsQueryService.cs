@@ -234,6 +234,153 @@ public sealed class AnalyticsQueryService
     }
 
     /// <summary>
+    /// ADR-0036: Team Workload's summary strip — Open/Unassigned/Overdue/High-Critical, all
+    /// SQL-derivable counts over the caller's own <see cref="AnalyticsScope"/>, present-tense
+    /// (never <see cref="DashboardFilter.RangeDays"/>-scoped, the same reasoning
+    /// <see cref="GetTeamWorkloadBreakdownAsync"/>'s own doc comment gives). <see cref="TeamWorkloadSummary.AtRiskCount"/>
+    /// always arrives here as <c>0</c> — the caller merges in <see cref="AttentionQueryService.GetAtRiskSummaryAsync"/>'s
+    /// result, since <see cref="Attention.AttentionPolicy"/> alone decides what counts as at risk.
+    /// </summary>
+    public async Task<TeamWorkloadSummary> GetTeamWorkloadSummaryCountsAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.Status != Status.Resolved && t.Status != Status.Closed);
+
+        var openCount = await scoped.CountAsync(cancellationToken);
+        var unassignedCount = await scoped.CountAsync(t => t.AssigneeId == null, cancellationToken);
+        var overdueCount = await scoped.CountAsync(t => t.DueDate != null && t.DueDate < now, cancellationToken);
+        var highCriticalCount = await scoped.CountAsync(t => t.Priority == Priority.High || t.Priority == Priority.Critical, cancellationToken);
+
+        return new TeamWorkloadSummary(openCount, unassignedCount, 0, overdueCount, highCriticalCount);
+    }
+
+    /// <summary>
+    /// ADR-0036: the Team Workload table — extends <see cref="GetTeamWorkloadBreakdownAsync"/>'s
+    /// own (team, open-count) grouping with Unassigned/Overdue, computed as three separate grouped
+    /// queries rather than one query with several conditional aggregates (matching this class's own
+    /// existing style — see <see cref="GetDashboardSummaryAsync"/>'s numbered-query comments — over
+    /// a less-proven single-query shape) and merged by team id in memory; the team count is small
+    /// enough that this is a handful of round trips, not one per team. <see cref="TeamWorkloadRow.AtRiskCount"/>
+    /// always arrives as <c>0</c>, merged in by the caller the same way <see cref="GetTeamWorkloadSummaryCountsAsync"/>'s
+    /// own <c>AtRiskCount</c> is.
+    /// </summary>
+    public async Task<IReadOnlyList<TeamWorkloadRow>> GetTeamWorkloadTableAsync(CurrentUser user, DashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var scoped = ApplyDashboardScope(ApplyAnalyticsScope(_dbContext, _dbContext.Tickets.AsNoTracking(), user), filter, includeDateRange: false)
+            .Where(t => t.Status != Status.Resolved && t.Status != Status.Closed);
+
+        var openByTeam = await scoped
+            .GroupBy(t => t.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TeamId, x => x.Count, cancellationToken);
+
+        var unassignedByTeam = await scoped
+            .Where(t => t.AssigneeId == null)
+            .GroupBy(t => t.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TeamId, x => x.Count, cancellationToken);
+
+        var overdueByTeam = await scoped
+            .Where(t => t.DueDate != null && t.DueDate < now)
+            .GroupBy(t => t.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TeamId, x => x.Count, cancellationToken);
+
+        var teamIds = openByTeam.Keys.ToArray();
+        var teamNames = await _dbContext.Teams
+            .AsNoTracking()
+            .Where(t => teamIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, cancellationToken);
+
+        return openByTeam
+            .Select(kv =>
+            {
+                var open = kv.Value;
+                var unassigned = unassignedByTeam.GetValueOrDefault(kv.Key);
+                return new TeamWorkloadRow(
+                    kv.Key,
+                    teamNames.GetValueOrDefault(kv.Key, string.Empty),
+                    open,
+                    open - unassigned,
+                    unassigned,
+                    0,
+                    overdueByTeam.GetValueOrDefault(kv.Key));
+            })
+            .OrderByDescending(r => r.OpenCount)
+            .ThenBy(r => r.TeamId)
+            .ToList();
+    }
+
+    /// <summary>
+    /// ADR-0036: one team's member workload, computed only when that team is explicitly expanded —
+    /// never eagerly for every team on the page's initial load. Authorized by
+    /// <see cref="TicketAccessPolicy.CanViewTeamWorkload"/>, deliberately not
+    /// <see cref="Directory.TeamService.GetTeamDetailAsync"/>'s Admin-only team-management gate —
+    /// read-only workload visibility is not team-management authority. Driven from the team's own
+    /// active roster (<c>TeamMembers</c>), so a member currently carrying zero open work still
+    /// appears with an all-zero row — "who is NOT carrying work right now" is itself part of the
+    /// answer this page exists to give. <see cref="TeamMemberWorkloadRow.AtRiskCount"/> always
+    /// arrives as <c>0</c>, merged in by the caller from <see cref="AttentionQueryService.GetAtRiskCountsByAssigneeAsync"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<TeamMemberWorkloadRow>> GetTeamMemberWorkloadAsync(CurrentUser user, int teamId, CancellationToken cancellationToken = default)
+    {
+        if (!TicketAccessPolicy.CanViewTeamWorkload(user, teamId))
+        {
+            throw new TicketAccessDeniedException("This team's workload is not available to you.");
+        }
+
+        var now = _timeProvider.GetUtcNow();
+
+        var members = await _dbContext.TeamMembers
+            .AsNoTracking()
+            .Where(m => m.TeamId == teamId)
+            .Join(_dbContext.Users.Where(u => u.IsActive), m => m.UserId, u => u.Id, (m, u) => new { u.Id, u.DisplayName })
+            .ToListAsync(cancellationToken);
+
+        var openTickets = _dbContext.Tickets
+            .AsNoTracking()
+            .Where(t => t.TeamId == teamId && t.AssigneeId != null && t.Status != Status.Resolved && t.Status != Status.Closed);
+
+        var openByAssignee = await openTickets
+            .GroupBy(t => t.AssigneeId!.Value)
+            .Select(g => new { AssigneeId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AssigneeId, x => x.Count, cancellationToken);
+
+        var inProgressByAssignee = await openTickets
+            .Where(t => t.Status == Status.InProgress)
+            .GroupBy(t => t.AssigneeId!.Value)
+            .Select(g => new { AssigneeId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AssigneeId, x => x.Count, cancellationToken);
+
+        var pendingByAssignee = await openTickets
+            .Where(t => t.Status == Status.Pending)
+            .GroupBy(t => t.AssigneeId!.Value)
+            .Select(g => new { AssigneeId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AssigneeId, x => x.Count, cancellationToken);
+
+        var overdueByAssignee = await openTickets
+            .Where(t => t.DueDate != null && t.DueDate < now)
+            .GroupBy(t => t.AssigneeId!.Value)
+            .Select(g => new { AssigneeId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AssigneeId, x => x.Count, cancellationToken);
+
+        return members
+            .Select(m => new TeamMemberWorkloadRow(
+                m.Id,
+                m.DisplayName,
+                openByAssignee.GetValueOrDefault(m.Id),
+                inProgressByAssignee.GetValueOrDefault(m.Id),
+                pendingByAssignee.GetValueOrDefault(m.Id),
+                0,
+                overdueByAssignee.GetValueOrDefault(m.Id)))
+            .OrderByDescending(r => r.OpenCount)
+            .ThenBy(r => r.DisplayName)
+            .ToList();
+    }
+
+    /// <summary>
     /// Phase 20 §6: every ticket created within the selected range, classified by
     /// <see cref="SlaPolicy.GetStatus"/> — the single existing SLA-status authority, never
     /// re-derived. Two queries (raw facts, then the tiny SLA configuration table — the same shape

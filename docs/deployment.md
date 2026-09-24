@@ -276,9 +276,14 @@ older definition therefore keeps its old data until *you* reset it.
 | `FlowOps__Database__ApplyMigrationsOnStartup` | No | `true` (see "Migration flag" above) |
 | `FlowOps__Demo__Enabled` | No | `true` only for the public demo deployment |
 | `FlowOps__Demo__PersonaPassword` | **Yes** (even though it is shown on the login page once the app is running, it is supplied as a secret, never committed) | The shared password for every seeded demo account |
+| `FlowOps__Email__Provider` | No | `Resend` in production; unset or `Log` logs instead of sending (see ADR-0035) |
+| `FlowOps__Email__ApiKey` | **Yes** | Resend API key — required when `Provider` is `Resend` |
+| `FlowOps__Email__FromAddress` | No | The sending address, e.g. `notifications@yourdomain.com` — must be a domain verified with Resend |
+| `FlowOps__Email__FromName` | No | Display name on outgoing email, e.g. `FlowOps` |
+| `FlowOps__Email__BaseUrl` | No | The public base URL used to build links inside emails (invitation accept links, ticket links) — never derived from a request, always this trusted value (ADR-0035) |
 
-No other value in this table is a secret; `ConnectionStrings__FlowOps` and
-`FlowOps__Demo__PersonaPassword` are the only two that are.
+No other value in this table is a secret; `ConnectionStrings__FlowOps`, `FlowOps__Demo__PersonaPassword`,
+and `FlowOps__Email__ApiKey` are the only three that are.
 
 ### First deployment vs. subsequent deployments
 

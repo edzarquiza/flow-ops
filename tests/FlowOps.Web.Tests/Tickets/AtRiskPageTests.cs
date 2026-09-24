@@ -45,6 +45,22 @@ public sealed class AtRiskPageTests : IClassFixture<FlowOpsWebApplicationFactory
         Assert.Contains($"/Tickets/Details/{ticketId}", html, StringComparison.Ordinal);
     }
 
+    [Fact] // Phase 30 (ADR-0035): the attention brief disclosure — evidence and a suggested next step.
+    public async Task AtRisk_ShowsAttentionBriefDisclosure()
+    {
+        await _factory.CreateAtRiskTicketAsync("Core switch stack is down");
+
+        var client = _factory.CreateClient(new() { AllowAutoRedirect = false });
+        await TestAuthentication.SignInAsync(client, TestUsers.AgentEmail);
+
+        var response = await client.GetAsync("/Tickets/AtRisk");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("View attention brief", html, StringComparison.Ordinal);
+        // Assign an owner is the UnassignedUrgent suggestion — the ticket is unassigned & Critical.
+        Assert.Contains("Assign an owner.", html, StringComparison.Ordinal);
+    }
+
     [Fact] // A caller outside the ticket's team is told nothing about it.
     public async Task AtRisk_OutOfTeamCaller_SeesNothing()
     {

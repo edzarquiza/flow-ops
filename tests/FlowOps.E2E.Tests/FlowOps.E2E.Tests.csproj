@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.E2E.Tests</RootNamespace>
+    <AssemblyName>FlowOps.E2E.Tests</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- Phase 30A: a small, permanent real-browser regression suite. Every layout defect fixed in
+       Phases 28B-29C (login centering, the dashboard grid, panel overflow, theme flashing) was
+       caught by a one-off manual Playwright run during that phase and by nothing since — there was
+       no standing check to keep any of them from silently coming back. This project is that check,
+       kept deliberately small (docs/ui's own "smallest correct architecture" rule): it drives the
+       real app (a real Kestrel host, real PostgreSQL via Testcontainers, real Chromium) through the
+       handful of things a browser can prove that an HTML-string assertion cannot — actual layout,
+       actual overflow, actual theme application. It does not replace FlowOps.Web.Tests, which stays
+       the primary, fast, server-rendered-HTML suite. Microsoft.Playwright, not a Node/npm toolchain
+       (CLAUDE.md §11.1 — no Node build step): the whole solution stays dotnet-only end to end. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FlowOps.Web\FlowOps.Web.csproj" />
+  </ItemGroup>
+
+</Project>

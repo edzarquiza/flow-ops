@@ -42,6 +42,9 @@
    left-edge urgency-bar convention rather than a page-specific alert style; the bar only ever
    renders on a real row — see the empty branch below. Visual-consistency pass: .panel--focus, the
    same surface the dashboard's own "What needs attention" uses for its equivalently-primary role. ---- *@
+@* Phase 29B: panels carry no global sibling margin of their own — a vertical stack of panels
+   must opt into it via .panel-stack, or they sit flush against each other with zero gap. *@
+<div class="panel-stack">
 <div class="panel panel--focus">
     <div class="section-head-row">
         <h2 class="section-head section-head--plain">Pending approvals</h2>
@@ -232,4 +235,5 @@
             </table>
         </div>
     }
+</div>
 </div>

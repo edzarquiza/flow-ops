@@ -59,7 +59,7 @@ public sealed class SprintPlanningTests
 
     private static SprintService Sprints(FlowOpsDbContext context) => new(context, Clock());
 
-    private static TicketService Tickets(FlowOpsDbContext context) => new(context, Clock());
+    private static TicketService Tickets(FlowOpsDbContext context) => new(context, Clock(), TestEmail.Sender, TestEmail.Options);
 
     private static ProjectPlanningQueryService Query(FlowOpsDbContext context) => new(context, Clock());
 

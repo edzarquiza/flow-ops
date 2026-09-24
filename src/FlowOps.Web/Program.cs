@@ -4,6 +4,7 @@ using FlowOps.Application.Demo;
 using FlowOps.Application.Organizations;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Attention;
+using FlowOps.Infrastructure.Email;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -29,6 +30,11 @@ if (!string.IsNullOrEmpty(renderPort))
 {
     builder.WebHost.UseUrls($"http://+:{renderPort}");
 }
+
+// Phase F1-B (hardening): Kestrel adds a "Server: Kestrel" response header by default — minor
+// stack-fingerprinting, no version/path detail, but free to remove alongside the existing
+// security-headers middleware below.
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 var connectionString = builder.Configuration.GetConnectionString("FlowOps")
     ?? throw new InvalidOperationException(
@@ -192,6 +198,32 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         });
     });
+
+    // Phase F1-B (hardening): CLAUDE.md §12 says "login and password endpoints (5/min/IP)" but only
+    // "login" existed above — registration, password reset (both generating a link and redeeming a
+    // token), and invitation creation were unthrottled. Same shape as "login" (fixed window, 5/min,
+    // partitioned per caller IP), just a second named policy for these other anonymous/sensitive
+    // POST endpoints — not a new rate-limiting mechanism. Same test-only override key pattern as
+    // "login" so Web.Tests' fixture can raise it exactly the way it already raises the login limit.
+    var sensitivePermitLimit = builder.Configuration.GetValue<int?>("RateLimiting:Sensitive:PermitLimitPerMinute") ?? 5;
+
+    options.AddPolicy("sensitive", httpContext =>
+    {
+        if (!HttpMethods.IsPost(httpContext.Request.Method))
+        {
+            return RateLimitPartition.GetNoLimiter("sensitive:non-post");
+        }
+
+        var partitionKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = sensitivePermitLimit,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
 });
 
 // Phase 19 / ADR-0018: CurrentUserAccessor reads/writes the (Data-Protection-protected) current-
@@ -226,6 +258,7 @@ builder.Services.AddScoped<FlowOps.Application.Catalog.CatalogService>();
 builder.Services.AddScoped<FlowOps.Application.Platform.PlatformUserAccessor>();
 builder.Services.AddScoped<FlowOps.Application.Platform.PlatformOrganizationService>();
 builder.Services.AddScoped<FlowOps.Application.Platform.PlatformUserService>();
+builder.Services.AddScoped<FlowOps.Application.Platform.SlaConfigurationService>();
 
 // Phase 5 ticket use cases.
 builder.Services.AddScoped<TicketService>();
@@ -256,6 +289,34 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<AttentionOpti
 builder.Services.AddScoped<AttentionQueryService>();
 builder.Services.AddScoped<FlowOps.Application.Planning.ProjectPlanningQueryService>();
 builder.Services.AddScoped<FlowOps.Application.Planning.SprintService>();
+
+// Phase 30 (ADR-0035): transactional email. FlowOps:Email:Provider="Resend" requires ApiKey/
+// FromAddress (validated at startup, never at first send attempt); the default, "Log", needs
+// neither — Development/Test/CI all run with no email credentials at all. This if/else is
+// composition-root branching on a configuration value (CLAUDE.md §13's own stated exception to "no
+// if (env == ...) in business code"), not a business-logic environment check.
+builder.Services
+    .AddOptions<EmailOptions>()
+    .Bind(builder.Configuration.GetSection("FlowOps:Email"))
+    .Validate(
+        o => !string.Equals(o.Provider, "Resend", StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(o.ApiKey) && !string.IsNullOrWhiteSpace(o.FromAddress)),
+        "FlowOps:Email:ApiKey and FlowOps:Email:FromAddress are required when FlowOps:Email:Provider is \"Resend\".")
+    .ValidateOnStart();
+
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value);
+
+if (string.Equals(builder.Configuration["FlowOps:Email:Provider"], "Resend", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
+    {
+        client.BaseAddress = new Uri("https://api.resend.com/");
+    });
+}
+else
+{
+    builder.Services.AddScoped<IEmailSender, LogEmailSender>();
+}
 
 // Phase 10 dashboard/analytics read path.
 builder.Services.AddScoped<AnalyticsQueryService>();

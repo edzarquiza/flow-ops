@@ -1,0 +1,117 @@
+@page
+@{
+    ViewData["Title"] = "Roles & Permissions — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Roles &amp; Permissions</h1>
+        <p class="page-context">Understand what each role can access.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <div class="guide-term-grid">
+        <div class="guide-term">
+            <p class="guide-term__name">Admin</p>
+            <p class="guide-term__body">Full access across the organization: every ticket, every team, member management, and configuration.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Service Desk Manager</p>
+            <p class="guide-term__body">Full control over their own managed teams' work, plus inviting and managing Agents and Viewers.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">IT Support Agent</p>
+            <p class="guide-term__body">Works their own team's tickets — can self-assign, and act on tickets already assigned to them.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Executive Viewer</p>
+            <p class="guide-term__body">Read-only access to their own teams' work and analytics — no creating, commenting, or changing anything.</p>
+        </div>
+    </div>
+</div>
+
+<div class="panel panel--focus">
+    <div class="table-responsive">
+        <table>
+            <caption class="sr-only">What each role can do</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Capability</th>
+                    <th scope="col">Admin</th>
+                    <th scope="col">Manager</th>
+                    <th scope="col">Agent</th>
+                    <th scope="col">Viewer</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <th scope="row">View tickets</th>
+                    <td>All</td>
+                    <td>Own teams</td>
+                    <td>Own teams</td>
+                    <td>Own teams</td>
+                </tr>
+                <tr>
+                    <th scope="row">Create ticket</th>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Comment</th>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Assign / reassign</th>
+                    <td>Yes</td>
+                    <td>Own teams</td>
+                    <td>Self-assign only</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Change status / priority</th>
+                    <td>Yes</td>
+                    <td>Own teams</td>
+                    <td>Own assigned tickets</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Reopen</th>
+                    <td>Yes</td>
+                    <td>Own teams</td>
+                    <td>As the requester</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Team analytics</th>
+                    <td>All</td>
+                    <td>Own teams</td>
+                    <td>Own workload only</td>
+                    <td>Own teams (read)</td>
+                </tr>
+                <tr>
+                    <th scope="row">Manage members</th>
+                    <td>Yes</td>
+                    <td>Agent / Viewer only</td>
+                    <td>No</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <th scope="row">Manage teams, categories, projects, SLA</th>
+                    <td>Yes</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td>No</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

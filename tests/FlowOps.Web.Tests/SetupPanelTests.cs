@@ -156,7 +156,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
             db.OrganizationMemberships.Add(new OrganizationMembership(0, organizationId, secondUser.Id, UserRole.Agent, DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
 
-            var ticketService = new FlowOps.Application.Tickets.TicketService(db, TimeProvider.System);
+            var ticketService = new FlowOps.Application.Tickets.TicketService(db, TimeProvider.System, TestEmail.Sender, TestEmail.Options);
             await ticketService.CreateAsync(
                 new FlowOps.Application.Tickets.CreateTicketRequest("A complete-setup ticket", "A routine description.", WorkType.Incident, Priority.Medium, team.Id, category.Id, null),
                 new CurrentUser(admin.Id, organizationId, UserRole.Admin, new HashSet<int>(), new HashSet<int>()));
@@ -275,7 +275,7 @@ public sealed class SetupPanelTests : IClassFixture<FlowOpsWebApplicationFactory
             db.OrganizationMemberships.Add(new OrganizationMembership(0, secondOrganizationId, secondMemberOfSecondOrg.Id, UserRole.Agent, DateTimeOffset.UtcNow));
             await db.SaveChangesAsync();
 
-            var ticketService = new FlowOps.Application.Tickets.TicketService(db, TimeProvider.System);
+            var ticketService = new FlowOps.Application.Tickets.TicketService(db, TimeProvider.System, TestEmail.Sender, TestEmail.Options);
             await ticketService.CreateAsync(
                 new FlowOps.Application.Tickets.CreateTicketRequest("Second org ticket", "A routine description.", WorkType.Incident, Priority.Medium, team.Id, category.Id, null),
                 new CurrentUser(admin.Id, secondOrganizationId, UserRole.Admin, new HashSet<int>(), new HashSet<int>()));

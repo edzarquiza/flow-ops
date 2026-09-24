@@ -256,8 +256,8 @@ public sealed class TicketWorkflowServiceTests
         // Two callers each load the ticket while it is still Open.
         await using var firstContext = _fixture.CreateContext();
         await using var secondContext = _fixture.CreateContext();
-        var firstService = new TicketService(firstContext, world.Clock);
-        var secondService = new TicketService(secondContext, world.Clock);
+        var firstService = new TicketService(firstContext, world.Clock, TestEmail.Sender, TestEmail.Options);
+        var secondService = new TicketService(secondContext, world.Clock, TestEmail.Sender, TestEmail.Options);
 
         await secondContext.Tickets.SingleAsync(t => t.Id == world.TicketId); // primes the stale xmin
 
@@ -326,7 +326,7 @@ public sealed class TicketWorkflowServiceTests
         await TicketTestData.AddTeamMembershipAsync(context, teamId, managerId, isTeamManager: true);
 
         var clock = new TicketTestData.FixedTimeProvider(Start);
-        var service = new TicketService(context, clock);
+        var service = new TicketService(context, clock, TestEmail.Sender, TestEmail.Options);
         var requester = TicketTestData.User(requesterId, UserRole.Agent, teamId);
 
         var (ticketId, _) = await service.CreateAsync(

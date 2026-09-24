@@ -34,7 +34,7 @@ public sealed class SprintArchiveAndBoardMoveTests
 
     private static TicketTestData.FixedTimeProvider Clock() => new(Now);
     private static SprintService Sprints(FlowOpsDbContext c) => new(c, Clock());
-    private static TicketService Tickets(FlowOpsDbContext c) => new(c, Clock());
+    private static TicketService Tickets(FlowOpsDbContext c) => new(c, Clock(), TestEmail.Sender, TestEmail.Options);
     private static ProjectPlanningQueryService Query(FlowOpsDbContext c) => new(c, Clock());
 
     private static async Task<World> SeedAsync(FlowOpsDbContext context)

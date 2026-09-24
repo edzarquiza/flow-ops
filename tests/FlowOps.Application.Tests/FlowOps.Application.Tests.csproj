@@ -14,6 +14,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Phase 30 (ADR-0035): TestEmail/RecordingEmailSender are used from almost every test class
+         in this project (any test constructing a TicketService/InvitationService), so this is a
+         global using rather than a per-file one — the same reasoning that would apply to Xunit
+         itself if this project didn't already get that one implicitly. -->
+    <Using Include="FlowOps.Application.Tests.Email" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />

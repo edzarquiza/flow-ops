@@ -30,7 +30,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, reference) = await service.CreateAsync(
             Request(teamId, categoryId),
@@ -54,7 +54,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
             service.CreateAsync(Request(teamId, categoryId), TicketTestData.User(userId, UserRole.Viewer, teamId)));
@@ -68,7 +68,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, _) = await service.CreateAsync(
             Request(teamId, categoryId),
@@ -88,7 +88,7 @@ public sealed class TicketServiceTests
         var (teamId, _, userId) = await SeedAsync(context);
         var otherTeamId = await TicketTestData.AddTeamAsync(context);
         var otherCategoryId = await TicketTestData.AddCategoryAsync(context, otherTeamId);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var ex = await Assert.ThrowsAsync<DomainRuleException>(() =>
             service.CreateAsync(Request(teamId, otherCategoryId), TicketTestData.User(userId, UserRole.Agent, teamId)));
@@ -101,7 +101,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, _, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var ex = await Assert.ThrowsAsync<DomainRuleException>(() =>
             service.CreateAsync(Request(teamId, categoryId: -1), TicketTestData.User(userId, UserRole.Agent, teamId)));
@@ -118,7 +118,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, _) = await service.CreateAsync(
             Request(teamId, categoryId) with { Priority = priority },
@@ -137,7 +137,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var user = TicketTestData.User(userId, UserRole.Agent, teamId);
 
         var (_, firstReference) = await service.CreateAsync(Request(teamId, categoryId), user);
@@ -153,7 +153,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, _) = await service.CreateAsync(
             Request(teamId, categoryId),
@@ -175,7 +175,7 @@ public sealed class TicketServiceTests
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
         var inactiveProjectId = await TicketTestData.AddProjectAsync(context, isActive: false);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
             service.CreateAsync(Request(teamId, categoryId) with { ProjectId = inactiveProjectId }, TicketTestData.User(userId, UserRole.Agent, teamId)));
@@ -188,7 +188,7 @@ public sealed class TicketServiceTests
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
         var projectId = await TicketTestData.AddProjectAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, _) = await service.CreateAsync(
             Request(teamId, categoryId) with { ProjectId = projectId },
@@ -216,7 +216,7 @@ public sealed class TicketServiceTests
         var categoryId = await TicketTestData.AddCategoryAsync(context, teamId);
         var userId = await TicketTestData.AddUserAsync(context);
         await TicketTestData.AddTeamMembershipAsync(context, teamId, userId);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
             service.CreateAsync(Request(teamId, categoryId), TicketTestData.User(userId, UserRole.Agent, teamId)));
@@ -229,7 +229,7 @@ public sealed class TicketServiceTests
         await using var context = _fixture.CreateContext();
         var (teamId, _, userId) = await SeedAsync(context);
         var inactiveCategoryId = await TicketTestData.AddCategoryAsync(context, teamId, isActive: false);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         await Assert.ThrowsAsync<TicketAccessDeniedException>(() =>
             service.CreateAsync(Request(teamId, inactiveCategoryId), TicketTestData.User(userId, UserRole.Agent, teamId)));
@@ -242,7 +242,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var (id, _) = await service.CreateAsync(Request(teamId, categoryId), TicketTestData.User(userId, UserRole.Agent, teamId));
 
@@ -261,7 +261,7 @@ public sealed class TicketServiceTests
 
         // Still fully workable — deactivating a team is never a new way to bypass or restrict
         // authorization on tickets already scoped to it (ADR-0022's "authorization" guarantee).
-        var verifyService = new TicketService(verify, new TicketTestData.FixedTimeProvider(Now));
+        var verifyService = new TicketService(verify, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         await verifyService.AssignAsync(id, userId, TicketTestData.User(userId, UserRole.Agent, teamId));
         var afterAssign = await verify.Tickets.AsNoTracking().SingleAsync(t => t.Id == id);
         Assert.Equal(userId, afterAssign.AssigneeId);
@@ -272,7 +272,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var start = Now.AddDays(1);
         var due = Now.AddDays(5);
@@ -292,7 +292,7 @@ public sealed class TicketServiceTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, userId) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var ex = await Assert.ThrowsAsync<DomainRuleException>(() => service.CreateAsync(
             Request(teamId, categoryId) with { PlannedStartDate = Now.AddDays(5), DueDate = Now.AddDays(1) },

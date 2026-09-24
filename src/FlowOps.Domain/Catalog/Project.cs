@@ -36,8 +36,14 @@ public sealed class Project
 
     public void Rename(string name) => Name = name;
 
-    /// <summary>Terminal: makes the project unavailable for new ticket selection. Never reverses,
-    /// never deletes — existing tickets keep their <c>ProjectId</c> and keep displaying this
-    /// project's name, since the row itself is untouched.</summary>
+    /// <summary>Makes the project unavailable for new ticket selection. Never deletes — existing
+    /// tickets keep their <c>ProjectId</c> and keep displaying this project's name, since the row
+    /// itself is untouched. Reversible via <see cref="Reactivate"/> (ADR-0032).</summary>
     public void Deactivate() => IsActive = false;
+
+    /// <summary>Restores the project to normal use. The caller is responsible for the one invariant
+    /// this method itself cannot see — that no other active project in the same organization already
+    /// holds this name (the database's own filtered unique index is the final guard; the application
+    /// layer turns a violation into a friendly message, per ADR-0032).</summary>
+    public void Reactivate() => IsActive = true;
 }

@@ -60,7 +60,7 @@ public sealed partial class AttentionQueryServiceTests
             .ToHashSet();
 
         // What the SQL prefilter admits.
-        var service = new AttentionQueryService(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions);
+        var service = new AttentionQueryService(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions, new TicketQueryService(context, new TicketTestData.FixedTimeProvider(Now)));
         var candidateIds = await service.BuildCandidateQuery(world.Agent, Now, configurations)
             .AsNoTracking()
             .Select(t => t.Id)
@@ -96,7 +96,7 @@ public sealed partial class AttentionQueryServiceTests
         var world = await SeedEverySignalAsync(context);
         var configurations = await context.SlaConfigurations.AsNoTracking().ToListAsync();
 
-        var service = new AttentionQueryService(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions);
+        var service = new AttentionQueryService(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions, new TicketQueryService(context, new TicketTestData.FixedTimeProvider(Now)));
         var candidates = await service.BuildCandidateQuery(world.Agent, Now, configurations)
             .AsNoTracking()
             .Select(t => new { t.Id, t.Status })
@@ -126,7 +126,7 @@ public sealed partial class AttentionQueryServiceTests
 
         var clock = new TicketTestData.FixedTimeProvider(Now);
 
-        var withDefaults = new AttentionQueryService(context, clock, DefaultOptions);
+        var withDefaults = new AttentionQueryService(context, clock, DefaultOptions, new TicketQueryService(context, clock));
         Assert.Contains(
             await withDefaults.BuildCandidateQuery(world.Agent, Now, configurations).Select(t => t.Id).ToListAsync(),
             id => id == ticketId);
@@ -142,7 +142,7 @@ public sealed partial class AttentionQueryServiceTests
             },
         };
 
-        var withPatient = new AttentionQueryService(context, clock, patient);
+        var withPatient = new AttentionQueryService(context, clock, patient, new TicketQueryService(context, clock));
         Assert.DoesNotContain(
             await withPatient.BuildCandidateQuery(world.Agent, Now, configurations).Select(t => t.Id).ToListAsync(),
             id => id == ticketId);
@@ -164,7 +164,7 @@ public sealed partial class AttentionQueryServiceTests
 
         var clock = new TicketTestData.FixedTimeProvider(Now);
         var configurations = await context.SlaConfigurations.AsNoTracking().ToListAsync();
-        var service = new AttentionQueryService(context, clock, DefaultOptions);
+        var service = new AttentionQueryService(context, clock, DefaultOptions, new TicketQueryService(context, clock));
 
         Assert.DoesNotContain(
             await service.BuildCandidateQuery(world.Agent, Now, configurations).Select(t => t.Id).ToListAsync(),
@@ -590,10 +590,134 @@ public sealed partial class AttentionQueryServiceTests
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // GetBriefAsync (Phase 30 / ADR-0035 — Explainable Attention Brief)
+    // ---------------------------------------------------------------------------------------
+
+    [Fact] // ADJUSTMENT 2: the brief's evidence is exactly what AttentionPolicy itself found — never re-derived.
+    public async Task GetBriefAsync_SignalsMatchWhatAttentionPolicyEvaluates()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var breachedId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, breachedId);
+
+        Assert.NotNull(brief);
+        var ticket = await context.Tickets.AsNoTracking().Include(t => t.Events).SingleAsync(t => t.Id == breachedId);
+        var configurations = await context.SlaConfigurations.AsNoTracking().ToListAsync();
+        var expected = AttentionPolicy.Evaluate(
+            ticket, Now, DefaultOptions,
+            SlaPolicy.ResolveConfiguration(configurations, ticket.WorkType, ticket.Priority).RiskThresholdPercent);
+
+        Assert.Equal(expected.Select(s => s.Code), brief.Signals.Select(s => s.Code));
+        Assert.Equal(expected.Select(s => s.Headline), brief.Signals.Select(s => s.Headline));
+    }
+
+    [Fact] // No fabricated history: "what changed" comes from real persisted ticket events.
+    public async Task GetBriefAsync_RecentEventsAreRealPersistedTicketEvents()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+
+        var id = await CreateTicketAsync(context, world, Now.AddDays(-10), Priority.Low);
+        await AssignAsync(context, world, id, Now.AddDays(-10));
+        await StartWorkAsync(context, world, id, Now.AddDays(-8));
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, id);
+
+        Assert.NotNull(brief);
+        Assert.NotEmpty(brief.RecentEvents);
+        Assert.All(brief.RecentEvents, e => Assert.Equal(TicketTimelineEntryKind.Event, e.Kind));
+        Assert.All(brief.RecentEvents, e => Assert.NotEqual(TicketEventType.CommentAdded, e.EventType));
+        Assert.True(brief.RecentEvents.Count <= 2);
+        Assert.Equal(brief.RecentEvents.OrderByDescending(e => e.OccurredAt).Select(e => e.Id), brief.RecentEvents.Select(e => e.Id));
+    }
+
+    [Fact] // ADJUSTMENT 2: suggested-next-step is AttentionSuggestion's own mapping, not restated here.
+    public async Task GetBriefAsync_SuggestedNextStep_MatchesAttentionSuggestion()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var breachedId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, breachedId);
+
+        Assert.NotNull(brief);
+        var ticket = await context.Tickets.AsNoTracking().SingleAsync(t => t.Id == breachedId);
+        var expected = AttentionSuggestion.SuggestNextStep(brief.Signals.Select(s => s.Code).ToList(), ticket.Status);
+        Assert.Equal(expected, brief.SuggestedNextStep);
+    }
+
+    [Fact] // A ticket with no signals has nothing to explain.
+    public async Task GetBriefAsync_TicketWithNoSignals_ReturnsNull()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var healthyId = await CreateTicketAsync(context, world, Now.AddMinutes(-5), Priority.Medium);
+        await AssignAsync(context, world, healthyId, Now.AddMinutes(-5));
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, healthyId);
+
+        Assert.Null(brief);
+    }
+
+    [Fact] // Terminal tickets always evaluate to zero signals (ATTN-RULE-02) — the brief follows suit.
+    public async Task GetBriefAsync_TerminalTicket_ReturnsNull()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var id = await CreateTicketAsync(context, world, Now.AddDays(-20), Priority.Medium);
+        await AssignAsync(context, world, id, Now.AddDays(-20));
+        await StartWorkAsync(context, world, id, Now.AddDays(-20));
+        await ResolveAsync(context, world, id, Now.AddDays(-19));
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, id);
+
+        Assert.Null(brief);
+    }
+
+    [Fact] // Unknown ticket id.
+    public async Task GetBriefAsync_TicketDoesNotExist_ReturnsNull()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+
+        var brief = await NewService(context).GetBriefAsync(world.Agent, int.MaxValue);
+
+        Assert.Null(brief);
+    }
+
+    [Fact] // AUTH-RULE-05: the brief discloses nothing about a ticket outside the caller's view scope.
+    public async Task GetBriefAsync_OutsideCallersScope_ReturnsNull()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var breachedId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
+
+        var outsider = TicketTestData.User(await TicketTestData.AddUserAsync(context), UserRole.Agent, world.OtherTeamId);
+
+        var brief = await NewService(context).GetBriefAsync(outsider, breachedId);
+
+        Assert.Null(brief);
+    }
+
+    [Fact] // Admin's unscoped view can still reach the brief for any org ticket.
+    public async Task GetBriefAsync_AdminCanReachAnyTicketsBrief()
+    {
+        await using var context = _fixture.CreateContext();
+        var world = await SeedAsync(context);
+        var breachedId = await CreateTicketAsync(context, world, Now.AddDays(-5), Priority.Medium);
+
+        var brief = await NewService(context).GetBriefAsync(world.Admin, breachedId);
+
+        Assert.NotNull(brief);
+    }
+
     // ---------- seeding ----------
 
     private AttentionQueryService NewService(FlowOpsDbContext context) =>
-        new(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions);
+        new(context, new TicketTestData.FixedTimeProvider(Now), DefaultOptions, new TicketQueryService(context, new TicketTestData.FixedTimeProvider(Now)));
 
     /// <summary>
     /// One true positive and one near-miss for each of the eight signals. Near-misses sit just
@@ -674,7 +798,7 @@ public sealed partial class AttentionQueryServiceTests
     }
 
     private static TicketService ServiceAt(FlowOpsDbContext context, DateTimeOffset instant) =>
-        new(context, new TicketTestData.FixedTimeProvider(instant));
+        new(context, new TicketTestData.FixedTimeProvider(instant), TestEmail.Sender, TestEmail.Options);
 
     private static async Task<int> CreateTicketAsync(
         FlowOpsDbContext context,

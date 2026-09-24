@@ -190,7 +190,7 @@ public sealed class TicketSlaQueryTests
         try
         {
             await using var fresh = _fixture.CreateContext();
-            var service = new TicketService(fresh, world.Clock);
+            var service = new TicketService(fresh, world.Clock, TestEmail.Sender, TestEmail.Options);
             var query = new TicketQueryService(fresh, world.Clock);
 
             var (newTicketId, _) = await service.CreateAsync(
@@ -272,7 +272,7 @@ public sealed class TicketSlaQueryTests
         await TicketTestData.AddTeamMembershipAsync(context, teamId, requesterId);
 
         var clock = new TicketTestData.FixedTimeProvider(Start);
-        var service = new TicketService(context, clock);
+        var service = new TicketService(context, clock, TestEmail.Sender, TestEmail.Options);
         var requester = TicketTestData.User(requesterId, UserRole.Agent, teamId);
 
         var (ticketId, _) = await service.CreateAsync(Request(teamId, categoryId), requester);

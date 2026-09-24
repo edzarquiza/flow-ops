@@ -88,7 +88,7 @@ public sealed class TeamMembershipServiceTests
         var service = NewTeamService(world);
         var teamId = (await service.CreateAsync(admin, "Service Desk")).TeamId!.Value;
 
-        var invitations = new InvitationService(world.Context, world.UserManager, world.UserManager.KeyNormalizer, new TicketTestData.FixedTimeProvider(Now));
+        var invitations = new InvitationService(world.Context, world.UserManager, world.UserManager.KeyNormalizer, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var invited = await invitations.CreateInvitationAsync(admin, new CreateInvitationRequest($"{Guid.NewGuid():N}@teammembership.test.local", UserRole.Agent));
         Assert.True(invited.Succeeded);
 
@@ -298,7 +298,7 @@ public sealed class TeamMembershipServiceTests
         var agentId = await AddOrganizationMemberAsync(world, UserRole.Agent);
         await teamService.AddMemberAsync(admin, teamAId, agentId);
 
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (teamATicketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest("Team A ticket", "A routine description.", WorkType.Incident, Priority.Medium, teamAId, categoryA.Id, null), admin);
         var (teamBTicketId, _) = await ticketService.CreateAsync(
@@ -341,7 +341,7 @@ public sealed class TeamMembershipServiceTests
         var managerId = await AddOrganizationMemberAsync(world, UserRole.Manager);
         await teamService.AddMemberAsync(admin, teamId, managerId);
 
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest("Manager scope ticket", "A routine description.", WorkType.Incident, Priority.Medium, teamId, category.Id, null), admin);
 
@@ -378,7 +378,7 @@ public sealed class TeamMembershipServiceTests
         var viewerId = await AddOrganizationMemberAsync(world, UserRole.Viewer);
         await teamService.AddMemberAsync(admin, teamId, viewerId);
 
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var (ticketId, _) = await ticketService.CreateAsync(
             new CreateTicketRequest("Viewer scope ticket", "A routine description.", WorkType.Incident, Priority.Medium, teamId, category.Id, null), admin);
 

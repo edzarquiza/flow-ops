@@ -3,10 +3,13 @@ using System.Security.Cryptography;
 using FlowOps.Domain.Directory;
 using FlowOps.Domain.Organizations;
 using FlowOps.Domain.Tickets;
+using FlowOps.Infrastructure.Email;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowOps.Application.Organizations;
 
@@ -17,23 +20,43 @@ namespace FlowOps.Application.Organizations;
 /// by <see cref="OrganizationAccessPolicy"/> for every authorization decision. See ADR-0017 for
 /// the token-generation/hashing and concurrency strategy.
 /// </summary>
+/// <remarks>Phase 30 (ADR-0035): also sends the invitation email — see
+/// <see cref="CreateInvitationAsync"/>'s own remarks for the trigger point and failure semantics.</remarks>
 public sealed class InvitationService
 {
     private readonly FlowOpsDbContext _dbContext;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILookupNormalizer _normalizer;
     private readonly TimeProvider _timeProvider;
+    private readonly IEmailSender _emailSender;
+    private readonly EmailOptions _emailOptions;
+    private readonly ILogger<InvitationService> _logger;
 
+    /// <summary>
+    /// Phase 30 (ADR-0035): <paramref name="emailSender"/>/<paramref name="emailOptions"/> are
+    /// required, deliberately — the same "no convenience default" decision <see cref="FlowOps.Application.Tickets.TicketService"/>
+    /// makes for the same dependency. <paramref name="logger"/> keeps the pre-existing optional-
+    /// with-no-op-default shape that class already established (Phase 5) — this class had no
+    /// logger at all before this phase, so there is no existing behavior to preserve either way;
+    /// matching that shape is simply consistency, not a weakened contract for a dependency this
+    /// phase actually introduces.
+    /// </summary>
     public InvitationService(
         FlowOpsDbContext dbContext,
         UserManager<ApplicationUser> userManager,
         ILookupNormalizer normalizer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IEmailSender emailSender,
+        EmailOptions emailOptions,
+        ILogger<InvitationService>? logger = null)
     {
         _dbContext = dbContext;
         _userManager = userManager;
         _normalizer = normalizer;
         _timeProvider = timeProvider;
+        _emailSender = emailSender;
+        _emailOptions = emailOptions;
+        _logger = logger ?? NullLogger<InvitationService>.Instance;
     }
 
     /// <summary>
@@ -110,7 +133,127 @@ public sealed class InvitationService
         _dbContext.Invitations.Add(invitation);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return CreateInvitationResult.Success(rawToken);
+        // Phase 30 (ADR-0035): strictly after the invitation is already committed — an email
+        // delivery failure can never roll back a created invitation, and the existing copy-link
+        // fallback (Members.cshtml) remains available regardless of whether this succeeds.
+        var organizationName = await _dbContext.Organizations
+            .AsNoTracking()
+            .Where(o => o.Id == inviter.OrganizationId)
+            .Select(o => o.Name)
+            .SingleAsync(cancellationToken);
+        var inviterName = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == inviter.UserId)
+            .Select(u => u.DisplayName)
+            .SingleAsync(cancellationToken);
+
+        var emailDeliverySucceeded = await TrySendInvitationEmailAsync(
+            email, organizationName, inviterName, request.Role, invitation.ExpiresAt, rawToken, inviter.OrganizationId, cancellationToken);
+
+        // Verification pass: whether a live provider is even configured — see CreateInvitationResult's
+        // own doc comment for why this is a separate fact from emailDeliverySucceeded above.
+        var emailProviderConfigured = string.Equals(_emailOptions.Provider, "Resend", StringComparison.OrdinalIgnoreCase);
+
+        return CreateInvitationResult.Success(rawToken, emailDeliverySucceeded, emailProviderConfigured);
+    }
+
+    /// <summary>
+    /// Verification pass: every outstanding (not yet accepted) invitation in the caller's own
+    /// organization, so an invitation someone didn't immediately copy the link for is still
+    /// findable — same visibility gate as the member list itself (<c>ORG-RULE-11</c>: whoever may
+    /// manage members may see who's still pending), never <see cref="OrganizationAccessPolicy.CanInvite"/>
+    /// alone, since a Manager who can invite an Agent should also see an Admin's own pending
+    /// invitations, not only the ones they created themselves. Expired invitations are shown, not
+    /// hidden — <paramref name="actor"/> sees the same honest "this lapsed" state a query that
+    /// silently dropped rows would have concealed.
+    /// </summary>
+    public async Task<IReadOnlyList<PendingInvitationView>> GetPendingInvitationsAsync(CurrentUser actor, CancellationToken cancellationToken = default)
+    {
+        if (!OrganizationAccessPolicy.CanManageMembers(actor))
+        {
+            throw new OrganizationAccessDeniedException("This role may not view invitations.");
+        }
+
+        var now = _timeProvider.GetUtcNow();
+
+        return await _dbContext.Invitations
+            .AsNoTracking()
+            .Where(i => i.OrganizationId == actor.OrganizationId && i.AcceptedAt == null)
+            .Join(_dbContext.Users, i => i.InvitedByUserId, u => u.Id, (i, u) => new { Invitation = i, InviterDisplayName = u.DisplayName })
+            .GroupJoin(_dbContext.Teams, x => x.Invitation.TeamId, t => t.Id, (x, teams) => new { x.Invitation, x.InviterDisplayName, Teams = teams })
+            .SelectMany(x => x.Teams.DefaultIfEmpty(), (x, team) => new { x.Invitation, x.InviterDisplayName, TeamName = team != null ? team.Name : null })
+            .OrderByDescending(x => x.Invitation.CreatedAt)
+            .Select(x => new PendingInvitationView(
+                x.Invitation.InvitedEmail,
+                x.Invitation.Role,
+                x.TeamName,
+                x.InviterDisplayName,
+                x.Invitation.CreatedAt,
+                x.Invitation.ExpiresAt,
+                x.Invitation.ExpiresAt <= now))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The invitation link is built here, from the one trusted <see cref="EmailOptions.BaseUrl"/>
+    /// plus a known, fixed application-relative path — never from a request's Host header or any
+    /// other client-supplied input (ADR-0035 Decision 2), since this runs outside any HTTP request
+    /// context. Matches <c>Url.Page("/Account/AcceptInvitation", values: new { token })</c>'s own
+    /// output exactly (same page, same query parameter name) — Members.cshtml.cs still builds and
+    /// shows that identical link on-screen regardless of whether this send succeeds.
+    /// </summary>
+    private async Task<bool> TrySendInvitationEmailAsync(
+        string invitedEmail,
+        string organizationName,
+        string inviterName,
+        UserRole role,
+        DateTimeOffset expiresAt,
+        string rawToken,
+        int organizationId,
+        CancellationToken cancellationToken)
+    {
+        var acceptUrl = $"{_emailOptions.BaseUrl.TrimEnd('/')}/Account/AcceptInvitation?token={Uri.EscapeDataString(rawToken)}";
+        var expiresText = expiresAt.ToString("MMMM d, yyyy");
+
+        var textBody =
+            $"""
+            {inviterName} has invited you to join {organizationName} on FlowOps as a {role}.
+
+            Accept your invitation: {acceptUrl}
+
+            This invitation expires on {expiresText}.
+
+            If you weren't expecting this invitation, you can safely ignore this email.
+
+            — FlowOps
+            """;
+
+        var htmlBody =
+            $"""
+            <p>{System.Net.WebUtility.HtmlEncode(inviterName)} has invited you to join <strong>{System.Net.WebUtility.HtmlEncode(organizationName)}</strong> on FlowOps as a {System.Net.WebUtility.HtmlEncode(role.ToString())}.</p>
+            <p><a href="{acceptUrl}">Accept your invitation</a></p>
+            <p>This invitation expires on {expiresText}.</p>
+            <p>If you weren't expecting this invitation, you can safely ignore this email.</p>
+            <p>— FlowOps</p>
+            """;
+
+        var message = new EmailMessage(invitedEmail, null, $"You're invited to join {organizationName} on FlowOps", textBody, htmlBody);
+
+        try
+        {
+            var result = await _emailSender.SendAsync(message, cancellationToken);
+            if (!result.Succeeded)
+            {
+                _logger.LogWarning("Invitation email delivery failed for organization {OrganizationId}: {Error}", organizationId, result.Error);
+            }
+
+            return result.Succeeded;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invitation email delivery threw an exception.");
+            return false;
+        }
     }
 
     /// <summary>Public, unauthenticated lookup for the accept-invitation page (Step 11) — never

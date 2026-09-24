@@ -66,4 +66,16 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     /// Active through the ordinary Approve/Reactivate paths.
     /// </summary>
     public DateTimeOffset? RegistrationRejectedAt { get; set; }
+
+    /// <summary>
+    /// Guide first-time discovery cue: <see langword="null"/> until the very first authenticated
+    /// page this user ever reaches (Dashboard) is rendered — set atomically at that moment
+    /// (<c>AccountService.TryConsumeFirstGuideCueAsync</c>), which is also the only time the
+    /// discovery cue is shown. Every existing user was backfilled to a non-null value by the
+    /// migration that added this column, so only accounts created afterward can ever see the cue —
+    /// the same "existing rows never retroactively gain a new one-time state" concern
+    /// <c>RegistrationApprovedAt</c>'s own migration already had to solve. Mirrors that field's
+    /// shape exactly rather than introducing a separate onboarding-state table.
+    /// </summary>
+    public DateTimeOffset? GuideIntroducedAt { get; set; }
 }

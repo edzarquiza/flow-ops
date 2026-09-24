@@ -208,6 +208,33 @@ public sealed class DetailsModel : PageModel
         return Page();
     }
 
+    public async Task<IActionResult> OnPostReactivateTeamAsync(int id, CancellationToken cancellationToken)
+    {
+        var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
+        if (user is null || user.Role != UserRole.Admin)
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _teamService.ReactivateAsync(user, id, cancellationToken);
+            StatusMessage = result.Succeeded ? "Team reactivated." : result.Error;
+            StatusIsError = !result.Succeeded;
+        }
+        catch (TeamAccessDeniedException)
+        {
+            return Forbid();
+        }
+
+        if (!await LoadAsync(user, id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        return Page();
+    }
+
     public async Task<IActionResult> OnPostAddCategoryAsync(int id, CancellationToken cancellationToken)
     {
         var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
@@ -291,6 +318,33 @@ public sealed class DetailsModel : PageModel
         {
             var result = await _catalogService.DeactivateCategoryAsync(user, categoryId, cancellationToken);
             StatusMessage = result.Succeeded ? "Category deactivated." : result.Error;
+            StatusIsError = !result.Succeeded;
+        }
+        catch (CategoryAccessDeniedException)
+        {
+            return Forbid();
+        }
+
+        if (!await LoadAsync(user, id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostReactivateCategoryAsync(int id, int categoryId, CancellationToken cancellationToken)
+    {
+        var user = await _currentUserAccessor.GetCurrentUserAsync(User, cancellationToken);
+        if (user is null || user.Role != UserRole.Admin)
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _catalogService.ReactivateCategoryAsync(user, categoryId, cancellationToken);
+            StatusMessage = result.Succeeded ? "Category reactivated." : result.Error;
             StatusIsError = !result.Succeeded;
         }
         catch (CategoryAccessDeniedException)

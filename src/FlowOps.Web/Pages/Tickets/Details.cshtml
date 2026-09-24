@@ -57,6 +57,7 @@
     <div class="ticket-rail-wrap">
         @{ await Html.RenderPartialAsync("_WorkflowRail", new FlowOps.Web.RailViewModel(Model.Ticket.Status, Model.Ticket.Sla, Expanded: true)); }
     </div>
+    <a class="guide-help-link" asp-page="/Guide/SlaAndAttention">How does SLA work?</a>
 </div>
 
 @* ============ SLA / OWNERSHIP: side-by-side panels rather than two flat stacks of full-width
@@ -145,6 +146,57 @@
         </p>
     </div>
 </div>
+
+@* ============ ATTENTION BRIEF (Phase 30): explains AttentionPolicy's existing decision — never
+   a second decision, never a score. Absent entirely for a ticket with no current signals
+   (including every terminal ticket), so a normal ticket's page is unchanged. Read-only: no
+   action here changes the ticket — existing menus above remain the only way to do that. ============ *@
+@if (Model.AttentionBrief is { } brief)
+{
+    <div class="zone">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Why this needs attention")); }
+        <div class="panel attention-brief">
+            <div class="attention-brief__section">
+                <h3>Signals</h3>
+                <ul class="attention-brief__signals">
+                    @foreach (var signal in brief.Signals)
+                    {
+                        var sevClass = signal.Severity.ToString().ToLowerInvariant() switch
+                        {
+                            "critical" => "crit",
+                            "high" => "high",
+                            _ => "med",
+                        };
+                        <li>
+                            <span class="sev @sevClass" aria-hidden="true"><i></i><span>@signal.Severity</span></span>
+                            <span>@signal.Headline</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+            @if (brief.RecentEvents.Count > 0)
+            {
+                <div class="attention-brief__section">
+                    <h3>What changed</h3>
+                    @foreach (var entry in brief.RecentEvents)
+                    {
+                        <p class="attention-brief__event">
+                            <time class="mono" datetime="@entry.OccurredAt.ToString("O")" title="@entry.OccurredAt.ToString("u")">@entry.OccurredAt.ToString("MMM d, h:mm tt")</time>
+                            <span>@FlowOps.Web.TimelineDisplay.Title(entry)@(FlowOps.Web.TimelineDisplay.Detail(entry) is { } detail ? $" — {detail}" : "")</span>
+                        </p>
+                    }
+                </div>
+            }
+            @if (brief.SuggestedNextStep is { } nextStep)
+            {
+                <div class="attention-brief__section attention-brief__next-step">
+                    <h3>Suggested next step</h3>
+                    <p>@nextStep</p>
+                </div>
+            }
+        </div>
+    </div>
+}
 
 @* ============ CONTENT: the actual work, given room to be read ============ *@
 <div class="zone">
@@ -291,6 +343,127 @@
         </div>
     }
 </div>
+
+@* ============ EDIT — Phase 30C (ADR-0033): correcting Priority/Category/Team/Due date after
+   creation. Its own zone, same .reveal disclosure grammar as Put on hold/Resolve/Reopen above,
+   so a field that needs more than a bare click stays exactly one button tall in the row rather
+   than a permanently-open form. ============ *@
+@if (Model.Actions.AnyEdit)
+{
+    <div class="zone">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Edit ticket details")); }
+        <div class="workflow-actions">
+            @if (Model.Actions.EditPriority)
+            {
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-edit-priority" class="reveal-toggle" />
+                    <label for="reveal-edit-priority" class="btn reveal-trigger">Change priority</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="ChangePriority" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label for="edit-priority-select">New priority</label>
+                                <select id="edit-priority-select" name="Input.NewPriority">
+                                    @foreach (var priority in Enum.GetValues<Priority>())
+                                    {
+                                        <option value="@priority" selected="@(priority == Model.Ticket.Priority)">@priority</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn-primary">Save</button>
+                                <label for="reveal-edit-priority" class="btn">Cancel</label>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
+            @if (Model.Actions.EditCategory)
+            {
+                var ownTeamCategories = Model.EditOptions.Teams.FirstOrDefault(t => t.TeamId == Model.Ticket.TeamId)?.Categories ?? [];
+                @if (ownTeamCategories.Count > 1)
+                {
+                    <div class="reveal">
+                        <input type="checkbox" id="reveal-edit-category" class="reveal-toggle" />
+                        <label for="reveal-edit-category" class="btn reveal-trigger">Change category</label>
+                        <div class="reveal-panel">
+                            <form method="post" asp-page-handler="ChangeCategory" asp-route-id="@Model.Ticket.Id">
+                                <div class="field">
+                                    <label for="edit-category-select">New category</label>
+                                    <select id="edit-category-select" name="Input.NewCategoryId">
+                                        @foreach (var category in ownTeamCategories)
+                                        {
+                                            <option value="@category.CategoryId" selected="@(category.CategoryId == Model.Ticket.CategoryId)">@category.CategoryName</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="reveal-panel__actions">
+                                    <button type="submit" class="btn-primary">Save</button>
+                                    <label for="reveal-edit-category" class="btn">Cancel</label>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                }
+            }
+            @* Offered only when there is a genuine alternative team to move to — a lone team in
+               the caller's own reach would make this picker able to select nothing but the
+               ticket's current team, an action certain to be a no-op. *@
+            @if (Model.Actions.EditTeam && Model.EditOptions.Teams.Count > 1)
+            {
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-edit-team" class="reveal-toggle" />
+                    <label for="reveal-edit-team" class="btn reveal-trigger">Change team</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="ChangeTeam" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label for="edit-team-select">New team &amp; category</label>
+                                <select id="edit-team-select" name="Input.NewTeamCategoryId">
+                                    @foreach (var team in Model.EditOptions.Teams)
+                                    {
+                                        <optgroup label="@team.TeamName">
+                                            @foreach (var category in team.Categories)
+                                            {
+                                                <option value="@category.CategoryId" selected="@(category.CategoryId == Model.Ticket.CategoryId)">@category.CategoryName</option>
+                                            }
+                                        </optgroup>
+                                    }
+                                </select>
+                            </div>
+                            <p class="ticket-subtitle">Moving to a different team always clears the current assignee — they may not be a member of the new team.</p>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn-primary">Save</button>
+                                <label for="reveal-edit-team" class="btn">Cancel</label>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
+            @if (Model.Actions.EditDueDate)
+            {
+                <div class="reveal">
+                    <input type="checkbox" id="reveal-edit-duedate" class="reveal-toggle" />
+                    <label for="reveal-edit-duedate" class="btn reveal-trigger">Change due date</label>
+                    <div class="reveal-panel">
+                        <form method="post" asp-page-handler="ChangeDueDate" asp-route-id="@Model.Ticket.Id">
+                            <div class="field">
+                                <label for="edit-duedate-input">New due date</label>
+                                <input id="edit-duedate-input" type="datetime-local" name="Input.NewDueDate"
+                                       value="@Model.Ticket.DueDate?.ToString("yyyy-MM-ddTHH:mm")"
+                                       aria-describedby="edit-duedate-error" />
+                                <span id="edit-duedate-error" class="field-validation-error" asp-validation-for="Input.NewDueDate"></span>
+                            </div>
+                            <p class="ticket-subtitle">Leave blank to clear the due date.</p>
+                            <div class="reveal-panel__actions">
+                                <button type="submit" class="btn-primary">Save</button>
+                                <label for="reveal-edit-duedate" class="btn">Cancel</label>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
 
 @if (Model.Actions.Comment)
 {

@@ -1,0 +1,212 @@
+@page
+@using FlowOps.Application.Tickets
+@using FlowOps.Domain.Tickets
+@using FlowOps.Web
+@model FlowOps.Web.Pages.TeamWorkload.IndexModel
+@{
+    ViewData["Title"] = "Team Workload";
+}
+
+@* ADR-0036: the same .page-header component every other operational page uses — see
+   Tickets/Index.cshtml's identical shape. No search box here: this page has no free-text
+   population of its own to search, only aggregate counts. *@
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>Team Workload</h1>
+                @if (!Model.IsOwnWorkloadOnly)
+                {
+                    <div class="page-header__metric">
+                        <span class="page-header__metric-value">@Model.Teams.Count</span>
+                        <span class="page-header__metric-label">team@(Model.Teams.Count == 1 ? "" : "s")</span>
+                    </div>
+                }
+            </div>
+            <p class="page-context">
+                @(Model.IsOwnWorkloadOnly
+                    ? "Your own current workload."
+                    : "Where work is concentrated right now, and where it needs attention.")
+            </p>
+        </div>
+    </div>
+    <a class="guide-help-link" asp-page="/Guide/TeamsAndWorkload">How is workload shown?</a>
+</div>
+
+@* Work type is the one filter this page's summary/table both honour — Date range doesn't apply
+   (every number here is a present-tense snapshot, the same reasoning Dashboard's own "Workload by
+   team" section already documents) and Team/Project/Status were explicitly deferred past V1. *@
+<form method="get" class="filter-bar" aria-label="Team Workload filters">
+    <div class="filter-bar__field">
+        <label for="workType">Work type</label>
+        <select id="workType" name="workType">
+            <option value="" selected="@(Model.WorkTypeFilter is null)">All types</option>
+            @foreach (var workType in Enum.GetValues<WorkType>())
+            {
+                <option value="@workType" selected="@(workType == Model.WorkTypeFilter)">@WorkTypeDisplay.ToDisplayName(workType)</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__actions">
+        <button type="submit" class="btn">Apply</button>
+        <a class="btn" asp-page="/TeamWorkload/Index">Reset</a>
+    </div>
+</form>
+
+@* Phase 29B: panels carry no global sibling margin of their own — a vertical stack of panels
+   must opt into it via .panel-stack, or (as here, before this fix) they sit flush against each
+   other with zero gap. *@
+<div class="panel-stack">
+<div class="panel">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new SectionHeadingViewModel("Summary")); }
+    <div class="stat-strip @(Model.IsOwnWorkloadOnly ? "" : "stat-strip--five")">
+        <div class="stat">
+            <div class="fo-label">Open</div>
+            <div class="stat__value">
+                <a asp-page="/Tickets/Index" asp-route-filter="OpenWork" asp-route-assignedToMe="@(Model.IsOwnWorkloadOnly ? "true" : null)">@Model.Summary.OpenCount</a>
+            </div>
+        </div>
+        @if (!Model.IsOwnWorkloadOnly)
+        {
+            <div class="stat">
+                <div class="fo-label">Unassigned</div>
+                <div class="stat__value"><a asp-page="/Tickets/Index" asp-route-filter="Unassigned">@Model.Summary.UnassignedCount</a></div>
+            </div>
+        }
+        <div class="stat">
+            <div class="fo-label">At Risk</div>
+            <div class="stat__value @(Model.Summary.AtRiskCount > 0 ? "stat__value--danger" : "")">
+                <a asp-page="/Tickets/AtRisk">@Model.Summary.AtRiskCount</a>
+            </div>
+        </div>
+        <div class="stat">
+            <div class="fo-label">Overdue</div>
+            <div class="stat__value @(Model.Summary.OverdueCount > 0 ? "stat__value--danger" : "")">
+                <a asp-page="/Tickets/Index" asp-route-filter="Overdue" asp-route-assignedToMe="@(Model.IsOwnWorkloadOnly ? "true" : null)">@Model.Summary.OverdueCount</a>
+            </div>
+        </div>
+        <div class="stat">
+            <div class="fo-label">High / Critical</div>
+            <div class="stat__value">@Model.Summary.HighCriticalCount</div>
+        </div>
+    </div>
+</div>
+
+@if (Model.IsOwnWorkloadOnly)
+{
+    <p class="empty-state">Team-level breakdown is not part of your role's analytics scope — this page shows your own current workload only.</p>
+}
+else
+{
+    <div class="panel">
+        @{ await Html.RenderPartialAsync("_SectionHeading", new SectionHeadingViewModel("Team workload")); }
+        @if (Model.Teams.Count == 0)
+        {
+            <p class="empty-state">No open work in your scope right now.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="tw-table">
+                    <caption>Current open work by team</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Team</th>
+                            <th scope="col">Open</th>
+                            <th scope="col">Assigned</th>
+                            <th scope="col">Unassigned</th>
+                            <th scope="col">At Risk</th>
+                            <th scope="col">Overdue</th>
+                            <th scope="col"><span class="sr-only">Members</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in Model.Teams)
+                        {
+                            var isExpanded = Model.ExpandedTeamId == row.TeamId;
+                            <tr>
+                                <td data-label="Team">@row.TeamName</td>
+                                <td class="mono" data-label="Open">
+                                    <a asp-page="/Tickets/Index" asp-route-filter="OpenWork" asp-route-teamId="@row.TeamId">@row.OpenCount</a>
+                                </td>
+                                <td class="mono" data-label="Assigned">@row.AssignedCount</td>
+                                <td class="mono" data-label="Unassigned">
+                                    <a asp-page="/Tickets/Index" asp-route-filter="Unassigned" asp-route-teamId="@row.TeamId">@row.UnassignedCount</a>
+                                </td>
+                                <td class="mono" data-label="At Risk">
+                                    <a asp-page="/Tickets/AtRisk" asp-route-search="@row.TeamName">@row.AtRiskCount</a>
+                                </td>
+                                <td class="mono" data-label="Overdue">
+                                    <a asp-page="/Tickets/Index" asp-route-filter="Overdue" asp-route-teamId="@row.TeamId">@row.OverdueCount</a>
+                                </td>
+                                <td data-label="Members">
+                                    @if (isExpanded)
+                                    {
+                                        <a asp-page="/TeamWorkload/Index" asp-route-workType="@Model.WorkTypeFilter">Hide members</a>
+                                    }
+                                    else
+                                    {
+                                        <a asp-page="/TeamWorkload/Index" asp-route-workType="@Model.WorkTypeFilter" asp-route-expandedTeam="@row.TeamId">View members</a>
+                                    }
+                                </td>
+                            </tr>
+                            @if (isExpanded)
+                            {
+                                <tr>
+                                    <td colspan="7">
+                                        @if (Model.ExpandedTeamMembers.Count == 0)
+                                        {
+                                            <p class="empty-state">No active members on this team.</p>
+                                        }
+                                        else
+                                        {
+                                            <div class="table-responsive">
+                                                <table class="tw-table">
+                                                    <caption>@Model.ExpandedTeamName's current workload by member</caption>
+                                                    <thead>
+                                                        <tr>
+                                                            <th scope="col">Agent</th>
+                                                            <th scope="col">Open</th>
+                                                            <th scope="col">In Progress</th>
+                                                            <th scope="col">Pending</th>
+                                                            <th scope="col">At Risk</th>
+                                                            <th scope="col">Overdue</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var member in Model.ExpandedTeamMembers)
+                                                        {
+                                                            <tr>
+                                                                <td data-label="Agent">@member.DisplayName</td>
+                                                                <td class="mono" data-label="Open">
+                                                                    <a asp-page="/Tickets/Index" asp-route-filter="OpenWork" asp-route-teamId="@row.TeamId" asp-route-assigneeId="@member.UserId">@member.OpenCount</a>
+                                                                </td>
+                                                                <td class="mono" data-label="In Progress">
+                                                                    <a asp-page="/Tickets/Index" asp-route-status="InProgress" asp-route-teamId="@row.TeamId" asp-route-assigneeId="@member.UserId">@member.InProgressCount</a>
+                                                                </td>
+                                                                <td class="mono" data-label="Pending">
+                                                                    <a asp-page="/Tickets/Index" asp-route-status="Pending" asp-route-teamId="@row.TeamId" asp-route-assigneeId="@member.UserId">@member.PendingCount</a>
+                                                                </td>
+                                                                <td class="mono" data-label="At Risk">
+                                                                    <a asp-page="/Tickets/AtRisk" asp-route-search="@member.DisplayName">@member.AtRiskCount</a>
+                                                                </td>
+                                                                <td class="mono" data-label="Overdue">
+                                                                    <a asp-page="/Tickets/Index" asp-route-filter="Overdue" asp-route-teamId="@row.TeamId" asp-route-assigneeId="@member.UserId">@member.OverdueCount</a>
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+</div>

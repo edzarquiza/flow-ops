@@ -336,7 +336,7 @@ public sealed partial class TicketCommentServiceTests
         await TicketTestData.AddTeamMembershipAsync(context, teamId, managerId, isTeamManager: true);
 
         var clock = new TicketTestData.FixedTimeProvider(Start);
-        var service = new TicketService(context, clock);
+        var service = new TicketService(context, clock, TestEmail.Sender, TestEmail.Options);
         var agent = TicketTestData.User(agentId, UserRole.Agent, teamId);
 
         var (ticketId, _) = await service.CreateAsync(

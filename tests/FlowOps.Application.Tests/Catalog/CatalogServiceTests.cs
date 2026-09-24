@@ -236,6 +236,111 @@ public sealed class CatalogServiceTests
         await Assert.ThrowsAsync<CategoryAccessDeniedException>(() => service.DeactivateCategoryAsync(nonAdmin, created.CategoryId!.Value));
     }
 
+    [Fact] // Phase 30B (ADR-0032): deactivation is no longer terminal.
+    public async Task ReactivateCategoryAsync_Admin_ReactivatesOwnCategory()
+    {
+        var world = await NewOrganizationAsync("Cat14");
+        var admin = AsCurrentUser(world);
+        var teamResult = await new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(admin, "Service Desk");
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+        await service.DeactivateCategoryAsync(admin, created.CategoryId!.Value);
+
+        var result = await service.ReactivateCategoryAsync(admin, created.CategoryId!.Value);
+
+        Assert.True(result.Succeeded);
+        var category = await world.Context.Categories.AsNoTracking().SingleAsync(c => c.Id == created.CategoryId);
+        Assert.True(category.IsActive);
+    }
+
+    [Fact]
+    public async Task ReactivateCategoryAsync_AlreadyActive_Fails()
+    {
+        var world = await NewOrganizationAsync("Cat15");
+        var admin = AsCurrentUser(world);
+        var teamResult = await new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(admin, "Service Desk");
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+
+        var result = await service.ReactivateCategoryAsync(admin, created.CategoryId!.Value);
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task ReactivateCategoryAsync_NameNowTakenByAnActiveCategory_FailsWithFriendlyMessage()
+    {
+        var world = await NewOrganizationAsync("Cat16");
+        var admin = AsCurrentUser(world);
+        var teamResult = await new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(admin, "Service Desk");
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var first = await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+        await service.DeactivateCategoryAsync(admin, first.CategoryId!.Value);
+        await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+
+        var result = await service.ReactivateCategoryAsync(admin, first.CategoryId!.Value);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact] // ADR-0022's independence rule, unchanged by ADR-0032: a category may be reactivated
+           // while its own team is still inactive.
+    public async Task ReactivateCategoryAsync_SucceedsEvenWhileParentTeamIsInactive()
+    {
+        var world = await NewOrganizationAsync("Cat17");
+        var admin = AsCurrentUser(world);
+        var teamService = new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var teamResult = await teamService.CreateAsync(admin, "Service Desk");
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+        await service.DeactivateCategoryAsync(admin, created.CategoryId!.Value);
+        await teamService.DeactivateAsync(admin, teamResult.TeamId!.Value);
+
+        var result = await service.ReactivateCategoryAsync(admin, created.CategoryId!.Value);
+
+        Assert.True(result.Succeeded);
+        var category = await world.Context.Categories.AsNoTracking().SingleAsync(c => c.Id == created.CategoryId);
+        Assert.True(category.IsActive);
+        var team = await world.Context.Teams.AsNoTracking().SingleAsync(t => t.Id == teamResult.TeamId);
+        Assert.False(team.IsActive);
+    }
+
+    [Fact]
+    public async Task ReactivateCategoryAsync_AnotherOrganizationsCategory_ThrowsAndDoesNotMutate()
+    {
+        var worldA = await NewOrganizationAsync("Cat18A");
+        var worldB = await NewOrganizationAsync("Cat18B");
+        var teamInB = await new TeamService(worldB.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(AsCurrentUser(worldB), "Org B Team");
+        var serviceB = new CatalogService(worldB.Context, new TicketTestData.FixedTimeProvider(Now));
+        var categoryInB = await serviceB.CreateCategoryAsync(AsCurrentUser(worldB), teamInB.TeamId!.Value, "Incidents", WorkType.Incident);
+        await serviceB.DeactivateCategoryAsync(AsCurrentUser(worldB), categoryInB.CategoryId!.Value);
+        var serviceA = new CatalogService(worldA.Context, new TicketTestData.FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<CategoryAccessDeniedException>(
+            () => serviceA.ReactivateCategoryAsync(AsCurrentUser(worldA), categoryInB.CategoryId!.Value));
+
+        var category = await worldB.Context.Categories.AsNoTracking().SingleAsync(c => c.Id == categoryInB.CategoryId);
+        Assert.False(category.IsActive);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Manager)]
+    [InlineData(UserRole.Agent)]
+    [InlineData(UserRole.Viewer)]
+    public async Task ReactivateCategoryAsync_NonAdmin_Throws(UserRole role)
+    {
+        var world = await NewOrganizationAsync("Cat19" + role);
+        var admin = AsCurrentUser(world);
+        var teamResult = await new TeamService(world.Context, new TicketTestData.FixedTimeProvider(Now)).CreateAsync(admin, "Service Desk");
+        var service = new CatalogService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var created = await service.CreateCategoryAsync(admin, teamResult.TeamId!.Value, "Incidents", WorkType.Incident);
+        await service.DeactivateCategoryAsync(admin, created.CategoryId!.Value);
+        var nonAdmin = new CurrentUser(Guid.NewGuid(), world.OrganizationId, role, new HashSet<int>(), new HashSet<int>());
+
+        await Assert.ThrowsAsync<CategoryAccessDeniedException>(() => service.ReactivateCategoryAsync(nonAdmin, created.CategoryId!.Value));
+    }
+
     private static CurrentUser AsCurrentUser(World world) =>
         new(world.AdminId, world.OrganizationId, UserRole.Admin, new HashSet<int>(), new HashSet<int>());
 

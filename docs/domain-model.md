@@ -113,6 +113,9 @@ split or clarified, it gains a new ID rather than silently changing meaning unde
 | Assign / reassign | ✓ | own teams | self-assign only | ✗ |
 | Transition status | ✓ | own teams | own assigned tickets | ✗ |
 | Change priority | ✓ | own teams | own assigned tickets | ✗ |
+| Change category | ✓ | own teams | own assigned tickets | ✗ |
+| Change team | ✓ | own teams | own assigned tickets | ✗ |
+| Change due date | ✓ | own teams | own assigned tickets | ✗ |
 | Reopen | ✓ | own teams | requester of the ticket | ✗ |
 | Team analytics | all | own teams | own workload only | own teams (read) |
 | Manage users/teams/categories/SLA | ✓ | ✗ | ✗ | ✗ |

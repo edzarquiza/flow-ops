@@ -126,7 +126,7 @@ public sealed class TicketQueryServiceDateFilterTests
         // Created far outside the filtered range, but due inside it.
         var createdAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var dueInRange = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.Zero);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(createdAt));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(createdAt), TestEmail.Sender, TestEmail.Options);
         await service.CreateAsync(
             Request(teamId, categoryId) with { DueDate = dueInRange },
             user);
@@ -147,7 +147,7 @@ public sealed class TicketQueryServiceDateFilterTests
     {
         await using var context = _fixture.CreateContext();
         var (teamId, categoryId, user) = await SeedAsync(context);
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         await service.CreateAsync(Request(teamId, categoryId), user); // no planned start at all
 
@@ -199,7 +199,7 @@ public sealed class TicketQueryServiceDateFilterTests
 
     private static async Task CreateTicketAtAsync(FlowOpsDbContext context, int teamId, int categoryId, CurrentUser user, DateTimeOffset createdAt)
     {
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(createdAt));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(createdAt), TestEmail.Sender, TestEmail.Options);
         await service.CreateAsync(Request(teamId, categoryId), user);
     }
 

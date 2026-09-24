@@ -106,6 +106,24 @@ public sealed class TicketQueryService
     /// <paramref name="filter"/> and before <paramref name="search"/> — the same ordering
     /// discipline this method's own scope/filter/search comment already documents. A ticket
     /// outside the caller's scope is never reachable by widening this filter.</param>
+    /// <param name="status">Phase 30B: an additional <c>AND</c> narrowing to one exact
+    /// <see cref="Status"/> — <see langword="null"/> (the default) applies no narrowing, so every
+    /// existing caller's behaviour is unchanged.</param>
+    /// <param name="priority">Phase 30B: an additional <c>AND</c> narrowing to one exact
+    /// <see cref="Priority"/>, the same shape as <paramref name="status"/>.</param>
+    /// <param name="assignedToMe">Phase 30B: "Assigned to me" — narrows to tickets whose
+    /// <c>AssigneeId</c> is <paramref name="user"/>'s own id. Deliberately a checkbox against the
+    /// caller, not a general assignee picker: the Work Queue spans every team the caller can see,
+    /// so a full name list would mean loading every team's roster just to filter by one of them.</param>
+    /// <param name="teamId">ADR-0036: Team Workload's own drill-through — an additional <c>AND</c>
+    /// narrowing the same already-scoped query, never a widening. A team id outside the caller's
+    /// own view scope (wrong organization, or a real team the caller cannot see) simply intersects
+    /// with an already-narrowed query and yields zero rows, the same non-disclosure behaviour
+    /// <see cref="DashboardFilter.TeamId"/> already has on the dashboard.</param>
+    /// <param name="assigneeId">ADR-0036: Team Workload's per-member drill-through — an arbitrary
+    /// assignee, unlike <paramref name="assignedToMe"/>'s caller-only checkbox. Still never a
+    /// widening: a ticket assigned to this id but outside the caller's own view scope is not
+    /// returned, for the same reason <paramref name="teamId"/> above is not a leak.</param>
     public async Task<PagedResult<TicketListItem>> GetQueueAsync(
         CurrentUser user,
         int pageNumber,
@@ -114,6 +132,11 @@ public sealed class TicketQueryService
         QueueDateField dateField = QueueDateField.Created,
         DateRangeFilter? dateRange = null,
         bool includeFinished = true,
+        Status? status = null,
+        Priority? priority = null,
+        bool assignedToMe = false,
+        int? teamId = null,
+        Guid? assigneeId = null,
         CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
@@ -134,6 +157,34 @@ public sealed class TicketQueryService
         if (!includeFinished)
         {
             scoped = scoped.Where(t => t.Status != Status.Resolved && t.Status != Status.Closed);
+        }
+
+        // Phase 30B: Status/Priority/"Assigned to me" — each an additional AND narrowing the same
+        // already-scoped query, never a widening. Applied after the KPI filter/date range/finished
+        // narrowing above so every filter composes with every other one.
+        if (status is not null)
+        {
+            scoped = scoped.Where(t => t.Status == status);
+        }
+
+        if (priority is not null)
+        {
+            scoped = scoped.Where(t => t.Priority == priority);
+        }
+
+        if (assignedToMe)
+        {
+            scoped = scoped.Where(t => t.AssigneeId == user.UserId);
+        }
+
+        if (teamId is not null)
+        {
+            scoped = scoped.Where(t => t.TeamId == teamId);
+        }
+
+        if (assigneeId is not null)
+        {
+            scoped = scoped.Where(t => t.AssigneeId == assigneeId);
         }
 
         // The requester join exists only to make "Requester" a searchable field (the queue never
@@ -250,6 +301,7 @@ public sealed class TicketQueryService
                 ticket.Status,
                 ticket.TeamId,
                 TeamName = team.Name,
+                ticket.CategoryId,
                 CategoryName = category.Name,
                 ProjectName = project == null ? null : project.Name,
                 ticket.RequesterId,
@@ -310,6 +362,7 @@ public sealed class TicketQueryService
             row.Status,
             row.TeamId,
             row.TeamName,
+            row.CategoryId,
             row.CategoryName,
             row.ProjectName,
             row.RequesterId,
@@ -606,6 +659,8 @@ public sealed class TicketQueryService
                 t.DueDate != null && t.DueDate < now && t.Status != Status.Resolved && t.Status != Status.Closed),
             TicketQueueFilter.ResolvedRecently => tickets.Where(t =>
                 t.ResolvedAt != null && t.ResolvedAt >= now.AddDays(-AnalyticsQueryService.ReportingWindowDays)),
+            TicketQueueFilter.Unassigned => tickets.Where(t =>
+                t.AssigneeId == null && t.Status != Status.Resolved && t.Status != Status.Closed),
             _ => throw new ArgumentOutOfRangeException(nameof(filter)),
         };
 

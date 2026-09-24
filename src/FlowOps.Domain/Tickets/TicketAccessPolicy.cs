@@ -119,4 +119,27 @@ public static class TicketAccessPolicy
             UserRole.Viewer => new AnalyticsScope(AnalyticsScopeKind.MemberTeams, user.MemberTeamIds, null),
             _ => throw new ArgumentOutOfRangeException(nameof(user), user.Role, "Unrecognized role."),
         };
+
+    /// <summary>
+    /// Team Workload's own authorization question (ADR-0036): does <paramref name="user"/>'s
+    /// existing Team Analytics scope (<see cref="GetAnalyticsScope"/>, the same "Team analytics"
+    /// AUTH-RULE-02 row every other analytics view already uses) include <paramref name="teamId"/>?
+    /// Deliberately reuses that scope rather than <see cref="DirectoryAccessPolicy.CanManageTeams"/>
+    /// (the Admin-only gate <c>TeamService.GetTeamDetailAsync</c> uses) — read-only workload
+    /// visibility is not team-management authority, and Team Workload must never grant broader
+    /// access than the analytics scope it otherwise already follows. Agent's scope has no team
+    /// concept at all (their analytics scope is "own assigned tickets only"), so no team id ever
+    /// qualifies for Agent.
+    /// </summary>
+    public static bool CanViewTeamWorkload(CurrentUser user, int teamId)
+    {
+        var scope = GetAnalyticsScope(user);
+        return scope.Kind switch
+        {
+            AnalyticsScopeKind.AllTeams => true,
+            AnalyticsScopeKind.ManagedTeams or AnalyticsScopeKind.MemberTeams => scope.TeamIds.Contains(teamId),
+            AnalyticsScopeKind.OwnAssignedTicketsOnly => false,
+            _ => false,
+        };
+    }
 }

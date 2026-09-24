@@ -196,6 +196,59 @@ public sealed class CatalogService
         return CategoryMutationResult.Success();
     }
 
+    /// <summary>Restores a category to normal use. Deliberately does not require the parent team to
+    /// also be active (ADR-0022's independence rule, unchanged by ADR-0032) — a category may be
+    /// reactivated while its team is still inactive; it simply won't be offered for new ticket
+    /// creation until the team is active too, exactly as it already wouldn't be even if the category
+    /// had stayed active the whole time.</summary>
+    public async Task<CategoryMutationResult> ReactivateCategoryAsync(CurrentUser actor, int categoryId, CancellationToken cancellationToken = default)
+    {
+        if (!CatalogAccessPolicy.CanManageCategories(actor))
+        {
+            throw new CategoryAccessDeniedException("This role may not reactivate categories.");
+        }
+
+        var category = await _dbContext.Categories.SingleOrDefaultAsync(c => c.Id == categoryId, cancellationToken);
+        if (category is null)
+        {
+            throw new CategoryAccessDeniedException("This category is not available to you.");
+        }
+
+        var teamInOrganization = await _dbContext.Teams
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == category.TeamId && t.OrganizationId == actor.OrganizationId, cancellationToken);
+        if (!teamInOrganization)
+        {
+            throw new CategoryAccessDeniedException("This category is not available to you.");
+        }
+
+        if (category.IsActive)
+        {
+            return CategoryMutationResult.Failed("This category is already active.");
+        }
+
+        var alreadyExists = await _dbContext.Categories
+            .AsNoTracking()
+            .AnyAsync(c => c.Id != categoryId && c.TeamId == category.TeamId && c.IsActive && c.Name == category.Name, cancellationToken);
+        if (alreadyExists)
+        {
+            return CategoryMutationResult.Failed($"An active category named \"{category.Name}\" already exists for this team.");
+        }
+
+        category.Reactivate();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return CategoryMutationResult.Failed($"An active category named \"{category.Name}\" already exists for this team.");
+        }
+
+        return CategoryMutationResult.Success();
+    }
+
     /// <summary>Every project in <paramref name="actor"/>'s own organization, active and inactive
     /// alike — Admin-only, the same gate as every other project mutation, since this is "manage
     /// projects," not a public listing (the Create Ticket dropdown has its own, active-only query in
@@ -329,6 +382,49 @@ public sealed class CatalogService
 
         project.Deactivate();
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return ProjectMutationResult.Success(project.Id);
+    }
+
+    /// <summary>Restores a project to normal use. The active-name-uniqueness check mirrors
+    /// <see cref="CreateProjectAsync"/>'s own, since a reactivation can collide with a same-named
+    /// project created while the original was deactivated.</summary>
+    public async Task<ProjectMutationResult> ReactivateProjectAsync(CurrentUser actor, int projectId, CancellationToken cancellationToken = default)
+    {
+        if (!CatalogAccessPolicy.CanManageProjects(actor))
+        {
+            throw new ProjectAccessDeniedException("This role may not reactivate projects.");
+        }
+
+        var project = await _dbContext.Projects.SingleOrDefaultAsync(p => p.Id == projectId && p.OrganizationId == actor.OrganizationId, cancellationToken);
+        if (project is null)
+        {
+            throw new ProjectAccessDeniedException("This project is not available to you.");
+        }
+
+        if (project.IsActive)
+        {
+            return ProjectMutationResult.Failed("This project is already active.");
+        }
+
+        var alreadyExists = await _dbContext.Projects
+            .AsNoTracking()
+            .AnyAsync(p => p.Id != projectId && p.OrganizationId == actor.OrganizationId && p.IsActive && p.Name == project.Name, cancellationToken);
+        if (alreadyExists)
+        {
+            return ProjectMutationResult.Failed($"An active project named \"{project.Name}\" already exists in your organization.");
+        }
+
+        project.Reactivate();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return ProjectMutationResult.Failed($"An active project named \"{project.Name}\" already exists in your organization.");
+        }
 
         return ProjectMutationResult.Success(project.Id);
     }

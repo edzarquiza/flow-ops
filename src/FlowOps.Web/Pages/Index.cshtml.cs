@@ -1,3 +1,4 @@
+using FlowOps.Application.Accounts;
 using FlowOps.Application.Demo;
 using FlowOps.Application.Platform;
 using FlowOps.Application.Tickets;
@@ -40,6 +41,7 @@ public sealed class IndexModel : PageModel
     private readonly AnalyticsQueryService _analyticsQueryService;
     private readonly AttentionQueryService _attentionQueryService;
     private readonly WorkspaceSetupService _workspaceSetupService;
+    private readonly AccountService _accountService;
     private readonly DemoOptions _demoOptions;
 
     public IndexModel(
@@ -48,6 +50,7 @@ public sealed class IndexModel : PageModel
         AnalyticsQueryService analyticsQueryService,
         AttentionQueryService attentionQueryService,
         WorkspaceSetupService workspaceSetupService,
+        AccountService accountService,
         DemoOptions demoOptions)
     {
         _currentUserAccessor = currentUserAccessor;
@@ -55,6 +58,7 @@ public sealed class IndexModel : PageModel
         _analyticsQueryService = analyticsQueryService;
         _attentionQueryService = attentionQueryService;
         _workspaceSetupService = workspaceSetupService;
+        _accountService = accountService;
         _demoOptions = demoOptions;
     }
 
@@ -124,6 +128,14 @@ public sealed class IndexModel : PageModel
 
         Email = User.Identity?.Name ?? string.Empty;
         Role = user.Role.ToString();
+
+        // Guide first-time discovery cue: Dashboard is where sign-in (registration-approval,
+        // invitation acceptance, or an ordinary login) always lands, so it is the one place that
+        // genuinely represents "reaches FlowOps for the first time" — see
+        // AccountService.TryConsumeFirstGuideCueAsync's own doc comment for the atomic one-shot
+        // guarantee. ViewData carries it to _Layout.cshtml, the only place the cue itself renders
+        // (anchored to the sidebar's Guide link, which _Layout owns).
+        ViewData["ShowGuideCue"] = await _accountService.TryConsumeFirstGuideCueAsync(user.UserId, cancellationToken);
 
         var availableOrganizations = await _currentUserAccessor.GetAvailableOrganizationsAsync(user.UserId, cancellationToken);
         OrganizationName = availableOrganizations.FirstOrDefault(o => o.Id == user.OrganizationId)?.Name ?? string.Empty;

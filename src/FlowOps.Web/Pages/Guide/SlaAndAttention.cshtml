@@ -1,0 +1,73 @@
+@page
+@{
+    ViewData["Title"] = "SLA & Attention — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>SLA &amp; Attention</h1>
+        <p class="page-context">Understand deadlines and why work needs attention.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <h2 class="section-head section-head--plain">SLA</h2>
+    <p class="prose">
+        Every ticket gets a deadline the moment it's created, based on its work type and
+        priority. The clock pauses while a ticket is Pending (waiting on someone outside the
+        team) and resumes when work continues. If priority changes, the deadline is
+        recalculated from the new target. Resolving a ticket records, permanently, whether it
+        met its deadline — editing the SLA configuration later never rewrites that history.
+    </p>
+</div>
+
+<div class="zone">
+    <h2 class="section-head section-head--plain">Attention</h2>
+    <p class="prose">
+        FlowOps doesn't wait for you to notice a problem — it ranks and surfaces the tickets
+        that genuinely need a decision, using one single, explainable set of rules
+        (<code>AttentionPolicy</code>). Every signal below is backed by real ticket data, never
+        a score or a model. Opening a ticket's own <strong>Attention Brief</strong> shows the exact
+        evidence behind why it was flagged.
+    </p>
+    <div class="guide-term-grid">
+        <div class="guide-term guide-term--danger">
+            <p class="guide-term__name">SLA Breached</p>
+            <p class="guide-term__body">The deadline has already passed.</p>
+        </div>
+        <div class="guide-term guide-term--warn">
+            <p class="guide-term__name">SLA At Risk</p>
+            <p class="guide-term__body">The deadline is approaching.</p>
+        </div>
+        <div class="guide-term guide-term--warn">
+            <p class="guide-term__name">Overdue</p>
+            <p class="guide-term__body">Work is past its own planned due date (separate from the SLA deadline).</p>
+        </div>
+        <div class="guide-term guide-term--danger">
+            <p class="guide-term__name">Unassigned Urgent</p>
+            <p class="guide-term__body">Critical or High priority work with no owner yet.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Aging</p>
+            <p class="guide-term__body">Work has stayed open longer than expected for its priority.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Stalled</p>
+            <p class="guide-term__body">No recent activity, even though the ticket is still open.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Churn</p>
+            <p class="guide-term__body">The ticket has been reassigned repeatedly.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Reopened</p>
+            <p class="guide-term__body">Previously resolved work has come back.</p>
+        </div>
+    </div>
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/Tickets/AtRisk">Open At-Risk</a>
+    </p>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

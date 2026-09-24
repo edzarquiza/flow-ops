@@ -145,6 +145,24 @@ public sealed class AccountService
         return updated == 1;
     }
 
+    /// <summary>
+    /// Guide first-time discovery cue: atomically consumes the one-shot window on the very first
+    /// call for this user (the conditional <c>WHERE ... IS NULL</c> plus <c>SET</c> is one SQL
+    /// statement, so two concurrent requests can never both win). Returns <see langword="true"/>
+    /// only for the caller that actually flipped it from null — the signal the Dashboard page uses
+    /// to decide whether to render the cue at all. Every subsequent call, on any page, in any
+    /// session, forever after, returns <see langword="false"/>.
+    /// </summary>
+    public async Task<bool> TryConsumeFirstGuideCueAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var updated = await _dbContext.Users
+            .Where(u => u.Id == userId && u.GuideIntroducedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.GuideIntroducedAt, now), cancellationToken);
+
+        return updated == 1;
+    }
+
     /// <summary>Updates only the caller's own <see cref="ApplicationUser.DisplayName"/>. Never
     /// touches any historical Ticket/Comment/Event row — those resolve the actor's display name by
     /// joining to this same row at read time (already-established behavior, unchanged here), so a

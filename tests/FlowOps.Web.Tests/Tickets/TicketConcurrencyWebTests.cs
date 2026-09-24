@@ -70,6 +70,7 @@ public sealed class TicketConcurrencyWebTests : IClassFixture<FlowOpsWebApplicat
         var currentUserAccessorB = scopeB.ServiceProvider.GetRequiredService<CurrentUserAccessor>();
         var ticketQueryServiceB = scopeB.ServiceProvider.GetRequiredService<TicketQueryService>();
         var ticketServiceB = scopeB.ServiceProvider.GetRequiredService<TicketService>();
+        var attentionQueryServiceB = scopeB.ServiceProvider.GetRequiredService<AttentionQueryService>();
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -78,7 +79,7 @@ public sealed class TicketConcurrencyWebTests : IClassFixture<FlowOpsWebApplicat
         var httpContext = new DefaultHttpContext { RequestServices = scopeB.ServiceProvider, User = principal };
         var pageContext = new PageContext(new ActionContext(httpContext, new RouteData(), new PageActionDescriptor()));
 
-        var detailsModel = new DetailsModel(currentUserAccessorB, ticketQueryServiceB, ticketServiceB)
+        var detailsModel = new DetailsModel(currentUserAccessorB, ticketQueryServiceB, ticketServiceB, attentionQueryServiceB)
         {
             PageContext = pageContext,
             Input = new DetailsModel.WorkflowInput { PendingReason = "Reviewing after a concurrent edit" },

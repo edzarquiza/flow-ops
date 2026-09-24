@@ -25,7 +25,7 @@ public sealed class WorkQueueActiveWorkTests
         int TeamId, int CategoryId, CurrentUser Admin, CurrentUser Manager, CurrentUser Agent, CurrentUser OutsideAgent,
         int Open, int InProgress, int Pending, int Resolved, int Closed);
 
-    private static TicketService Tickets(FlowOpsDbContext c) => new(c, new TicketTestData.FixedTimeProvider(Now));
+    private static TicketService Tickets(FlowOpsDbContext c) => new(c, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
     private static TicketQueryService Query(FlowOpsDbContext c) => new(c, new TicketTestData.FixedTimeProvider(Now));
 
     private static async Task<World> SeedAsync(FlowOpsDbContext c)

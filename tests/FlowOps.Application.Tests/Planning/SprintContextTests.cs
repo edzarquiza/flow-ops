@@ -26,7 +26,7 @@ public sealed class SprintContextTests
 
     private static TicketTestData.FixedTimeProvider Clock() => new(Now);
     private static SprintService Sprints(FlowOpsDbContext c) => new(c, Clock());
-    private static TicketService Tickets(FlowOpsDbContext c) => new(c, Clock());
+    private static TicketService Tickets(FlowOpsDbContext c) => new(c, Clock(), TestEmail.Sender, TestEmail.Options);
     private static ProjectPlanningQueryService Planning(FlowOpsDbContext c) => new(c, Clock());
     private static TicketQueryService TicketQueries(FlowOpsDbContext c) => new(c, Clock());
 

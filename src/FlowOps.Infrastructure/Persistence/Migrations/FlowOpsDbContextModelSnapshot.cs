@@ -999,6 +999,10 @@ namespace FlowOps.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("email_confirmed");
 
+                    b.Property<DateTimeOffset?>("GuideIntroducedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("guide_introduced_at");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")

@@ -238,6 +238,55 @@ public sealed class TeamService
         return TeamMutationResult.Success();
     }
 
+    /// <summary>
+    /// Phase 30B (ADR-0032): restores an inactive team — the reverse of <see cref="DeactivateAsync"/>,
+    /// with no cascade either direction (ADR-0022 still governs: categories and team memberships were
+    /// never touched by deactivation, so there is nothing for reactivation to restore on them). Rejected
+    /// with a friendly message, not a raw database error, if another active team in the organization
+    /// has since taken this name — the up-front check handles the common case, and the
+    /// <see cref="DbUpdateException"/> catch is the same final guard <see cref="RenameAsync"/> already
+    /// uses against the filtered unique index (ADR-0022) for the race between the two.
+    /// </summary>
+    public async Task<TeamMutationResult> ReactivateAsync(CurrentUser actor, int teamId, CancellationToken cancellationToken = default)
+    {
+        if (!DirectoryAccessPolicy.CanManageTeams(actor))
+        {
+            throw new TeamAccessDeniedException("This role may not reactivate teams.");
+        }
+
+        var team = await _dbContext.Teams.SingleOrDefaultAsync(t => t.Id == teamId && t.OrganizationId == actor.OrganizationId, cancellationToken);
+        if (team is null)
+        {
+            throw new TeamAccessDeniedException("This team is not available to you.");
+        }
+
+        if (team.IsActive)
+        {
+            return TeamMutationResult.Failed("This team is already active.");
+        }
+
+        var alreadyExists = await _dbContext.Teams
+            .AsNoTracking()
+            .AnyAsync(t => t.Id != teamId && t.OrganizationId == actor.OrganizationId && t.IsActive && t.Name == team.Name, cancellationToken);
+        if (alreadyExists)
+        {
+            return TeamMutationResult.Failed($"An active team named \"{team.Name}\" already exists in your organization.");
+        }
+
+        team.Reactivate();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return TeamMutationResult.Failed($"An active team named \"{team.Name}\" already exists in your organization.");
+        }
+
+        return TeamMutationResult.Success();
+    }
+
     /// <summary>Active members of the caller's own organization who are not already on
     /// <paramref name="teamId"/> — the "add member" control's only data source.</summary>
     public async Task<IReadOnlyList<EligibleMemberOption>> GetEligibleMembersAsync(CurrentUser actor, int teamId, CancellationToken cancellationToken = default)

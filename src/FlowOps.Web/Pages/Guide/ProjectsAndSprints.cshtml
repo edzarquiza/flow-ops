@@ -1,0 +1,60 @@
+@page
+@{
+    ViewData["Title"] = "Projects & Sprints — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Projects &amp; Sprints</h1>
+        <p class="page-context">Plan and organize delivery work.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <p class="prose">
+        Projects are a lightweight way to plan delivery work on top of the same tickets you
+        already use everywhere else in FlowOps — there is no separate work item type for
+        planned work.
+    </p>
+    <div class="guide-flow">
+        <div class="guide-flow__step">Project</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Sprint</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Board</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Work</div>
+    </div>
+
+    <div class="guide-term-grid">
+        <div class="guide-term">
+            <p class="guide-term__name">Project</p>
+            <p class="guide-term__body">A container for related tickets, with its own overview, ticket list, and sprints.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Sprint</p>
+            <p class="guide-term__body">A dated slice of a project's work. Only one sprint is active at a time; others are Planned, Completed, or Cancelled.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Board</p>
+            <p class="guide-term__body">The active sprint's tickets, grouped by status (Planned, Open, In Progress, Pending, Done). Move a card with the mouse or its own menu — both do exactly the same thing.</p>
+        </div>
+    </div>
+
+    <p class="prose">
+        Planning a sprint means adding tickets to it from the project's ticket list — a ticket
+        keeps its real workflow status the whole time, whether or not it has been moved onto
+        the board yet. Completing a sprint freezes a record of what was done and what wasn't;
+        unfinished tickets are not moved automatically, but can be carried forward into the next
+        sprint. Cancelling a sprint before it starts releases its planned tickets back to the
+        project. Every project keeps its own sprint history, so past sprints stay visible after
+        they're done.
+    </p>
+
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/Projects/Index">Open Projects</a>
+    </p>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

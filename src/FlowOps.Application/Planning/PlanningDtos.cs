@@ -19,6 +19,12 @@ public sealed record ProjectListEntry(
     SprintSummary? ActiveSprint,
     int VisibleTicketCount);
 
+/// <summary>Phase 29D: the sidebar's quick-navigation project list — just enough to render a link
+/// and a name, deliberately without <see cref="ProjectListEntry"/>'s sprint/ticket-count
+/// enrichment. The sidebar renders on every authenticated page, so its own query stays the
+/// smallest one that satisfies it rather than reusing the heavier Projects-page shape.</summary>
+public sealed record ProjectNavOption(int ProjectId, string Name);
+
 /// <summary>Where the active sprint's tickets sit — derived from the existing status model plus the
 /// backlog flag, never a second workflow.</summary>
 public sealed record SprintProgress(int Total, int Backlog, int InProgress, int Pending, int Done);

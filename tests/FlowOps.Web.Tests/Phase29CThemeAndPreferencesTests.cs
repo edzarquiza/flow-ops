@@ -143,7 +143,7 @@ public sealed class Phase29CThemeAndPreferencesTests : IClassFixture<FlowOpsWebA
             "--fo-text-hi", "--fo-text", "--fo-text-2", "--fo-text-3", "--fo-teal-text",
             "--fo-ok", "--fo-info", "--fo-warn", "--fo-danger", "--fo-violet",
             "--fo-ok-rgb", "--fo-info-rgb", "--fo-warn-rgb", "--fo-danger-rgb", "--fo-teal-rgb", "--fo-violet-rgb", "--fo-muted-rgb",
-            "--fo-scrim-nav", "--fo-scrim-dialog", "--fo-shadow-pop", "--fo-track",
+            "--fo-scrim-nav", "--fo-scrim-dialog", "--fo-shadow-pop", "--fo-track", "--fo-control-border",
         };
         Assert.All(mustVary, k => Assert.True(light.ContainsKey(k), $"Light does not restate {k}"));
 

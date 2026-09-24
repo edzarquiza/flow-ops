@@ -1,0 +1,65 @@
+@page
+@{
+    ViewData["Title"] = "Getting Started — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Getting Started</h1>
+        <p class="page-context">A quick introduction to the FlowOps workflow.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <h2 class="section-head section-head--plain">The operating loop</h2>
+    <p class="prose">
+        FlowOps turns operational work into structured workflow, workflow into signals, and
+        signals into action. Every screen in the app serves one link in that chain.
+    </p>
+    <div class="guide-flow">
+        <div class="guide-flow__step">Work</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Workflow</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Intelligence</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Action</div>
+    </div>
+    <p class="prose">
+        Work arrives as tickets. Workflow moves them through a defined lifecycle (Open,
+        Assigned, In Progress, Pending, Resolved, Closed). Intelligence — the SLA engine and the
+        Attention engine — watches that lifecycle and surfaces what needs a decision. Action is
+        you, assigning, resolving, or reprioritizing based on what Intelligence surfaced.
+    </p>
+</div>
+
+<div class="zone">
+    <h2 class="section-head section-head--plain">A typical starting flow</h2>
+    <p class="prose">This is the order most organizations actually set up FlowOps in.</p>
+    <div class="guide-flow">
+        <div class="guide-flow__step">Create organization</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Add a team</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Invite people</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Create work</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Assign ownership</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Monitor</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Resolve</div>
+    </div>
+    <ul class="prose">
+        <li>An organization is created automatically when you register — you're its first Admin.</li>
+        <li>An Admin adds at least one <strong>team</strong> and a <strong>category</strong> for it under <a class="table-action-link" asp-page="/Admin/Index">Admin</a>.</li>
+        <li>An Admin or Manager invites the rest of the team from <a class="table-action-link" asp-page="/Organization/Members">Members</a>.</li>
+        <li>Anyone who can create work opens <a class="table-action-link" asp-page="/Tickets/Create">Create Ticket</a>.</li>
+        <li>Work is assigned to a team member and tracked through the <a class="table-action-link" asp-page="/Tickets/Index">Work Queue</a>.</li>
+        <li>The <a class="table-action-link" asp-page="/Index">Dashboard</a> and <a class="table-action-link" asp-page="/Tickets/AtRisk">At-Risk</a> page show what needs attention as work progresses.</li>
+    </ul>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

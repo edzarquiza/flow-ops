@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace FlowOps.Web.Pages.Account;
 
@@ -26,6 +27,7 @@ namespace FlowOps.Web.Pages.Account;
 /// being authenticated.
 /// </remarks>
 [AllowAnonymous]
+[EnableRateLimiting("sensitive")]
 public sealed class RegisterModel : PageModel
 {
     private readonly AccountService _accountService;

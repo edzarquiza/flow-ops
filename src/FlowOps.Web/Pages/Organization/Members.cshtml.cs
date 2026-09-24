@@ -10,6 +10,7 @@ using FlowOps.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace FlowOps.Web.Pages.Organization;
 
@@ -19,6 +20,20 @@ namespace FlowOps.Web.Pages.Organization;
 /// <see cref="CurrentUserAccessor"/>'s server-resolved <c>CurrentUser</c>, never a client-supplied
 /// organization id (Step 7/16).
 /// </summary>
+/// <remarks>
+/// Phase F1-B (hardening): <see cref="OnPostInviteAsync"/> and <see cref="OnPostGenerateResetLinkAsync"/>
+/// are the two handlers this policy is actually meant for (invitation spam / unlimited reset-link
+/// minting). A Razor Page compiles to exactly one endpoint per page, not one per handler method
+/// (the same reason <c>LoginModel</c>'s own comment gives for applying <c>[EnableRateLimiting]</c>
+/// class-wide) — putting the attribute on only those two handler methods was tried first and
+/// verified, by a failing test, to have no effect at all, since the rate limiter reads endpoint
+/// metadata before a specific handler is even selected. The policy's own non-POST bypass (see
+/// Program.cs) keeps <see cref="OnGetAsync"/> (member listing/search) unthrottled regardless;
+/// <see cref="OnPostChangeRoleAsync"/>/<see cref="OnPostRemoveMemberAsync"/> incidentally share the
+/// same 5/min/IP budget as a result, which is an acceptable, still-generous limit for those
+/// Admin/Manager-only actions rather than a deliberate target of this hardening pass.
+/// </remarks>
+[EnableRateLimiting("sensitive")]
 public sealed class MembersModel : PageModel
 {
     private readonly CurrentUserAccessor _currentUserAccessor;
@@ -62,9 +77,29 @@ public sealed class MembersModel : PageModel
 
     public IReadOnlyList<MemberListItem> Members { get; private set; } = [];
 
+    /// <summary>Verification pass: every not-yet-accepted invitation in this organization —
+    /// previously invisible on this page once the caller navigated away from the one-time
+    /// "invitation created" notice.</summary>
+    public IReadOnlyList<PendingInvitationView> PendingInvitations { get; private set; } = [];
+
     public IReadOnlyList<UserRole> AssignableRoles { get; private set; } = [];
 
     public string? CreatedInvitationLink { get; private set; }
+
+    /// <summary>Phase 30 (ADR-0035): true only right after a successful invite whose email could
+    /// not be delivered by a genuinely configured provider — the invitation itself is unaffected
+    /// either way; this only decides whether the existing copy-link block also shows a small
+    /// warning. <see langword="false"/> whenever <see cref="InvitationEmailProviderNotConfigured"/>
+    /// is true, since "no live provider exists" is a distinct, non-error state (see that
+    /// property's own doc comment) — never reported as a delivery failure.</summary>
+    public bool InvitationEmailDeliveryFailed { get; private set; }
+
+    /// <summary>Verification pass: true right after a successful invite when no live email
+    /// provider is configured (<c>FlowOps:Email:Provider</c> unset or <c>"Log"</c> — every local/CI
+    /// environment by default). Before this existed, the page told every such caller their
+    /// invitation had been "emailed to the invited address" even though nothing was ever sent —
+    /// this drives an honest third notice instead of a false positive.</summary>
+    public bool InvitationEmailProviderNotConfigured { get; private set; }
 
     /// <summary>ADR-0027: active teams the caller may invite into — empty for a role that cannot
     /// invite at all (the form itself is hidden then), populated for Admin/Manager.</summary>
@@ -107,6 +142,7 @@ public sealed class MembersModel : PageModel
 
         AssignableRoles = ComputeAssignableRoles(user);
         InvitableTeams = await GetInvitableTeamsAsync(user, cancellationToken);
+        PendingInvitations = await GetPendingInvitationsAsync(user, cancellationToken);
         CallerIsAdmin = user.Role == UserRole.Admin;
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
         return Page();
@@ -142,6 +178,8 @@ public sealed class MembersModel : PageModel
             }
 
             CreatedInvitationLink = Url.Page("/Account/AcceptInvitation", pageHandler: null, values: new { token = result.RawToken }, protocol: Request.Scheme);
+            InvitationEmailProviderNotConfigured = !result.EmailProviderConfigured;
+            InvitationEmailDeliveryFailed = result.EmailProviderConfigured && !result.EmailDeliverySucceeded;
         }
         catch (OrganizationAccessDeniedException)
         {
@@ -265,8 +303,19 @@ public sealed class MembersModel : PageModel
         Members = ApplyInactiveFilter(await _membershipService.GetMembersAsync(user, Search, cancellationToken));
         AssignableRoles = ComputeAssignableRoles(user);
         InvitableTeams = await GetInvitableTeamsAsync(user, cancellationToken);
+        PendingInvitations = await GetPendingInvitationsAsync(user, cancellationToken);
         CallerIsAdmin = user.Role == UserRole.Admin;
         NextStep = await ResolveNextStepAsync(user, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<PendingInvitationView>> GetPendingInvitationsAsync(CurrentUser user, CancellationToken cancellationToken)
+    {
+        if (!OrganizationAccessPolicy.CanManageMembers(user))
+        {
+            return [];
+        }
+
+        return await _invitationService.GetPendingInvitationsAsync(user, cancellationToken);
     }
 
     private async Task<IReadOnlyList<TeamListItem>> GetInvitableTeamsAsync(CurrentUser user, CancellationToken cancellationToken)

@@ -79,7 +79,7 @@ public sealed class WorkspaceSetupStatusTests
     public async Task PendingInvitationAlone_CompletesInviteItem()
     {
         var world = await NewOrganizationAsync("Setup3b");
-        var invitations = new InvitationService(world.Context, world.UserManager, world.UserManager.KeyNormalizer, new TicketTestData.FixedTimeProvider(Now));
+        var invitations = new InvitationService(world.Context, world.UserManager, world.UserManager.KeyNormalizer, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var admin = AsCurrentUser(world);
 
         var result = await invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
@@ -171,7 +171,7 @@ public sealed class WorkspaceSetupStatusTests
         await world.Context.SaveChangesAsync();
 
         var admin = AsCurrentUser(world);
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         await ticketService.CreateAsync(
             new CreateTicketRequest("A ticket for setup status", "A routine description.", WorkType.Incident, Priority.Medium, team.Id, category.Id, null),
             admin);
@@ -199,7 +199,7 @@ public sealed class WorkspaceSetupStatusTests
         await world.Context.SaveChangesAsync();
 
         var admin = AsCurrentUser(world);
-        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now));
+        var ticketService = new TicketService(world.Context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         await ticketService.CreateAsync(
             new CreateTicketRequest("A ticket for setup status", "A routine description.", WorkType.Incident, Priority.Medium, team.Id, category.Id, null),
             admin);

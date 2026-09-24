@@ -25,6 +25,9 @@
 @* Visual-consistency pass: .panel, matching Ticket Detail's own SLA/Ownership treatment for
    several distinct fact tables on one detail page (not .panel--focus, reserved for a page's one
    primary list). *@
+@* Phase 29B: panels carry no global sibling margin of their own — a vertical stack of panels
+   must opt into it via .panel-stack, or they sit flush against each other with zero gap. *@
+<div class="panel-stack">
 <div class="panel">
     @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Organization memberships")); }
     @if (Model.TargetUser.Memberships.Count == 0)
@@ -87,6 +90,7 @@
             </table>
         </div>
     }
+</div>
 </div>
 
 <div class="zone">

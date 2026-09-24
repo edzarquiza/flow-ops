@@ -1,0 +1,55 @@
+@page
+@{
+    ViewData["Title"] = "Core Concepts — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Core Concepts</h1>
+        <p class="page-context">Organizations, teams, work, priorities and SLAs.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <div class="guide-term-grid">
+        <div class="guide-term">
+            <p class="guide-term__name">Organization</p>
+            <p class="guide-term__body">The outer boundary. Everything else — teams, projects, tickets, members — belongs to exactly one organization. You can belong to more than one, with a different role in each.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Team</p>
+            <p class="guide-term__body">A group that owns work. Every ticket belongs to one team, and a team has its own manager and members.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Work / Ticket</p>
+            <p class="guide-term__body">One unit of operational work — an incident, a request, a task, or a problem. Every ticket has a requester, a team, a category, and a priority.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Work Type</p>
+            <p class="guide-term__body">What kind of work a ticket represents: Incident, Service Request, Task, or Problem.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Priority</p>
+            <p class="guide-term__body">How urgent a ticket is: Critical, High, Medium, or Low. Priority drives its SLA target.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">SLA</p>
+            <p class="guide-term__body">The deadline a ticket is expected to be resolved by, based on its work type and priority. See SLA &amp; Attention for how it's tracked.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Attention</p>
+            <p class="guide-term__body">FlowOps's signature capability: a ranked list of tickets that genuinely need a decision right now, and exactly why.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Project</p>
+            <p class="guide-term__body">An optional container for planning delivery work — a lightweight way to group related tickets over time.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Sprint</p>
+            <p class="guide-term__body">A time-boxed slice of a project's work, planned and tracked on that project's Board.</p>
+        </div>
+    </div>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

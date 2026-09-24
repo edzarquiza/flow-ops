@@ -72,7 +72,7 @@
                                                 <p class="confirm-panel__question">Deactivate @project.Name?</p>
                                                 <p class="confirm-panel__detail">
                                                     It is removed from Create Ticket without touching any ticket that
-                                                    already references it. This can be reversed at any time.
+                                                    already references it. It can be reactivated later.
                                                 </p>
                                                 <div class="confirm-panel__actions">
                                                     <form method="post" asp-page-handler="Deactivate">
@@ -88,7 +88,11 @@
                                 }
                                 else
                                 {
-                                    <span class="cell-muted">&mdash;</span>
+                                    <form method="post" asp-page-handler="Reactivate">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="projectId" value="@project.ProjectId" />
+                                        <button type="submit" class="btn-primary">Reactivate</button>
+                                    </form>
                                 }
                             </td>
                         </tr>

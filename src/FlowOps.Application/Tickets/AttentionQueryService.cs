@@ -20,12 +20,14 @@ public sealed class AttentionQueryService
     private readonly FlowOpsDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
     private readonly AttentionOptions _options;
+    private readonly TicketQueryService _ticketQueryService;
 
-    public AttentionQueryService(FlowOpsDbContext dbContext, TimeProvider timeProvider, AttentionOptions options)
+    public AttentionQueryService(FlowOpsDbContext dbContext, TimeProvider timeProvider, AttentionOptions options, TicketQueryService ticketQueryService)
     {
         _dbContext = dbContext;
         _timeProvider = timeProvider;
         _options = options;
+        _ticketQueryService = ticketQueryService;
     }
 
     /// <summary>
@@ -121,6 +123,151 @@ public sealed class AttentionQueryService
         var items = await MapAsync(page, slaConfigurations, now, cancellationToken);
 
         return new PagedResult<AttentionListItem>(items, pageNumber, PageSize, dateFiltered.Count);
+    }
+
+    /// <summary>
+    /// Phase 30: the Attention Brief — explains one ticket's existing attention decision, never a
+    /// second one. Calls the exact same <see cref="AttentionPolicy.Evaluate"/> this class's own
+    /// <see cref="GetAtRiskAsync"/> already calls, for exactly one ticket, through the same
+    /// organization/team view-scope every other ticket read uses. Returns <see langword="null"/>
+    /// when the ticket does not exist, the caller may not view it (the two are indistinguishable,
+    /// per AUTH-RULE-04's non-disclosure pattern — this is the same query shape
+    /// <see cref="TicketQueryService.GetDetailAsync"/> already uses), or the ticket genuinely has no
+    /// signals right now — a ticket with nothing wrong gets no brief, not an empty one.
+    /// </summary>
+    public async Task<AttentionBrief?> GetBriefAsync(CurrentUser user, int ticketId, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        var slaConfigurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(cancellationToken);
+
+        var ticket = await ApplyViewScope(_dbContext, _dbContext.Tickets, user)
+            .Where(t => t.Id == ticketId)
+            .Include(t => t.Events)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (ticket is null)
+        {
+            return null;
+        }
+
+        var riskThresholdPercent = SlaPolicy.ResolveConfiguration(slaConfigurations, ticket.WorkType, ticket.Priority).RiskThresholdPercent;
+        var signals = AttentionPolicy.Evaluate(ticket, now, _options, riskThresholdPercent);
+        if (signals.Count == 0)
+        {
+            return null;
+        }
+
+        var signalViews = signals
+            .Select(s => new AttentionSignalView(s.Code, s.Severity, s.Headline))
+            .ToList();
+
+        // "What changed" (Phase 30 Gate A): real, already-recorded events only — never comments,
+        // never a reconstructed historical attention timeline (FlowOps persists no such thing).
+        // Reuses GetHistoryAsync's own authorization/visibility/display-name-resolution rather than
+        // a second, parallel event query.
+        var history = await _ticketQueryService.GetHistoryAsync(ticketId, user, cancellationToken);
+        var recentEvents = history
+            .Where(e => e.Kind == TicketTimelineEntryKind.Event && e.EventType != TicketEventType.CommentAdded)
+            .OrderByDescending(e => e.OccurredAt)
+            .Take(2)
+            .ToList();
+
+        var suggestedNextStep = AttentionSuggestion.SuggestNextStep(signals, ticket.Status);
+
+        return new AttentionBrief(signalViews, recentEvents, suggestedNextStep);
+    }
+
+    /// <summary>
+    /// ADR-0036: Team Workload's own at-risk counts — total plus a per-team breakdown, evaluated
+    /// over the same candidate-then-evaluate shape <see cref="GetAtRiskAsync"/> already uses,
+    /// narrowed to the caller's Team Analytics scope (<see cref="TicketAccessPolicy.GetAnalyticsScope"/>)
+    /// rather than <see cref="BuildCandidateQuery"/>'s own broader view-scope — Team Workload must
+    /// never disclose more than the analytics authority every other analytics view already grants
+    /// (a Manager's count here is "managed teams," not every team they merely belong to). Grouped
+    /// in memory, never in SQL: "is this ticket at risk" is <see cref="AttentionPolicy"/>'s own
+    /// per-ticket decision, not a column — this method decides nothing itself.
+    /// </summary>
+    public async Task<(int Total, IReadOnlyDictionary<int, int> ByTeamId)> GetAtRiskSummaryAsync(
+        CurrentUser user,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var slaConfigurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(cancellationToken);
+
+        var candidates = await ApplyAnalyticsScopeNarrowing(BuildCandidateQuery(user, now, slaConfigurations), user)
+            .Include(t => t.Events)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var atRisk = candidates
+            .Where(t => AttentionPolicy.Evaluate(
+                    t, now, _options, SlaPolicy.ResolveConfiguration(slaConfigurations, t.WorkType, t.Priority).RiskThresholdPercent)
+                .Count > 0)
+            .ToList();
+
+        var byTeam = atRisk.GroupBy(t => t.TeamId).ToDictionary(g => g.Key, g => g.Count());
+
+        return (atRisk.Count, byTeam);
+    }
+
+    /// <summary>
+    /// ADR-0036: one team's per-member at-risk counts, computed only when that team is explicitly
+    /// expanded — never eagerly for every team. Same authorization as
+    /// <see cref="AnalyticsQueryService.GetTeamMemberWorkloadAsync"/>
+    /// (<see cref="TicketAccessPolicy.CanViewTeamWorkload"/>); already having confirmed the caller
+    /// may see this specific team, filtering <see cref="BuildCandidateQuery"/>'s results down to it
+    /// needs no further scope narrowing beyond that check. Same in-memory grouping reasoning as
+    /// <see cref="GetAtRiskSummaryAsync"/>.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, int>> GetAtRiskCountsByAssigneeAsync(
+        CurrentUser user,
+        int teamId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TicketAccessPolicy.CanViewTeamWorkload(user, teamId))
+        {
+            throw new TicketAccessDeniedException("This team's workload is not available to you.");
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var slaConfigurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(cancellationToken);
+
+        var candidates = await BuildCandidateQuery(user, now, slaConfigurations)
+            .Where(t => t.TeamId == teamId && t.AssigneeId != null)
+            .Include(t => t.Events)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(t => AttentionPolicy.Evaluate(
+                    t, now, _options, SlaPolicy.ResolveConfiguration(slaConfigurations, t.WorkType, t.Priority).RiskThresholdPercent)
+                .Count > 0)
+            .GroupBy(t => t.AssigneeId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    /// <summary>
+    /// ADR-0036: narrows an already view-scoped candidate query down to the caller's Team Analytics
+    /// scope specifically — the same translation <see cref="AnalyticsQueryService"/>'s own private
+    /// <c>ApplyAnalyticsScope</c> performs, kept as its own small copy here for the same reason
+    /// <see cref="ApplyViewScope"/> is already a deliberate duplication of
+    /// <see cref="TicketQueryService"/>'s copy (this class's own doc comment). A strict narrowing
+    /// only — it can never admit a ticket <see cref="BuildCandidateQuery"/> did not already include.
+    /// </summary>
+    private static IQueryable<Ticket> ApplyAnalyticsScopeNarrowing(IQueryable<Ticket> tickets, CurrentUser user)
+    {
+        var scope = TicketAccessPolicy.GetAnalyticsScope(user);
+        var teamIds = scope.TeamIds.ToArray();
+
+        return scope.Kind switch
+        {
+            AnalyticsScopeKind.AllTeams => tickets,
+            AnalyticsScopeKind.ManagedTeams or AnalyticsScopeKind.MemberTeams => tickets.Where(t => teamIds.Contains(t.TeamId)),
+            AnalyticsScopeKind.OwnAssignedTicketsOnly => tickets.Where(t => t.AssigneeId == user.UserId),
+            _ => tickets.Where(_ => false),
+        };
     }
 
     /// <summary>

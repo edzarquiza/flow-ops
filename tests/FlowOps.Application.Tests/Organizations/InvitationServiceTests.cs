@@ -32,7 +32,7 @@ public sealed class InvitationServiceTests
         var userManager = CreateUserManager(context);
         var clock = new TicketTestData.FixedTimeProvider(Now);
         var accounts = new AccountService(context, userManager, clock);
-        var invitations = new InvitationService(context, userManager, ResolveNormalizer(context), clock);
+        var invitations = new InvitationService(context, userManager, ResolveNormalizer(context), clock, TestEmail.Sender, TestEmail.Options);
 
         var registration = await accounts.RegisterAsync(new RegisterRequest($"{label} Admin", UniqueEmail(), Password, $"{label} Org"));
         Assert.True(registration.Succeeded);
@@ -59,6 +59,38 @@ public sealed class InvitationServiceTests
         services.AddLogging();
         services.AddIdentityCore<ApplicationUser>().AddRoles<ApplicationRole>().AddEntityFrameworkStores<FlowOpsDbContext>();
         return services.BuildServiceProvider().GetRequiredService<UserManager<ApplicationUser>>();
+    }
+
+    /// <summary>Same as <see cref="NewOrganizationAsync"/> but wired to a caller-visible
+    /// <see cref="RecordingEmailSender"/> so a test can inspect exactly what was sent. Uses a
+    /// "Resend"-flavoured options record (verification pass) rather than the shared
+    /// <see cref="TestEmail.Options"/> default of <c>Provider = "Log"</c> — this section's tests
+    /// specifically exercise "a live provider is configured," which
+    /// <see cref="CreateInvitationResult.EmailProviderConfigured"/> now distinguishes from the
+    /// no-provider-configured case.</summary>
+    private async Task<(World World, RecordingEmailSender EmailSender)> NewOrganizationWithEmailAsync(string label)
+    {
+        var context = _fixture.CreateContext();
+        var userManager = CreateUserManager(context);
+        var clock = new TicketTestData.FixedTimeProvider(Now);
+        var accounts = new AccountService(context, userManager, clock);
+        var emailSender = new RecordingEmailSender();
+        var liveProviderOptions = new FlowOps.Infrastructure.Email.EmailOptions
+        {
+            Provider = "Resend",
+            FromAddress = TestEmail.Options.FromAddress,
+            FromName = TestEmail.Options.FromName,
+            BaseUrl = TestEmail.Options.BaseUrl,
+        };
+        var invitations = new InvitationService(context, userManager, ResolveNormalizer(context), clock, emailSender, liveProviderOptions);
+
+        var registration = await accounts.RegisterAsync(new RegisterRequest($"{label} Admin", UniqueEmail(), Password, $"{label} Org"));
+        Assert.True(registration.Succeeded);
+
+        var currentUserAccessor = new CurrentUserAccessor(context, userManager);
+        var admin = await currentUserAccessor.GetCurrentUserAsync(registration.UserId!.Value);
+
+        return (new World(context, userManager, invitations, accounts, registration.UserId!.Value, admin!.OrganizationId), emailSender);
     }
 
     private static string UniqueEmail() => $"{Guid.NewGuid():N}@invitations.test.local";
@@ -199,12 +231,115 @@ public sealed class InvitationServiceTests
         var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
         var email = UniqueEmail();
 
-        var expiredClockService = new InvitationService(world.Context, world.UserManager, ResolveNormalizer(world.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)));
+        var expiredClockService = new InvitationService(world.Context, world.UserManager, ResolveNormalizer(world.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)), TestEmail.Sender, TestEmail.Options);
         await expiredClockService.CreateInvitationAsync(admin, new CreateInvitationRequest(email, UserRole.Agent));
 
         var second = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(email, UserRole.Viewer));
 
         Assert.True(second.Succeeded);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Pending invitations list (verification pass)
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetPendingInvitationsAsync_Admin_SeesAnInvitationTheyCreated()
+    {
+        var world = await NewOrganizationAsync("PendingAdmin");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        var email = UniqueEmail();
+        await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(email, UserRole.Agent));
+
+        var pending = await world.Invitations.GetPendingInvitationsAsync(admin);
+
+        var invitation = Assert.Single(pending);
+        Assert.Equal(email, invitation.Email);
+        Assert.Equal(UserRole.Agent, invitation.Role);
+        Assert.False(invitation.IsExpired);
+    }
+
+    [Fact] // ORG-RULE-11: whoever may manage members sees every pending invitation, not only the
+           // ones they personally created.
+    public async Task GetPendingInvitationsAsync_ManagerSeesInvitationsCreatedByAdmin()
+    {
+        var world = await NewOrganizationAsync("PendingManager");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        var managerUserId = await CreateAdditionalMemberAsync(world, UserRole.Manager);
+        var manager = AsCurrentUser(managerUserId, world.OrganizationId, UserRole.Manager);
+
+        var pending = await world.Invitations.GetPendingInvitationsAsync(manager);
+
+        Assert.Single(pending);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Agent)]
+    [InlineData(UserRole.Viewer)]
+    public async Task GetPendingInvitationsAsync_AgentOrViewer_IsDenied(UserRole role)
+    {
+        var world = await NewOrganizationAsync("PendingDenied");
+        var actor = AsCurrentUser(Guid.NewGuid(), world.OrganizationId, role);
+
+        await Assert.ThrowsAsync<OrganizationAccessDeniedException>(() =>
+            world.Invitations.GetPendingInvitationsAsync(actor));
+    }
+
+    [Fact]
+    public async Task GetPendingInvitationsAsync_AcceptedInvitation_DoesNotAppear()
+    {
+        var orgA = await NewOrganizationAsync("PendingAcceptedA");
+        var orgB = await NewOrganizationAsync("PendingAcceptedB");
+        var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
+        var existingUserEmail = await orgB.UserManager.Users.Where(u => u.Id == orgB.AdminId).Select(u => u.Email).SingleAsync();
+        var invite = await orgA.Invitations.CreateInvitationAsync(adminA, new CreateInvitationRequest(existingUserEmail!, UserRole.Viewer));
+        await orgA.Invitations.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
+
+        var pending = await orgA.Invitations.GetPendingInvitationsAsync(adminA);
+
+        Assert.Empty(pending);
+    }
+
+    [Fact] // Expired invitations are shown, not silently hidden — the caller sees the honest state.
+    public async Task GetPendingInvitationsAsync_ExpiredInvitation_AppearsMarkedAsExpired()
+    {
+        var world = await NewOrganizationAsync("PendingExpired");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        var expiredClockService = new InvitationService(world.Context, world.UserManager, ResolveNormalizer(world.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)), TestEmail.Sender, TestEmail.Options);
+        await expiredClockService.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        var pending = await world.Invitations.GetPendingInvitationsAsync(admin);
+
+        var invitation = Assert.Single(pending);
+        Assert.True(invitation.IsExpired);
+    }
+
+    [Fact]
+    public async Task GetPendingInvitationsAsync_NeverCrossesOrganizationBoundary()
+    {
+        var orgA = await NewOrganizationAsync("PendingIsoA");
+        var orgB = await NewOrganizationAsync("PendingIsoB");
+        var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
+        var adminB = AsCurrentUser(orgB.AdminId, orgB.OrganizationId, UserRole.Admin);
+        await orgA.Invitations.CreateInvitationAsync(adminA, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        var pendingForB = await orgB.Invitations.GetPendingInvitationsAsync(adminB);
+
+        Assert.Empty(pendingForB);
+    }
+
+    /// <summary>A second, real registered-and-accepted member of <paramref name="world"/>'s
+    /// organization, for a test that needs an authorization actor beyond the seeded Admin.</summary>
+    private async Task<Guid> CreateAdditionalMemberAsync(World world, UserRole role)
+    {
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        var email = UniqueEmail();
+        var invite = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(email, role));
+        var accept = await world.Invitations.AcceptForNewUserAsync(invite.RawToken!, "Additional Member", Password);
+        Assert.True(accept.Succeeded);
+        return accept.UserId!.Value;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -273,7 +408,7 @@ public sealed class InvitationServiceTests
         var adminA = AsCurrentUser(orgA.AdminId, orgA.OrganizationId, UserRole.Admin);
         var existingUserEmail = await orgB.UserManager.Users.Where(u => u.Id == orgB.AdminId).Select(u => u.Email).SingleAsync();
 
-        var pastClockService = new InvitationService(orgA.Context, orgA.UserManager, ResolveNormalizer(orgA.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)));
+        var pastClockService = new InvitationService(orgA.Context, orgA.UserManager, ResolveNormalizer(orgA.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)), TestEmail.Sender, TestEmail.Options);
         var invite = await pastClockService.CreateInvitationAsync(adminA, new CreateInvitationRequest(existingUserEmail!, UserRole.Agent));
 
         var accept = await orgA.Invitations.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
@@ -343,7 +478,7 @@ public sealed class InvitationServiceTests
         var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
         var invitedEmail = UniqueEmail();
 
-        var pastClockService = new InvitationService(world.Context, world.UserManager, ResolveNormalizer(world.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)));
+        var pastClockService = new InvitationService(world.Context, world.UserManager, ResolveNormalizer(world.Context), new TicketTestData.FixedTimeProvider(Now.AddDays(-10)), TestEmail.Sender, TestEmail.Options);
         var invite = await pastClockService.CreateInvitationAsync(admin, new CreateInvitationRequest(invitedEmail, UserRole.Viewer));
 
         var accept = await world.Invitations.AcceptForNewUserAsync(invite.RawToken!, "Too Late", Password);
@@ -386,8 +521,8 @@ public sealed class InvitationServiceTests
         // two simultaneous HTTP requests, not two calls sharing one tracked context.
         await using var contextA = _fixture.CreateContext();
         await using var contextB = _fixture.CreateContext();
-        var serviceA = new InvitationService(contextA, CreateUserManager(contextA), ResolveNormalizer(contextA), new TicketTestData.FixedTimeProvider(Now));
-        var serviceB = new InvitationService(contextB, CreateUserManager(contextB), ResolveNormalizer(contextB), new TicketTestData.FixedTimeProvider(Now));
+        var serviceA = new InvitationService(contextA, CreateUserManager(contextA), ResolveNormalizer(contextA), new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
+        var serviceB = new InvitationService(contextB, CreateUserManager(contextB), ResolveNormalizer(contextB), new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
 
         var taskA = serviceA.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
         var taskB = serviceB.AcceptForCurrentUserAsync(invite.RawToken!, orgB.AdminId);
@@ -486,5 +621,92 @@ public sealed class InvitationServiceTests
         Assert.Equal(AcceptInvitationOutcome.Success, accept.Outcome);
         Assert.False(await orgA.Context.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == team.TeamId && m.UserId == orgB.AdminId));
         Assert.True(await orgA.Context.OrganizationMemberships.AsNoTracking().AnyAsync(m => m.OrganizationId == orgA.OrganizationId && m.UserId == orgB.AdminId));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Transactional email (Phase 30 / ADR-0035)
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CreateInvitationAsync_SendsEmailToTheInvitedAddress()
+    {
+        var (world, emailSender) = await NewOrganizationWithEmailAsync("EmailOk");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        var invitedEmail = UniqueEmail();
+
+        var result = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(invitedEmail, UserRole.Agent));
+
+        Assert.True(result.Succeeded);
+        Assert.True(result.EmailDeliverySucceeded);
+        Assert.True(result.EmailProviderConfigured);
+        var sent = Assert.Single(emailSender.SentMessages);
+        Assert.Equal(invitedEmail, sent.ToEmail);
+        Assert.Contains("invited", sent.Subject, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact] // Verification pass: the actual default (no live provider configured) — the case every
+           // local/CI environment hits, and the one the old wording ("emailed to the invited
+           // address") misrepresented as a real send.
+    public async Task CreateInvitationAsync_NoLiveProviderConfigured_ReportsEmailProviderNotConfigured()
+    {
+        var world = await NewOrganizationAsync("EmailNotConfigured"); // TestEmail.Options: Provider = "Log"
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+
+        var result = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        Assert.True(result.Succeeded);
+        Assert.False(result.EmailProviderConfigured);
+        // EmailDeliverySucceeded reflects the injected sender's own outcome (true here, from
+        // TestEmail.Sender's double) and is a distinct fact from EmailProviderConfigured above —
+        // in production, LogEmailSender itself always reports success too (nothing was attempted),
+        // which is exactly why the UI must key its wording on EmailProviderConfigured, not this.
+        Assert.True(result.EmailDeliverySucceeded);
+    }
+
+    [Fact] // The token appears only inside the one accept URL — never bare or duplicated elsewhere.
+    public async Task CreateInvitationAsync_EmailContainsTheAcceptUrl_AndNoRawTokenLeaksOutsideIt()
+    {
+        var (world, emailSender) = await NewOrganizationWithEmailAsync("EmailUrl");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+
+        var result = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        var sent = Assert.Single(emailSender.SentMessages);
+        var expectedUrl = $"{TestEmail.Options.BaseUrl.TrimEnd('/')}/Account/AcceptInvitation?token={Uri.EscapeDataString(result.RawToken!)}";
+        Assert.Contains(expectedUrl, sent.TextBody, StringComparison.Ordinal);
+        Assert.Contains(expectedUrl, sent.HtmlBody, StringComparison.Ordinal);
+
+        // The raw token's only appearance in either body is inside that one URL.
+        Assert.Equal(1, CountOccurrences(sent.TextBody, result.RawToken!));
+        Assert.Equal(1, CountOccurrences(sent.HtmlBody, result.RawToken!));
+    }
+
+    [Fact] // Failure semantics: a failed send never rolls back the already-created invitation.
+    public async Task CreateInvitationAsync_EmailDeliveryFails_InvitationIsStillCreated()
+    {
+        var (world, emailSender) = await NewOrganizationWithEmailAsync("EmailFail");
+        var admin = AsCurrentUser(world.AdminId, world.OrganizationId, UserRole.Admin);
+        emailSender.FailNextSends = true;
+
+        var result = await world.Invitations.CreateInvitationAsync(admin, new CreateInvitationRequest(UniqueEmail(), UserRole.Agent));
+
+        Assert.True(result.Succeeded);
+        Assert.False(result.EmailDeliverySucceeded);
+        Assert.True(result.EmailProviderConfigured); // a real send was attempted and genuinely failed
+        Assert.NotNull(result.RawToken);
+        Assert.Empty(emailSender.SentMessages);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 }

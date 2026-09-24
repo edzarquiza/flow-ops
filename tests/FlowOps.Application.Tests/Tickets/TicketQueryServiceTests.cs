@@ -335,7 +335,7 @@ public sealed class TicketQueryServiceTests
         var assigneeId = await TicketTestData.AddUserAsync(context, displayName: "Casey Nguyen");
         await TicketTestData.AddTeamMembershipAsync(context, world.TeamId, assigneeId);
         var matchId = await CreateSearchableTicketAsync(context, world, title: "Ticket for assignment");
-        await new TicketService(context, TimeProvider.System).AssignAsync(matchId, assigneeId, world.Admin);
+        await new TicketService(context, TimeProvider.System, TestEmail.Sender, TestEmail.Options).AssignAsync(matchId, assigneeId, world.Admin);
         await CreateSearchableTicketAsync(context, world, title: "Different ticket");
         var query = new TicketQueryService(context, TimeProvider.System);
 
@@ -520,7 +520,7 @@ public sealed class TicketQueryServiceTests
         string title,
         string description = "A routine description with no special search terms.")
     {
-        var (id, _) = await new TicketService(context, TimeProvider.System).CreateAsync(
+        var (id, _) = await new TicketService(context, TimeProvider.System, TestEmail.Sender, TestEmail.Options).CreateAsync(
             new CreateTicketRequest(title, description, WorkType.Incident, Priority.Medium, teamId, categoryId, null),
             requester);
         return id;
@@ -588,7 +588,7 @@ public sealed class TicketQueryServiceTests
         var adminId = await TicketTestData.AddUserAsync(context);
 
         var clock = new TicketTestData.FixedTimeProvider(Start);
-        var service = new TicketService(context, clock);
+        var service = new TicketService(context, clock, TestEmail.Sender, TestEmail.Options);
         var creator = TicketTestData.User(agentId, UserRole.Admin, teamAId, teamBId);
 
         var teamATicketIds = new List<int>();

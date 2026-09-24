@@ -1,0 +1,132 @@
+@page
+@model FlowOps.Web.Pages.Platform.Sla.IndexModel
+@using FlowOps.Domain.Tickets
+@{
+    ViewData["Title"] = "SLA Configuration";
+}
+<div class="page-header">
+    <div class="page-header__top">
+        <div class="section-head section-head--plain">
+            <div class="page-header__title-row">
+                <h1>SLA Configuration</h1>
+                <span class="page-header__count">@Model.Configurations.Count row@(Model.Configurations.Count == 1 ? "" : "s")</span>
+            </div>
+            <p class="page-context">
+                The target resolution time and at-risk threshold every organization's tickets resolve
+                against. Editing a row never changes a ticket already in progress — only a ticket
+                created, reopened, or re-prioritized afterward uses the new values.
+            </p>
+        </div>
+    </div>
+</div>
+
+@if (Model.StatusMessage is not null)
+{
+    await Html.RenderPartialAsync("_Notice", new FlowOps.Web.NoticeViewModel(Model.StatusMessage, Model.StatusIsError ? FlowOps.Web.NoticeTone.Danger : FlowOps.Web.NoticeTone.Success));
+}
+
+<div class="panel panel--focus">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("All configurations")); }
+    <div class="table-responsive">
+        <table>
+            <caption class="sr-only">SLA configurations</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Work type</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Target minutes</th>
+                    <th scope="col">Risk threshold %</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var config in Model.Configurations)
+                {
+                    <tr>
+                        <td>
+                            @if (config.IsDefault)
+                            {
+                                <span class="cell-muted">Default for priority</span>
+                            }
+                            else
+                            {
+                                @FlowOps.Web.WorkTypeDisplay.ToDisplayName(config.WorkType!.Value)
+                            }
+                        </td>
+                        <td>@config.Priority</td>
+                        <td class="mono">@config.TargetMinutes</td>
+                        <td class="mono">@config.RiskThresholdPercent%</td>
+                        <td>
+                            <div class="project-actions">
+                                <form method="post" asp-page-handler="Update" asp-route-id="@config.Id" class="project-actions__rename">
+                                    @Html.AntiForgeryToken()
+                                    <label class="sr-only" for="target-@config.Id">Target minutes</label>
+                                    <input id="target-@config.Id" type="number" name="targetMinutes" min="1" value="@config.TargetMinutes" />
+                                    <label class="sr-only" for="risk-@config.Id">Risk threshold percent</label>
+                                    <input id="risk-@config.Id" type="number" name="riskThresholdPercent" min="1" max="100" value="@config.RiskThresholdPercent" class="field--percent" />
+                                    <button type="submit" class="btn" aria-label="Save changes for @(config.IsDefault ? $"{config.Priority} default" : $"{config.Priority} / {config.WorkType}")">Save</button>
+                                </form>
+                                @if (!config.IsDefault)
+                                {
+                                    <div class="confirm">
+                                        <input type="checkbox" id="confirm-delete-sla-@config.Id" class="confirm-toggle" />
+                                        <label for="confirm-delete-sla-@config.Id" class="btn-caution confirm-trigger" aria-label="Remove override for @config.WorkType / @config.Priority">Remove</label>
+                                        <div class="confirm-panel">
+                                            <p class="confirm-panel__question">Remove this override?</p>
+                                            <p class="confirm-panel__detail">
+                                                @FlowOps.Web.WorkTypeDisplay.ToDisplayName(config.WorkType!.Value) / @config.Priority tickets will fall back
+                                                to the @config.Priority default once this is removed.
+                                            </p>
+                                            <div class="confirm-panel__actions">
+                                                <form method="post" asp-page-handler="Delete" asp-route-id="@config.Id">
+                                                    @Html.AntiForgeryToken()
+                                                    <button type="submit" class="btn-caution">Yes, remove</button>
+                                                </form>
+                                                <label for="confirm-delete-sla-@config.Id" class="btn">Cancel</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="zone">
+    @{ await Html.RenderPartialAsync("_SectionHeading", new FlowOps.Web.SectionHeadingViewModel("Add a work-type override")); }
+    <p class="page-context">
+        Applies only to tickets of the exact work type and priority chosen — every other ticket at
+        that priority keeps using the default row above.
+    </p>
+    <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
+    <form method="post" asp-page-handler="Create" class="field-grid">
+        @Html.AntiForgeryToken()
+        <div class="field">
+            <label asp-for="CreateOverrideInput.WorkType">Work type<span class="field-required" aria-hidden="true">*</span></label>
+            <select asp-for="CreateOverrideInput.WorkType" asp-items="Html.GetEnumSelectList<WorkType>()"></select>
+        </div>
+        <div class="field">
+            <label asp-for="CreateOverrideInput.Priority">Priority<span class="field-required" aria-hidden="true">*</span></label>
+            <select asp-for="CreateOverrideInput.Priority" asp-items="Html.GetEnumSelectList<Priority>()"></select>
+        </div>
+        <div class="field">
+            <label asp-for="CreateOverrideInput.TargetMinutes">Target minutes<span class="field-required" aria-hidden="true">*</span></label>
+            <input asp-for="CreateOverrideInput.TargetMinutes" type="number" min="1" aria-describedby="target-minutes-error" />
+            <span id="target-minutes-error" class="field-validation-error" asp-validation-for="CreateOverrideInput.TargetMinutes"></span>
+        </div>
+        <div class="field">
+            <label asp-for="CreateOverrideInput.RiskThresholdPercent">Risk threshold %<span class="field-required" aria-hidden="true">*</span></label>
+            <input asp-for="CreateOverrideInput.RiskThresholdPercent" type="number" min="1" max="100" aria-describedby="risk-threshold-error" />
+            <span id="risk-threshold-error" class="field-validation-error" asp-validation-for="CreateOverrideInput.RiskThresholdPercent"></span>
+        </div>
+        <div class="field field--align-bottom">
+            <button type="submit" class="btn-primary">Add override</button>
+        </div>
+    </form>
+</div>
+
+<p><a class="back-link" asp-page="/Platform/Index">&larr; Back to Platform</a></p>

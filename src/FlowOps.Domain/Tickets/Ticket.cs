@@ -15,6 +15,7 @@ public sealed class Ticket
     private const int MinTitleLength = 5;
     private const int MaxTitleLength = 200;
     private const int MaxDescriptionLength = 8000;
+    private const int MaxCommentLength = 8000;
     private const int MinResolutionNotesLength = 10;
 
     private readonly List<TicketComment> _comments = new();
@@ -443,12 +444,19 @@ public sealed class Ticket
         AppendEvent(TicketEventType.SprintChanged, actorUserId, now, field: nameof(SprintBacklog), oldValue: bool.FalseString, newValue: bool.TrueString, note: null);
     }
 
-    /// <summary>TICKET-ENT-05 / TICKET-INV-09.</summary>
+    /// <summary>TICKET-ENT-05 / TICKET-INV-09. Phase F1-B: the comment body is bounded at the same
+    /// length as <see cref="Description"/> (<see cref="MaxCommentLength"/>) — previously unbounded,
+    /// a real (if low-severity) unbounded-storage surface for an authenticated commenter.</summary>
     public TicketComment AddComment(Guid authorId, string body, bool isInternal, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(body))
         {
             throw new DomainRuleException("TICKET-ENT-05", "Comment body is required.");
+        }
+
+        if (body.Length > MaxCommentLength)
+        {
+            throw new DomainRuleException("TICKET-ENT-05", $"Comment must be at most {MaxCommentLength} characters.");
         }
 
         var comment = new TicketComment(authorId, body, isInternal, now);

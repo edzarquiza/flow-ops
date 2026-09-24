@@ -70,6 +70,33 @@ public sealed class IndexModel : PageModel
 
     public bool HasDateFilter => DateRangeOption != DateRangeOption.AllTime;
 
+    /// <summary>Phase 30B: an additional narrowing to one exact <see cref="Domain.Tickets.Status"/>,
+    /// the same plain-GET convention every other Work Queue filter already uses.</summary>
+    [BindProperty(SupportsGet = true, Name = "status")]
+    public Domain.Tickets.Status? StatusFilter { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "priority")]
+    public Domain.Tickets.Priority? PriorityFilter { get; set; }
+
+    /// <summary>Phase 30B: "Assigned to me" — a checkbox against the caller, not a full assignee
+    /// picker (see <see cref="TicketQueryService.GetQueueAsync"/>'s own remarks on why: the Work
+    /// Queue spans every team the caller can see).</summary>
+    [BindProperty(SupportsGet = true, Name = "assignedToMe")]
+    public bool AssignedToMe { get; set; }
+
+    /// <summary>ADR-0036: Team Workload's own drill-through — an explicit team, distinct from the
+    /// caller's own view scope (which still applies underneath this; see
+    /// <see cref="TicketQueryService.GetQueueAsync"/>'s own remarks on non-disclosure).</summary>
+    [BindProperty(SupportsGet = true, Name = "teamId")]
+    public int? TeamIdFilter { get; set; }
+
+    /// <summary>ADR-0036: Team Workload's per-member drill-through — an arbitrary assignee, unlike
+    /// <see cref="AssignedToMe"/>'s caller-only checkbox.</summary>
+    [BindProperty(SupportsGet = true, Name = "assigneeId")]
+    public Guid? AssigneeIdFilter { get; set; }
+
+    public bool HasStatusOrPriorityFilter => StatusFilter is not null || PriorityFilter is not null || AssignedToMe;
+
     public async Task<IActionResult> OnGetAsync(
         int pageNumber = 1,
         TicketQueueFilter filter = TicketQueueFilter.None,
@@ -99,7 +126,9 @@ public sealed class IndexModel : PageModel
             DateRange = requestedRange;
         }
 
-        Queue = await _ticketQueryService.GetQueueAsync(user, pageNumber, filter, search, DateField, DateRange, IncludesFinished, cancellationToken);
+        Queue = await _ticketQueryService.GetQueueAsync(
+            user, pageNumber, filter, search, DateField, DateRange, IncludesFinished,
+            StatusFilter, PriorityFilter, AssignedToMe, TeamIdFilter, AssigneeIdFilter, cancellationToken);
         return Page();
     }
 }

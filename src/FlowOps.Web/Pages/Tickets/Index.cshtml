@@ -11,6 +11,9 @@
     {
         ["filter"] = Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString(),
         ["showFinished"] = Model.ShowFinished ? "true" : null,
+        ["status"] = Model.StatusFilter?.ToString(),
+        ["priority"] = Model.PriorityFilter?.ToString(),
+        ["assignedToMe"] = Model.AssignedToMe ? "true" : null,
     };
 }
 <div class="validation-summary-errors" asp-validation-summary="ModelOnly" role="alert"></div>
@@ -72,6 +75,32 @@
         </div>
     }
     <div class="filter-bar__field">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+            <option value="">Any status</option>
+            @foreach (var status in Enum.GetValues<Status>())
+            {
+                <option value="@status" selected="@(Model.StatusFilter == status)">@FlowOps.Web.WorkflowRail.Label(status)</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__field">
+        <label for="priority">Priority</label>
+        <select id="priority" name="priority">
+            <option value="">Any priority</option>
+            @foreach (var priority in Enum.GetValues<Priority>())
+            {
+                <option value="@priority" selected="@(Model.PriorityFilter == priority)">@priority</option>
+            }
+        </select>
+    </div>
+    <div class="filter-bar__field filter-bar__field--check">
+        <label class="check-inline" for="assignedToMe">
+            <input id="assignedToMe" type="checkbox" name="assignedToMe" value="true" checked="@Model.AssignedToMe" />
+            Assigned to me
+        </label>
+    </div>
+    <div class="filter-bar__field">
         <label for="dateField">Date</label>
         <select id="dateField" name="dateField">
             <option value="@QueueDateField.Created" selected="@(Model.DateField == QueueDateField.Created)">Created</option>
@@ -108,7 +137,24 @@
         <button type="submit" class="btn">Apply</button>
         @if (Model.HasDateFilter)
         {
-            <a class="btn" asp-page="/Tickets/Index" asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())" asp-route-search="@Model.Search" asp-route-showFinished="@(Model.ShowFinished ? "true" : null)">Clear dates</a>
+            <a class="btn" asp-page="/Tickets/Index"
+               asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())"
+               asp-route-search="@Model.Search"
+               asp-route-showFinished="@(Model.ShowFinished ? "true" : null)"
+               asp-route-status="@Model.StatusFilter?.ToString()"
+               asp-route-priority="@Model.PriorityFilter?.ToString()"
+               asp-route-assignedToMe="@(Model.AssignedToMe ? "true" : null)">Clear dates</a>
+        }
+        @if (Model.HasStatusOrPriorityFilter)
+        {
+            <a class="btn" asp-page="/Tickets/Index"
+               asp-route-filter="@(Model.Filter == TicketQueueFilter.None ? null : Model.Filter.ToString())"
+               asp-route-search="@Model.Search"
+               asp-route-showFinished="@(Model.ShowFinished ? "true" : null)"
+               asp-route-dateField="@Model.DateField.ToString()"
+               asp-route-range="@Model.DateRangeOption.ToString()"
+               asp-route-from="@Model.From?.ToString("yyyy-MM-dd")"
+               asp-route-to="@Model.To?.ToString("yyyy-MM-dd")">Clear status/priority</a>
         }
     </div>
 </form>
@@ -153,6 +199,9 @@ else
         { "from", Model.From?.ToString("yyyy-MM-dd") },
         { "to", Model.To?.ToString("yyyy-MM-dd") },
         { "showFinished", Model.ShowFinished ? "true" : null },
+        { "status", Model.StatusFilter?.ToString() },
+        { "priority", Model.PriorityFilter?.ToString() },
+        { "assignedToMe", Model.AssignedToMe ? "true" : null },
     };
     await Html.RenderPartialAsync(
         "_Pagination",

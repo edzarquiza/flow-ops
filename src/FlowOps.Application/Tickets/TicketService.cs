@@ -1,6 +1,7 @@
 using FlowOps.Domain;
 using FlowOps.Domain.Sla;
 using FlowOps.Domain.Tickets;
+using FlowOps.Infrastructure.Email;
 using FlowOps.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,20 +25,24 @@ public sealed class TicketService
 {
     private readonly FlowOpsDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IEmailSender _emailSender;
+    private readonly EmailOptions _emailOptions;
     private readonly ILogger<TicketService> _logger;
 
     /// <summary>
-    /// <paramref name="logger"/> defaults to a no-op logger so the many existing tests that
-    /// construct this service directly (<c>new TicketService(context, clock)</c>) keep compiling
-    /// unchanged — DI still supplies a real <see cref="ILogger{TicketService}"/> in every
-    /// production path, since <see cref="TicketService"/> is only ever constructed by the
-    /// container there (CLAUDE.md §13's logging requirements; Domain itself stays free of any
-    /// logging dependency).
+    /// Phase 30 (ADR-0035): <paramref name="emailSender"/>/<paramref name="emailOptions"/> are
+    /// required, deliberately — every production composition always has a real
+    /// <see cref="IEmailSender"/> (Log or Resend), and a test that does not care about email still
+    /// passes a real recording test double rather than this constructor silently tolerating "none."
+    /// <paramref name="logger"/> keeps its own pre-existing optional-with-no-op-default shape
+    /// (Phase 5) — untouched by this phase.
     /// </summary>
-    public TicketService(FlowOpsDbContext dbContext, TimeProvider timeProvider, ILogger<TicketService>? logger = null)
+    public TicketService(FlowOpsDbContext dbContext, TimeProvider timeProvider, IEmailSender emailSender, EmailOptions emailOptions, ILogger<TicketService>? logger = null)
     {
         _dbContext = dbContext;
         _timeProvider = timeProvider;
+        _emailSender = emailSender;
+        _emailOptions = emailOptions;
         _logger = logger ?? NullLogger<TicketService>.Instance;
     }
 
@@ -168,8 +173,9 @@ public sealed class TicketService
     /// <summary>TICKET-WF-01. The assignee must be an active member of the ticket's team
     /// (TICKET-INV-03) — a fact only the database knows, so it is resolved here and handed to the
     /// aggregate, which owns the rule itself.</summary>
-    public Task AssignAsync(int ticketId, Guid assigneeId, CurrentUser user, CancellationToken cancellationToken = default) =>
-        MutateAsync(
+    public async Task AssignAsync(int ticketId, Guid assigneeId, CurrentUser user, CancellationToken cancellationToken = default)
+    {
+        await MutateAsync(
             ticketId,
             user,
             "assigned",
@@ -180,6 +186,14 @@ public sealed class TicketService
                 ticket.Assign(assigneeId, isActiveMember, user.UserId, now);
             },
             cancellationToken);
+
+        // Phase 30 (ADR-0035): self-assign is never emailed — the actor already knows what they
+        // just did. Strictly after MutateAsync's own SaveChangesAsync already committed.
+        if (assigneeId != user.UserId)
+        {
+            await TrySendAssignmentEmailAsync(ticketId, assigneeId, cancellationToken);
+        }
+    }
 
     /// <summary>
     /// TICKET-WF-02. Authorized by <see cref="TicketAccessPolicy.CanTransition"/>: unassignment is
@@ -295,8 +309,9 @@ public sealed class TicketService
             cancellationToken);
 
     /// <summary>TICKET-WF-11.</summary>
-    public Task ReassignAsync(int ticketId, Guid newAssigneeId, CurrentUser user, CancellationToken cancellationToken = default) =>
-        MutateAsync(
+    public async Task ReassignAsync(int ticketId, Guid newAssigneeId, CurrentUser user, CancellationToken cancellationToken = default)
+    {
+        await MutateAsync(
             ticketId,
             user,
             "assigned",
@@ -305,6 +320,126 @@ public sealed class TicketService
             {
                 var isActiveMember = await IsActiveTeamMemberAsync(ticket.TeamId, newAssigneeId, ct);
                 ticket.Reassign(newAssigneeId, isActiveMember, user.UserId, now);
+            },
+            cancellationToken);
+
+        // Phase 30 (ADR-0035): same self-assign exclusion as AssignAsync — a Manager/Admin
+        // reassigning a ticket to themselves is not emailed either.
+        if (newAssigneeId != user.UserId)
+        {
+            await TrySendAssignmentEmailAsync(ticketId, newAssigneeId, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Phase 30C (ADR-0033): the "Change priority" AUTH-RULE-02 row — <see cref="Ticket.ChangePriority"/>
+    /// already existed in the Domain (TICKET-INV-08/SLA-RULE-06) but was never reachable from any
+    /// service or page before this phase. Recomputes the SLA target/due date from the current
+    /// configuration, exactly as <see cref="CreateAsync"/> resolves it for a new ticket.
+    /// </summary>
+    public Task ChangePriorityAsync(int ticketId, Priority newPriority, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "priority changed",
+            TicketAccessPolicy.CanTransition,
+            async (ticket, now, ct) =>
+            {
+                var slaConfigurations = await _dbContext.SlaConfigurations.AsNoTracking().ToListAsync(ct);
+                ticket.ChangePriority(newPriority, slaConfigurations, user.UserId, now);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Phase 30C (ADR-0033): the "Change category" AUTH-RULE-02 row (same footprint as "Change
+    /// priority" — no separate policy method, matching how that row itself piggybacks on
+    /// <see cref="TicketAccessPolicy.CanTransition"/>). The new category must belong to the
+    /// ticket's own team (TICKET-INV-02, enforced by <see cref="Ticket.ChangeCategory"/> itself)
+    /// and must be active — re-validated here exactly as <see cref="CreateAsync"/> validates a new
+    /// ticket's category, since a caller-chosen id is never trusted.
+    /// </summary>
+    public Task ChangeCategoryAsync(int ticketId, int newCategoryId, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "category changed",
+            TicketAccessPolicy.CanTransition,
+            async (ticket, now, ct) =>
+            {
+                var category = await _dbContext.Categories
+                    .AsNoTracking()
+                    .Where(c => c.Id == newCategoryId)
+                    .Select(c => new { c.TeamId, c.IsActive })
+                    .SingleOrDefaultAsync(ct);
+
+                if (category is null || !category.IsActive)
+                {
+                    throw new DomainRuleException("TICKET-INV-02", "The selected category is not available.");
+                }
+
+                ticket.ChangeCategory(newCategoryId, category.TeamId, user.UserId, now);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Phase 30C (ADR-0033): the "Change team" AUTH-RULE-02 row. Takes only the destination
+    /// <paramref name="newCategoryId"/> — its own team is the destination team, never a second,
+    /// independently chosen id. <see cref="Ticket.ChangeTeam"/> moves <c>TeamId</c> alone and never
+    /// touches <c>CategoryId</c>, so calling it with a team id that does not match the caller's
+    /// chosen category would leave the ticket referencing a category that belongs to its *old*
+    /// team, silently violating TICKET-INV-02 the moment it returned — deriving the team from the
+    /// category makes that state unreachable rather than merely validated against. The category's
+    /// team must be active and in the caller's own organization, the same checks
+    /// <see cref="CreateAsync"/> applies to a new ticket's team. Two audit events (TeamChanged,
+    /// then CategoryChanged) are appended by one mutation and saved atomically, exactly like
+    /// <see cref="Ticket.Create"/>'s own single <c>SaveChangesAsync</c> for its own two initial facts.
+    /// </summary>
+    public Task ChangeTeamAsync(int ticketId, int newCategoryId, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "team changed",
+            TicketAccessPolicy.CanTransition,
+            async (ticket, now, ct) =>
+            {
+                var category = await _dbContext.Categories
+                    .AsNoTracking()
+                    .Where(c => c.Id == newCategoryId)
+                    .Join(_dbContext.Teams, c => c.TeamId, t => t.Id, (c, t) => new { c.TeamId, CategoryIsActive = c.IsActive, t.OrganizationId, TeamIsActive = t.IsActive })
+                    .SingleOrDefaultAsync(ct);
+
+                if (category is null || !category.CategoryIsActive)
+                {
+                    throw new DomainRuleException("TICKET-INV-02", "The selected category is not available.");
+                }
+
+                if (category.OrganizationId != user.OrganizationId || !category.TeamIsActive)
+                {
+                    throw new DomainRuleException("TICKET-INV-08", "The selected team is not available.");
+                }
+
+                ticket.ChangeTeam(category.TeamId, user.UserId, now);
+                ticket.ChangeCategory(newCategoryId, category.TeamId, user.UserId, now);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Phase 30C (ADR-0033): the "Change due date" AUTH-RULE-02 row. Unlike Priority/Category/Team,
+    /// <see cref="Ticket.ChangeDueDate"/> is deliberately not gated by TICKET-INV-08 or any other
+    /// invariant (its own doc comment says so explicitly) — a due date may be corrected even on a
+    /// Resolved or Closed ticket, and this method does not add a restriction the Domain itself does
+    /// not have. <paramref name="newDueDate"/> of <see langword="null"/> clears it.
+    /// </summary>
+    public Task ChangeDueDateAsync(int ticketId, DateTimeOffset? newDueDate, CurrentUser user, CancellationToken cancellationToken = default) =>
+        MutateAsync(
+            ticketId,
+            user,
+            "due date changed",
+            TicketAccessPolicy.CanTransition,
+            (ticket, now, _) =>
+            {
+                ticket.ChangeDueDate(newDueDate, user.UserId, now);
+                return Task.CompletedTask;
             },
             cancellationToken);
 
@@ -465,8 +600,9 @@ public sealed class TicketService
     /// its <c>CommentAdded</c> event to the same object graph, persisted by the one
     /// <c>SaveChangesAsync</c> <see cref="MutateAsync"/> already performs (AUDIT-RULE-04).
     /// </summary>
-    public Task AddCommentAsync(int ticketId, string body, bool isInternal, CurrentUser user, CancellationToken cancellationToken = default) =>
-        MutateAsync(
+    public async Task AddCommentAsync(int ticketId, string body, bool isInternal, CurrentUser user, CancellationToken cancellationToken = default)
+    {
+        await MutateAsync(
             ticketId,
             user,
             "commented",
@@ -477,6 +613,10 @@ public sealed class TicketService
                 return Task.CompletedTask;
             },
             cancellationToken);
+
+        // Phase 30 (ADR-0035): strictly after the comment is already committed.
+        await TrySendCommentEmailAsync(ticketId, body, isInternal, user, cancellationToken);
+    }
 
     /// <summary>
     /// The one shape every workflow transition follows: load the tracked aggregate, let
@@ -568,4 +708,166 @@ public sealed class TicketService
             .Where(m => m.TeamId == teamId && m.UserId == userId)
             .Join(_dbContext.Users, m => m.UserId, u => u.Id, (_, u) => u.IsActive)
             .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// Phase 30 (ADR-0035): the ticket-assignment email — the new assignee only (self-assign is
+    /// excluded by <see cref="AssignAsync"/>/<see cref="ReassignAsync"/> before this is even
+    /// called). TICKET-INV-03 already guarantees the assignee is an active team member by the time
+    /// this runs (<see cref="IsActiveTeamMemberAsync"/> would have failed the mutation otherwise),
+    /// so the <c>IsActive</c> check here is defensive, not load-bearing.
+    /// </summary>
+    private async Task TrySendAssignmentEmailAsync(int ticketId, Guid assigneeId, CancellationToken cancellationToken)
+    {
+        var assignee = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == assigneeId)
+            .Select(u => new { u.Email, u.DisplayName, u.IsActive })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (assignee is null || !assignee.IsActive || string.IsNullOrWhiteSpace(assignee.Email))
+        {
+            return;
+        }
+
+        var ticket = await _dbContext.Tickets
+            .AsNoTracking()
+            .Where(t => t.Id == ticketId)
+            .Join(_dbContext.Teams, t => t.TeamId, team => team.Id, (t, team) => new { t.Reference, t.Title, t.Priority, t.Status, TeamName = team.Name })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (ticket is null)
+        {
+            return;
+        }
+
+        var ticketUrl = $"{_emailOptions.BaseUrl.TrimEnd('/')}/Tickets/Details/{ticketId}";
+
+        var textBody =
+            $"""
+            You've been assigned {ticket.Reference}: {ticket.Title}
+
+            Priority: {ticket.Priority}
+            Team: {ticket.TeamName}
+            Status: {ticket.Status}
+
+            View the ticket: {ticketUrl}
+
+            — FlowOps
+            """;
+
+        var htmlBody =
+            $"""
+            <p>You've been assigned <strong>{System.Net.WebUtility.HtmlEncode(ticket.Reference)}: {System.Net.WebUtility.HtmlEncode(ticket.Title)}</strong>.</p>
+            <p>Priority: {ticket.Priority} &middot; Team: {System.Net.WebUtility.HtmlEncode(ticket.TeamName)} &middot; Status: {ticket.Status}</p>
+            <p><a href="{ticketUrl}">View the ticket</a></p>
+            <p>— FlowOps</p>
+            """;
+
+        var message = new EmailMessage(assignee.Email!, assignee.DisplayName, $"You've been assigned {ticket.Reference}", textBody, htmlBody);
+        await TrySendAsync(message, "Assignment", ticketId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Phase 30 (ADR-0035): the new-comment email — ticket requester + current assignee, excluding
+    /// the comment author and any duplicate (the same person can be both), any deactivated account,
+    /// and — only for an internal comment — anyone whose role fails
+    /// <see cref="TicketAccessPolicy.CanSeeInternalComments"/>. Reuses that exact policy method
+    /// (via a minimal, throwaway <see cref="CurrentUser"/> carrying just the recipient's own role)
+    /// rather than restating its one-line rule here.
+    /// </summary>
+    private async Task TrySendCommentEmailAsync(int ticketId, string commentBody, bool isInternal, CurrentUser author, CancellationToken cancellationToken)
+    {
+        var ticket = await _dbContext.Tickets
+            .AsNoTracking()
+            .Where(t => t.Id == ticketId)
+            .Select(t => new { t.Reference, t.Title, t.RequesterId, t.AssigneeId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (ticket is null)
+        {
+            return;
+        }
+
+        var candidateIds = new HashSet<Guid> { ticket.RequesterId };
+        if (ticket.AssigneeId is { } assigneeId)
+        {
+            candidateIds.Add(assigneeId);
+        }
+
+        candidateIds.Remove(author.UserId);
+        if (candidateIds.Count == 0)
+        {
+            return;
+        }
+
+        var candidates = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => candidateIds.Contains(u.Id))
+            .Join(
+                _dbContext.OrganizationMemberships.Where(m => m.OrganizationId == author.OrganizationId),
+                u => u.Id,
+                m => m.UserId,
+                (u, m) => new { u.Id, u.Email, u.DisplayName, u.IsActive, m.Role })
+            .ToListAsync(cancellationToken);
+
+        var recipients = candidates
+            .Where(c => c.IsActive && !string.IsNullOrWhiteSpace(c.Email))
+            .Where(c => !isInternal || TicketAccessPolicy.CanSeeInternalComments(new CurrentUser(c.Id, author.OrganizationId, c.Role, new HashSet<int>(), new HashSet<int>())))
+            .ToList();
+        if (recipients.Count == 0)
+        {
+            return;
+        }
+
+        var authorName = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == author.UserId)
+            .Select(u => u.DisplayName)
+            .SingleOrDefaultAsync(cancellationToken) ?? "A team member";
+
+        var ticketUrl = $"{_emailOptions.BaseUrl.TrimEnd('/')}/Tickets/Details/{ticketId}";
+        const int maxQuotedLength = 500;
+        var quotedComment = commentBody.Length > maxQuotedLength ? commentBody[..maxQuotedLength] + "…" : commentBody;
+
+        foreach (var recipient in recipients)
+        {
+            var textBody =
+                $"""
+                {authorName} commented on {ticket.Reference}: {ticket.Title}
+
+                "{quotedComment}"
+
+                View the ticket: {ticketUrl}
+
+                — FlowOps
+                """;
+
+            var htmlBody =
+                $"""
+                <p>{System.Net.WebUtility.HtmlEncode(authorName)} commented on <strong>{System.Net.WebUtility.HtmlEncode(ticket.Reference)}: {System.Net.WebUtility.HtmlEncode(ticket.Title)}</strong>.</p>
+                <blockquote>{System.Net.WebUtility.HtmlEncode(quotedComment)}</blockquote>
+                <p><a href="{ticketUrl}">View the ticket</a></p>
+                <p>— FlowOps</p>
+                """;
+
+            var message = new EmailMessage(recipient.Email!, recipient.DisplayName, $"New comment on {ticket.Reference}", textBody, htmlBody);
+            await TrySendAsync(message, "Comment", ticketId, cancellationToken);
+        }
+    }
+
+    /// <summary>The one place every trigger's try/catch + Warning-log shape lives — an email
+    /// delivery failure (thrown or returned) is always logged and never propagated, so it can
+    /// never affect the business operation that already committed before this was ever called.</summary>
+    private async Task TrySendAsync(EmailMessage message, string emailKind, int ticketId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _emailSender.SendAsync(message, cancellationToken);
+            if (!result.Succeeded)
+            {
+                _logger.LogWarning("{EmailKind} email delivery failed for ticket {TicketId}: {Error}", emailKind, ticketId, result.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "{EmailKind} email delivery threw an exception for ticket {TicketId}.", emailKind, ticketId);
+        }
+    }
 }

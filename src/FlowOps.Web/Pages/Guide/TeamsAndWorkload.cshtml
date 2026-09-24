@@ -1,0 +1,65 @@
+@page
+@{
+    ViewData["Title"] = "Teams & Workload — Guide";
+}
+<div class="page-header">
+    <div class="section-head section-head--plain">
+        <h1>Teams &amp; Workload</h1>
+        <p class="page-context">Understand ownership and team workload.</p>
+    </div>
+</div>
+
+<div class="zone">
+    <p class="prose">
+        Team Workload shows where open work is concentrated right now, and where it needs
+        attention — a summary, a table by team, and a per-member breakdown when you open a team.
+    </p>
+    <div class="guide-flow">
+        <div class="guide-flow__step">Team</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Open Work</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Ownership</div>
+        <span class="guide-flow__arrow" aria-hidden="true">&rarr;</span>
+        <div class="guide-flow__step">Member Workload</div>
+    </div>
+
+    <div class="guide-term-grid">
+        <div class="guide-term">
+            <p class="guide-term__name">Open</p>
+            <p class="guide-term__body">Total tickets that are not yet resolved or closed.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Unassigned</p>
+            <p class="guide-term__body">Open tickets with no owner yet.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">At Risk</p>
+            <p class="guide-term__body">Open tickets the Attention engine has flagged — the same signals described in SLA &amp; Attention, never a second definition.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">Overdue</p>
+            <p class="guide-term__body">Open tickets past their own planned due date.</p>
+        </div>
+        <div class="guide-term">
+            <p class="guide-term__name">High / Critical</p>
+            <p class="guide-term__body">Open tickets at the two highest priority levels.</p>
+        </div>
+    </div>
+
+    <p class="prose">
+        What you can see here follows the same team-analytics rules as everywhere else in
+        FlowOps: an Admin sees the whole organization, a Manager sees their own managed teams, an
+        Agent sees only their own workload, and a Viewer sees their own teams, read-only.
+        FlowOps intentionally does not compute a workload score, a capacity percentage, or a
+        staffing recommendation — these numbers are meant to inform a conversation, not replace one.
+    </p>
+
+    <p class="page-actions">
+        <a class="btn-primary" asp-page="/TeamWorkload/Index">Open Team Workload</a>
+    </p>
+</div>
+
+<div class="guide-section-nav">
+    <a class="back-link" asp-page="/Guide/Index">&larr; Back to Guide</a>
+</div>

@@ -36,4 +36,30 @@ public class TicketCommentTests
         var ex = Assert.Throws<DomainRuleException>(() => ticket.AddComment(RequesterId, "   ", false, Now));
         Assert.Equal("TICKET-ENT-05", ex.RuleCode);
     }
+
+    // Phase F1-B (hardening): comment body was previously unbounded — same TICKET-ENT-05 rule code,
+    // same 8000-character bound Description already uses (TICKET-INV-01).
+    [Fact]
+    public void AddComment_BelowMaximumLength_Succeeds()
+    {
+        var ticket = CreateOpenTicket();
+        var comment = ticket.AddComment(RequesterId, new string('a', 7999), isInternal: false, Now);
+        Assert.Equal(7999, comment.Body.Length);
+    }
+
+    [Fact]
+    public void AddComment_AtMaximumLength_Succeeds()
+    {
+        var ticket = CreateOpenTicket();
+        var comment = ticket.AddComment(RequesterId, new string('a', 8000), isInternal: false, Now);
+        Assert.Equal(8000, comment.Body.Length);
+    }
+
+    [Fact]
+    public void AddComment_AboveMaximumLength_Throws()
+    {
+        var ticket = CreateOpenTicket();
+        var ex = Assert.Throws<DomainRuleException>(() => ticket.AddComment(RequesterId, new string('a', 8001), isInternal: false, Now));
+        Assert.Equal("TICKET-ENT-05", ex.RuleCode);
+    }
 }

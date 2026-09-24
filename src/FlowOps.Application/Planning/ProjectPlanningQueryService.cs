@@ -31,6 +31,20 @@ public sealed class ProjectPlanningQueryService
         _timeProvider = timeProvider;
     }
 
+    /// <summary>Phase 29D: the sidebar's project quick-navigation list — the same organization
+    /// boundary and active-only filter as <see cref="GetProjectsAsync"/>'s own first query, without
+    /// the sprint/ticket-count enrichment that method adds for the full Projects page. Deliberately
+    /// its own minimal query rather than calling <see cref="GetProjectsAsync"/> and discarding the
+    /// extra fields — the sidebar renders on every authenticated page, so it must not pay for two
+    /// more queries (active sprints, ticket counts) it never uses.</summary>
+    public async Task<IReadOnlyList<ProjectNavOption>> GetProjectNavOptionsAsync(CurrentUser user, CancellationToken cancellationToken = default) =>
+        await _dbContext.Projects
+            .AsNoTracking()
+            .Where(p => p.OrganizationId == user.OrganizationId && p.IsActive)
+            .OrderBy(p => p.Name)
+            .Select(p => new ProjectNavOption(p.Id, p.Name))
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<ProjectListEntry>> GetProjectsAsync(CurrentUser user, CancellationToken cancellationToken = default)
     {
         var projects = await _dbContext.Projects

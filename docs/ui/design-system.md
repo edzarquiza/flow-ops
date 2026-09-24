@@ -53,6 +53,7 @@ is being deliberately retired.
 | `--fo-line-row` | `#1A2729` | Row dividers **only** — the quietest line. Keeps dense tables from looking ruled. |
 | `--fo-line` | `#243638` | Structural edges: section rules, container borders, rail segments ahead of the ticket. |
 | `--fo-line-hi` | `#34494B` | Rail geometry, ghost-button borders, severity bars for neutral ranks. |
+| `--fo-control-border` | `#537478` | Phase 30A: text/select/textarea/segmented-radio borders only — lightened off `--fo-line-hi` to clear WCAG 1.4.11's 3:1 for a form control's own boundary (measured ≥3:1 against `--fo-surface-2`/`--fo-bg` in both themes). `--fo-line-hi` itself is unchanged everywhere else. |
 
 ### Text
 
@@ -354,6 +355,17 @@ a checkbox-driven toggle (`#fo-nav-toggle` + label, `transform: translateX(-100%
 JavaScript. The account area (avatar, email, role as plain dim text, a chevron) sits at the bottom
 of the sidebar as one link to Profile & Settings; Sign out is a separate control beneath it.
 
+Phase 29D: **Projects** is a collapsible nav *group*, not a direct link — a native
+`<details>`/`<summary>` disclosure (`.fo-sidebar__nav-group`), the same no-JavaScript pattern the
+organization switcher above it already uses. Collapsed by default; auto-expands (server-rendered
+`open`) when the caller is on one of their own project's pages, and marks that project's own link
+active the same way any other nav item is. The active-project entries are indented under a hairline
+rule, truncate with an ellipsis rather than widening the sidebar, and end with a "View all
+projects" link back to `/Projects` — the group only ever toggles, it never itself navigates. A tiny
+external script (`sidebar-projects.js`) keeps `aria-expanded` in sync and remembers a manual
+collapse via `localStorage` while browsing a project; without it, the group still opens, closes,
+and defaults correctly, just without that cross-navigation memory.
+
 **Icons.** A much larger drawn family than the original five — roughly fifty, spanning navigation,
 status/priority/SLA/role glyphs, and utility icons — all built to the same spec rather than a
 library import:
@@ -605,6 +617,22 @@ configuration screens. A deadline state is **plain coloured text** everywhere (W
 Board, Ticket Detail): danger for missed and past due, warning for soon, muted otherwise; the words carry the
 meaning and the colour only reinforces it. Tinted chips are reserved for ticket *status*.
 
+## Attention brief (ADR-0035)
+
+"Why this needs attention" explains an already-flagged ticket's signals in plain language — it never
+decides attention itself (`AttentionPolicy` alone does that) and never fabricates a history the
+system doesn't actually have. Three sections, in order: **Signals** (reuses the same `.sev` severity
+mark and headline text At-Risk already shows — never a new visual vocabulary for the same data),
+**What changed** (the ticket's own two most recent real events, reusing `TimelineDisplay`'s
+title/detail formatting — no invented "activity feed"), and **Suggested next step** (one plain
+sentence, left-bordered in the accent colour, never a button or a call to action — it is guidance,
+not automation). On Ticket Detail this is a `.zone` panel, shown only when the ticket currently has
+signals — absent entirely for a healthy or terminal ticket, never an empty-state placeholder. On
+At-Risk Work each row's brief is a `<details>`/`<summary>` disclosure ("View attention brief"),
+collapsed by default so the ranked list itself stays scannable; the row's own severity/headline
+badges are unchanged, and the brief only elaborates on them, never repeats the whole row's content
+verbatim.
+
 ## Dashboard composition
 
 Order: filter bar → **Summary** (four figures, one panel) → **What needs attention** (top three, "View all N
@@ -648,8 +676,10 @@ always also carried by words, markers or shape — never colour alone.
 
 **Accessibility.** Measured on the rendered app: text ≥4.5:1 (≥3:1 large) across the tested pages in Light
 (zero failures); Light semantic text colours are ≥6.9:1 on white and stay ≥4.5:1 on their own tinted badge
-backgrounds. Focus ring is 2px `--fo-teal-text` (≈7.7:1 on white). Known, shared by both themes: control and
-line borders are around 2:1, below WCAG 1.4.11's 3:1 for controls — recorded, not changed here.
+backgrounds. Focus ring is 2px `--fo-teal-text` (≈7.7:1 on white). Form-control borders (text/select/
+textarea/segmented-radio) use `--fo-control-border`, ≥3:1 in both themes (Phase 30A). Structural lines
+(`--fo-line`/`--fo-line-hi` elsewhere — table rules, ghost-button borders, dividers) stay around 2:1;
+those are decorative/structural, not a control's only boundary cue, so they were left as-is.
 
 ## Show inactive (Admin lists)
 

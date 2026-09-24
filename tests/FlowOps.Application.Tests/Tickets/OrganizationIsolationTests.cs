@@ -59,7 +59,7 @@ public sealed class OrganizationIsolationTests
         var orgBAgentId = await TicketTestData.AddUserAsync(context);
         await TicketTestData.AddTeamMembershipAsync(context, orgBTeamId, orgBAgentId);
 
-        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now));
+        var service = new TicketService(context, new TicketTestData.FixedTimeProvider(Now), TestEmail.Sender, TestEmail.Options);
         var orgBAgent = TicketTestData.UserInOrganization(orgBOrganizationId, orgBAgentId, UserRole.Agent, orgBTeamId);
         var (orgBTicketId, _) = await service.CreateAsync(Request(orgBTeamId, orgBCategoryId), orgBAgent);
 
@@ -215,7 +215,8 @@ public sealed class OrganizationIsolationTests
         breachedTicket.ChangePriority(Priority.Critical, slaConfigurations, world.OrgBAgentId, Now);
         await context.SaveChangesAsync();
 
-        var attention = new AttentionQueryService(context, new TicketTestData.FixedTimeProvider(Now.AddDays(3)), new FlowOps.Domain.Attention.AttentionOptions());
+        var clock = new TicketTestData.FixedTimeProvider(Now.AddDays(3));
+        var attention = new AttentionQueryService(context, clock, new FlowOps.Domain.Attention.AttentionOptions(), new TicketQueryService(context, clock));
         var page = await attention.GetAtRiskAsync(world.OrgAAdmin, pageNumber: 1);
 
         Assert.DoesNotContain(page.Items, i => i.Id == world.OrgBTicketId);

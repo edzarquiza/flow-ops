@@ -94,8 +94,16 @@ public sealed class DemoDataSeeder
             var users = await CreateUsersAsync(organization.Id, teams, seedTime, cancellationToken);
 
             var clock = new SeederClock(seedTime);
+            // Phase 30 (ADR-0035): seeded assignments/comments must never send a real email,
+            // regardless of the deployment's configured provider — a fresh `docker compose up` or
+            // first-ever Render deploy must not blast the demo personas' inboxes. A LogEmailSender
+            // is constructed directly here (never DI-resolved) for exactly that reason, the same
+            // way this method already uses its own SeederClock instead of the DI-resolved
+            // TimeProvider.
+            var noOpEmailSender = new FlowOps.Infrastructure.Email.LogEmailSender(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<FlowOps.Infrastructure.Email.LogEmailSender>.Instance);
             var script = new Script(
-                new TicketService(_dbContext, clock),
+                new TicketService(_dbContext, clock, noOpEmailSender, new FlowOps.Infrastructure.Email.EmailOptions()),
                 new SprintService(_dbContext, clock),
                 clock,
                 cancellationToken);

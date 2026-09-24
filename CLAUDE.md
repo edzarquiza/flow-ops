@@ -1145,8 +1145,11 @@ users · teams · projects · categories · tickets · workflow · comments · a
 attention engine · work queue · dashboard & analytics · workload · PostgreSQL · justified REST API ·
 Docker · CI/CD · public deployment · documentation.
 
-**Stretch (only after Phase 16, only with an ADR):** attachments · email notifications · saved
-filters · CSV export · Kanban view · advanced trend analytics · demo auto-reset job.
+**Stretch (only after Phase 16, only with an ADR):** attachments · saved filters · CSV export ·
+Kanban view · advanced trend analytics · demo auto-reset job.
+
+**Delivered stretch:** email notifications (Phase 30, ADR-0035) — invitation, ticket
+assigned/reassigned, and comment added, via a narrow `IEmailSender` abstraction (Resend or Log).
 
 **Out of scope — belongs to other portfolio projects:** AI, LLM features, agents, anomaly detection
 (Project 7) · public API product, integrations platform, embedded analytics (Project 8) ·
