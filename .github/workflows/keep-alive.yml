@@ -1,0 +1,25 @@
+name: Keep Render instance warm
+
+# Render's free tier spins the service down after ~15 minutes idle, so the next real visitor
+# eats a cold start. This just curls the public health endpoint on a schedule to keep it warm.
+# It does not build, test, or deploy anything.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping /health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl the deployed health endpoint
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://flow-ops.onrender.com/health)
+          echo "Health endpoint responded with HTTP $status"
+          if [ "$status" -ne 200 ]; then
+            echo "::warning::Health check did not return 200 (got $status) — instance may be cold-starting or down."
+          fi

@@ -1,7 +1,8 @@
 name: FlowOps CI
 
 # CLAUDE.md §18: restore -> build -> test -> vulnerability scan -> container build, on every push
-# and PR against main. No deployment here — that is deploy.yml, a later, separate addition.
+# and PR against main. No deployment here — Render is connected directly to this repo and builds
+# the Dockerfile itself (dashboard-managed); there is no deploy.yml.
 on:
   push:
     branches: [main]
@@ -74,6 +75,7 @@ jobs:
           --startup-project src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj
 
       # Proves the existing production Dockerfile still builds on every commit (CLAUDE.md §18) —
-      # no separate CI-only Dockerfile, no push to any registry (that belongs to deploy.yml/Phase 15).
+      # no separate CI-only Dockerfile, and no push to any registry (Render builds this same
+      # Dockerfile itself; there is no separate deploy workflow).
       - name: Build container image
         run: docker build -t flowops-web:ci .

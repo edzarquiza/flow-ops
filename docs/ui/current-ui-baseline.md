@@ -1,7 +1,15 @@
-# FlowOps Current UI Baseline
+# FlowOps UI Baseline — Historical Snapshot (Phase 15, 2026-09-12)
+
+> **Superseded.** This document is a point-in-time capture from Phase 15 and no longer describes
+> the current UI. The application has since gone through a full visual design pass (dark-theme-first,
+> a 5000+-line `flowops.css` with a persistent sidebar, JavaScript-enhanced controls, and many more
+> breakpoints than the single one described below). For the current, accurate UI specification, see
+> [`design-system.md`](design-system.md). This file is kept only as a historical record of the UI's
+> pre-design-pass state; do not treat any claim below as current.
 
 Captured by inspection only. Every claim below is sourced from the files listed in the
-"Files inspected" section of the final report — nothing here is inferred or assumed.
+"Files inspected" section of the final report — nothing here is inferred or assumed. (Historical:
+accurate as of 2026-09-12, before the visual design pass.)
 
 ---
 

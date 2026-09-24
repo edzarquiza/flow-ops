@@ -301,6 +301,9 @@ organization, a user still holds exactly one role, and the capability matrix bel
 | Transition status | ✓ | own teams | own assigned tickets | ✗ |
 | Change priority | ✓ | own teams | own assigned tickets | ✗ |
 | Reopen | ✓ | own teams | requester of the ticket | ✗ |
+| Change category | ✓ | own teams | own assigned tickets | ✗ |
+| Change team | ✓ | own teams | own assigned tickets | ✗ |
+| Change due date | ✓ | own teams | own assigned tickets | ✗ |
 | Team analytics | all | own teams | own workload only | own teams (read) |
 | Manage users (invite/change role/remove) | ✓ | ✓ (Agent/Viewer targets only) | ✗ | ✗ |
 | Manage teams/categories/projects/SLA | ✓ | ✗ | ✗ | ✗ |
@@ -744,8 +747,9 @@ an information-dense, form-and-table business application; this is what Razor Pa
     when a radio changes so the user can preview Light/Dark/System before saving. It is not the source of
     truth (the server renders the saved theme on every request, so there is no flash and no inline
     script), stores nothing, and the form works identically with JavaScript disabled.
-- CSS: locally hosted Bootstrap 5 + `flowops.css` with design tokens for status/priority/SLA colour
-  semantics. **No CDN links** (CSP, offline dev, availability). **No Node build step.**
+- CSS: a single hand-written `flowops.css` (design tokens for colour/spacing/radius, status/priority/SLA
+  colour semantics, dark-theme-first with a Light/System alternate per ADR-0031). No CSS framework.
+  **No CDN links** (CSP, offline dev, availability). **No Node build step.**
 - Charts: Chart.js, locally hosted, data supplied as a JSON payload from the PageModel. Maximum four
   charts on the dashboard, each answering a named question.
 
@@ -991,20 +995,23 @@ Multi-stage, and nothing more clever than it needs to be.
 ## 18. CI/CD & deployment
 
 ```
-GitHub → Actions (restore → build → test → vulnerability scan → container build)
-       → GHCR → Render (Docker) → Neon PostgreSQL
+GitHub → Actions (ci.yml: restore → build → test → vulnerability scan → local container build)
+Render → dashboard-configured to build directly from the repo's Dockerfile → Neon PostgreSQL
 ```
 
 **`ci.yml`** on every push and PR: restore · build with warnings as errors · `dotnet format --verify-no-changes`
 · `dotnet test` (Testcontainers needs Docker — the Ubuntu runner has it) · `dotnet list package --vulnerable --include-transitive`
-· build the container image (proves the Dockerfile works on every commit).
+· build the container image locally (proves the Dockerfile works on every commit; not pushed anywhere).
 
-**`deploy.yml`** on `main` only, after CI passes: push image to GHCR · trigger the Render deploy hook ·
-**poll `/health` until healthy or fail after a timeout** · report the deployed commit SHA.
+**There is no `deploy.yml` and no GHCR step.** Render is connected directly to this GitHub repo and,
+on every push to `main`, builds the image itself from the repository's own `Dockerfile` (dashboard-managed
+Docker Command override: `render-start.sh`, since the Free tier has no Pre-Deploy Command — ADR-0014).
+Deployment is triggered by Render's own repo webhook, not by a GitHub Actions job. See `docs/deployment.md`
+for the exact dashboard configuration and required environment variables.
 
-> **A deployment is not successful because the workflow is green. It is successful when `/health`
-> returns healthy from the public URL.** The workflow must actually check, and Claude Code must show
-> the response before claiming success.
+> **A deployment is not successful because Render shows "Live." It is successful when `/health`
+> returns healthy from the public URL.** Claude Code must actually check this and show the response
+> before claiming success.
 
 **Environment separation:** Development (local, user-secrets, local Postgres in Docker) · Test (CI,
 ephemeral Testcontainers database) · Production (Render + Neon, env vars). No environment-specific
@@ -1187,7 +1194,7 @@ answer harder, the change is wrong.
 | How is SLA calculated? | `SlaPolicy` — one implementation, pure, unit-tested |
 | How is at-risk work detected? | `AttentionPolicy` + prefilter with a superset test |
 | How do tests isolate business behaviour? | Domain tests need no database; integration tests use real Postgres |
-| How is it deployed? | GitHub Actions → GHCR → Render → Neon, verified by `/health` |
+| How is it deployed? | Render builds directly from the repo's Dockerfile (dashboard-managed, no GHCR/deploy.yml) → Neon, verified by `/health` |
 | How could it evolve? | Module boundaries in §3.3; the deliberate non-decisions in the ADRs |
 
 ---

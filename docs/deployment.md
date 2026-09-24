@@ -311,6 +311,14 @@ Per CLAUDE.md §18: **a deployment is not successful because the workflow is gre
 successful once `/health` genuinely returns healthy from the public URL**, and that response must
 actually be shown, not assumed.
 
+### Keeping the free-tier instance warm
+
+Render's free tier spins the service down after ~15 minutes idle, so the next real visitor pays a
+cold-start delay. `.github/workflows/keep-alive.yml` curls the public `/health` endpoint on a
+10-minute schedule to prevent that. It only pings — it doesn't build, test, or deploy anything, and
+GitHub Actions cron on an otherwise-inactive repo can be delayed or occasionally skipped, so this
+reduces cold starts rather than guaranteeing zero.
+
 ### Environment summary
 
 | Environment | `ASPNETCORE_ENVIRONMENT` | Database | Demo seed |
