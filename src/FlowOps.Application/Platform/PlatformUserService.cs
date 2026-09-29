@@ -1,4 +1,5 @@
 using FlowOps.Application.Accounts;
+using FlowOps.Application.Demo;
 using FlowOps.Application.Organizations;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Accounts;
@@ -414,6 +415,12 @@ public sealed class PlatformUserService
             return PlatformMutationResult.Failed(
                 $"This user is the only Admin of: {string.Join(", ", blockedOrganizationNames)}. Assign another Admin there first.");
         }
+
+        // CLAUDE.md §14's demo-mode guard ("...by anyone including Admin") already covers
+        // self-service delete and organization-membership changes (AccountService,
+        // MembershipService) — this was the one mutation path that could still lock out a seeded
+        // demo persona, since a Platform Admin sits outside any single organization's own rules.
+        DemoProtectionPolicy.EnsureMutable(user);
 
         user.IsActive = false;
         user.LockoutEnabled = true;

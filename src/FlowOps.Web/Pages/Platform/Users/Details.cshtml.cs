@@ -1,3 +1,4 @@
+using FlowOps.Application.Demo;
 using FlowOps.Application.Platform;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -105,6 +106,11 @@ public sealed class DetailsModel : PageModel
         catch (PlatformAccessDeniedException)
         {
             return NotFound();
+        }
+        catch (DemoProtectedAccountException ex)
+        {
+            StatusMessage = ex.Message;
+            StatusIsError = true;
         }
 
         return await ReloadAsync(id, cancellationToken);

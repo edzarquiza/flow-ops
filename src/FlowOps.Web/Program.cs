@@ -4,6 +4,8 @@ using FlowOps.Application.Demo;
 using FlowOps.Application.Organizations;
 using FlowOps.Application.Tickets;
 using FlowOps.Domain.Attention;
+using FlowOps.Domain.Directory;
+using FlowOps.Domain.Organizations;
 using FlowOps.Infrastructure.Email;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
@@ -519,6 +521,105 @@ if (args.Length >= 2 && args[0] == "remove-organization-membership")
     await dbContext.SaveChangesAsync();
 
     cliLogger.LogInformation("Removed {Count} organization membership(s) for {Email}.", memberships.Count, email);
+    await app.DisposeAsync();
+    return 0;
+}
+
+// One-off recovery for a seeded demo persona whose row was removed from outside the application
+// (no application code path deletes an ApplicationUser row — see ADR-0016 and DemoProtectionPolicy;
+// this is only ever needed after an out-of-band action against the database directly). Deliberately
+// narrow: restores exactly one already-known DemoPersonas entry into the existing Demo Organization
+// created by DemoDataSeeder, using that same organization/teams — it is not a general "create a
+// user" backdoor and refuses to run against an arbitrary email or a database with no demo
+// organization at all (use full demo seeding for that).
+if (args.Length >= 2 && args[0] == "restore-demo-user")
+{
+    var email = args[1];
+    var cliLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowOps.Startup");
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+    var demoOptions = scope.ServiceProvider.GetRequiredService<DemoOptions>();
+
+    var persona = DemoPersonas.All.FirstOrDefault(p => string.Equals(p.Email, email, StringComparison.OrdinalIgnoreCase));
+    if (persona is null)
+    {
+        cliLogger.LogCritical("{Email} is not one of the known seeded demo persona emails; refusing to create an arbitrary account.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    if (await userManager.FindByEmailAsync(email) is not null)
+    {
+        cliLogger.LogCritical("{Email} already exists; nothing to restore.", email);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    if (string.IsNullOrWhiteSpace(demoOptions.PersonaPassword))
+    {
+        cliLogger.LogCritical("FlowOps:Demo:PersonaPassword must be set to restore a demo persona.");
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    var organization = await dbContext.Organizations.FirstOrDefaultAsync(o => o.Name == DemoDataSeeder.OrganizationName);
+    if (organization is null)
+    {
+        cliLogger.LogCritical("The demo organization does not exist; run full demo seeding instead of restoring a single user.");
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    var teams = await dbContext.Teams
+        .Where(t => t.OrganizationId == organization.Id && (t.Name == "Service Desk" || t.Name == "Application Support"))
+        .ToListAsync();
+    if (teams.Count != 2)
+    {
+        cliLogger.LogCritical("Expected the demo organization's two named teams (Service Desk, Application Support); found {Count}.", teams.Count);
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    var seedTime = TimeProvider.System.GetUtcNow();
+    var user = new ApplicationUser
+    {
+        UserName = persona.Email,
+        Email = persona.Email,
+        EmailConfirmed = true,
+        DisplayName = persona.DisplayName,
+        IsActive = true,
+        IsDemoProtected = true,
+        RegistrationApprovedAt = seedTime,
+    };
+
+    var createResult = await userManager.CreateAsync(user, demoOptions.PersonaPassword!);
+    if (!createResult.Succeeded)
+    {
+        cliLogger.LogCritical("Failed to create {Email}: {Errors}", email, string.Join("; ", createResult.Errors.Select(e => e.Description)));
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    var roleResult = await userManager.AddToRoleAsync(user, persona.Role.ToString());
+    if (!roleResult.Succeeded)
+    {
+        cliLogger.LogCritical("Failed to assign role {Role} to {Email}: {Errors}", persona.Role, email, string.Join("; ", roleResult.Errors.Select(e => e.Description)));
+        await app.DisposeAsync();
+        return 1;
+    }
+
+    dbContext.OrganizationMemberships.Add(new OrganizationMembership(0, organization.Id, user.Id, persona.Role, seedTime));
+
+    var isTeamManager = persona.Role == FlowOps.Domain.Tickets.UserRole.Manager;
+    foreach (var team in teams)
+    {
+        dbContext.TeamMembers.Add(new TeamMember(team.Id, user.Id, isTeamManager, seedTime));
+    }
+
+    await dbContext.SaveChangesAsync();
+
+    cliLogger.LogInformation("Restored demo persona {Email} ({DisplayName}, {Role}) into organization {OrganizationId}.", persona.Email, persona.DisplayName, persona.Role, organization.Id);
     await app.DisposeAsync();
     return 0;
 }

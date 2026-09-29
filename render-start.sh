@@ -24,6 +24,15 @@ if [ -n "$RESET_PASSWORD_EMAIL" ] && [ -n "$RESET_PASSWORD_VALUE" ]; then
     dotnet FlowOps.Web.dll reset-password "$RESET_PASSWORD_EMAIL" "$RESET_PASSWORD_VALUE" || true
 fi
 
+# Same one-off mechanism: restores a single seeded demo persona (Program.cs's own "restore-demo-user"
+# refuses anything but a known DemoPersonas email) if its row was ever removed from outside the
+# application. Set RESTORE_DEMO_USER_EMAIL, deploy once, confirm the log line, then delete the
+# variable — safe to leave in accidentally (it refuses to run if the user already exists), but there
+# is no reason to keep it set once the account is back.
+if [ -n "$RESTORE_DEMO_USER_EMAIL" ]; then
+    dotnet FlowOps.Web.dll restore-demo-user "$RESTORE_DEMO_USER_EMAIL" || true
+fi
+
 # Same mechanism, for the ADR-0024 bootstrap gap: a self-registered account starts Pending, and
 # an account with no platform-admin grant can't approve anyone (including itself). Set
 # BOOTSTRAP_ADMIN_EMAIL in Render's Environment tab to an already-registered account's email —
