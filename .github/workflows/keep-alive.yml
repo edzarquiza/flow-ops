@@ -18,8 +18,17 @@ jobs:
     steps:
       - name: Curl the deployed health endpoint
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://flow-ops.onrender.com/health)
+          # --max-time 90: a genuine Render free-tier cold start has been observed taking ~49s —
+          # 30s was too short and gave up before the ping could actually do its one job (waking
+          # the instance). `|| status=000` is required: GitHub Actions runs this script under
+          # `set -e`, and `status=$(curl ...)` with a failing/timed-out curl aborts the script
+          # right there — before the warning logic below ever runs — turning an expected
+          # "still cold-starting" ping into a hard job failure (and an email) instead of the
+          # intended quiet warning. This step must never fail the job on its own; only an actual
+          # workflow-syntax error should.
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://flow-ops.onrender.com/health || echo 000)
           echo "Health endpoint responded with HTTP $status"
           if [ "$status" -ne 200 ]; then
-            echo "::warning::Health check did not return 200 (got $status) — instance may be cold-starting or down."
+            echo "::warning::Health check did not return 200 (got $status) — instance may still be cold-starting."
           fi
+          exit 0
