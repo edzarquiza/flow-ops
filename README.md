@@ -23,7 +23,7 @@ what actually needs a human's attention right now — with the evidence behind t
 inline, not hidden behind an opaque flag.
 
 **This isn't just another CRUD ticketing app.** The combination of a deterministic, explainable
-attention engine, tenant-aware authorization, and a modular-monolith architecture backed by 1,373
+attention engine, tenant-aware authorization, and a modular-monolith architecture backed by 1,391
 passing tests and a real deployment is the point of this project.
 
 ## Why I built it
@@ -51,6 +51,8 @@ actually deploying it rather than stopping at `dotnet run` on a laptop.
 - **Transactional email integration** — invitations, assignment, and comment notifications
 - **In-app Guide** — a static, read-only product guide reachable from the sidebar
 - **Operational dashboard** — volume, SLA performance, and attention in one view
+- **Read-only JSON API with Swagger UI** — tickets, attention and workload at `/api/v1`, documented at `/swagger`,
+  behind the same login and the same role and tenant rules as the pages
 
 ## Product walkthrough
 
@@ -167,19 +169,19 @@ read-only access to organization-wide analytics with no write path at all.
 
 ## Testing
 
-**1,373 tests, across four layers, all passing as of this README:**
+**1,391 tests, across four layers, all passing as of this README:**
 
 | Layer | Count | What it proves |
 |---|---:|---|
 | Domain | 333 | Aggregate/policy behavior — no database needed |
 | Application | 650 | Service + authorization behavior against real PostgreSQL (Testcontainers) |
-| Web | 355 | Page rendering, authorization boundaries, form behavior |
-| E2E | 35 | Real Chromium browser — actual layout, actual overflow, actual theme application |
+| Web | 371 | Page rendering, authorization boundaries, form behavior, and the JSON API (including that one organization can never read another's tickets) |
+| E2E | 37 | Real Chromium browser — actual layout, actual overflow, actual theme application, and Swagger UI rendering under the security headers |
 
-Separately, a second CI job (`api-checks`) starts the built container and runs 34 black-box HTTP checks
+Separately, a second CI job (`api-checks`) starts the built container and runs 53 black-box HTTP checks
 against it — health, login, role-based page access, authorization redirects, a ticket create round trip,
-and the login rate limit. It runs only after the suite above passes, and a failing check fails the build.
-Those checks are not part of the 1,373 count.
+the read-only JSON API and its Swagger page, and the login rate limit. It runs only after the suite above passes, and a failing check fails the build.
+Those checks are not part of the 1,391 count.
 
 ## Deployment
 

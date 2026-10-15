@@ -755,32 +755,34 @@ an information-dense, form-and-table business application; this is what Razor Pa
 
 ### 11.2 REST API
 
-Scope: `/api/v1`, JSON, **cookie authentication** (same origin, same app). No JWT — there is no
-third-party consumer and no separate client, so token lifecycle management would be pure cost
-(ADR-0008). Revisit in Project 8, which is where an API product belongs.
-
-Build only endpoints with a real consumer or a real integration story:
+**Implemented (ADR-0037): a small, read-only JSON API.** Scope `/api/v1`, **cookie authentication** (same
+origin, same app — the login cookie, no JWT, ADR-0008). An unauthenticated call is `401`, not a redirect.
+It lives in `src/FlowOps.Web/Api/ApiEndpoints.cs` and calls the same Application services the pages
+call, so every role and tenant rule is the existing service's own.
 
 ```
-GET    /api/v1/tickets                 filtered, paginated
-GET    /api/v1/tickets/{reference}
-POST   /api/v1/tickets
-POST   /api/v1/tickets/{ref}/assign
-POST   /api/v1/tickets/{ref}/status    { status, reason?, resolutionCode?, resolutionNotes? }
-POST   /api/v1/tickets/{ref}/comments
-GET    /api/v1/attention               ranked at-risk work for the caller's scope
-GET    /api/v1/analytics/summary       dashboard KPIs
-GET    /api/v1/teams/{id}/workload
+GET    /api/v1/tickets            work queue, paged (?page, search, status, priority, assignedToMe, includeFinished)
+GET    /api/v1/tickets/{id}       one ticket (404 when missing OR not visible to the caller)
+GET    /api/v1/attention          ranked at-risk work, each item with its signals
+GET    /api/v1/workload           team workload summary + per-team rows (?workType); an Agent gets their own only
 ```
 
-Rules: DTOs in / DTOs out — **entities never cross the API boundary**. Correct status codes
-(201 + `Location` on create, 204 on state change with no body, 400 validation, 403 authorization,
-404 not found, 409 concurrency/invalid transition, 422 domain rule violation). Same
-`TicketAccessPolicy` as the UI. Anti-forgery does not apply to the API; cookie auth means
-`SameSite=Strict` plus an explicit CORS policy that allows no cross-origin callers.
+OpenAPI document at `/openapi/v1.json` and Swagger UI at `/swagger` (built-in `Microsoft.AspNetCore.OpenApi`
+plus `Swashbuckle.AspNetCore.SwaggerUI`, which only renders the document). Both are **anonymous
+documentation** — a deliberate deviation from the original "requires authentication" idea: they expose
+endpoint shapes, no data, and the endpoints they describe still require the cookie. Swagger UI needs inline
+script/style, so the Content-Security-Policy is relaxed for the `/swagger` path only.
 
-OpenAPI via Swashbuckle, exposed at `/api/docs` in all environments (portfolio value), requiring
-authentication and never exposing schemas of Identity tables.
+**Not implemented — planned only.** Write endpoints (`POST /api/v1/tickets`, assign, status, comments),
+`GET /api/v1/analytics/summary`, and per-team workload by id. Do not describe these as existing. Build an
+endpoint only with a real consumer or a real integration story.
+
+Rules (apply to any endpoint added later): DTOs in / DTOs out — **entities never cross the API boundary**.
+Correct status codes (201 + `Location` on create, 204 on state change with no body, 400 validation, 403
+authorization, 404 not found, 409 concurrency/invalid transition, 422 domain rule violation). Same
+`TicketAccessPolicy` as the UI. Anti-forgery does not apply to the API; cookie auth means `SameSite=Strict`,
+and no CORS policy is configured, so no cross-origin callers. Today's errors are plain status codes;
+`ProblemDetails` (§11.3) is not yet implemented for the API.
 
 ### 11.3 Error handling
 
@@ -1005,8 +1007,8 @@ Render → dashboard-configured to build directly from the repo's Dockerfile →
 
 **`api-checks`** (second job in `ci.yml`, runs only after the job above passes): starts the real container
 with `docker compose`, waits for `/health`, then runs `tests/FlowOps.ApiChecks` — black-box HTTP checks
-(health, login, role-based page access, authorization redirects, a ticket create round trip, the login rate
-limit). It is deliberately outside `FlowOps.sln` because it needs a running app. A failing check fails the job;
+(health, login, role-based page access, authorization redirects, a ticket create round trip, the read-only
+JSON API and its Swagger page, the login rate limit). It is deliberately outside `FlowOps.sln` because it needs a running app. A failing check fails the job;
 Render's Auto-Deploy set to "After CI Checks Pass" is what makes that block a release.
 
 **There is no `deploy.yml` and no GHCR step.** Render is connected directly to this GitHub repo and,

@@ -9,6 +9,7 @@ using FlowOps.Domain.Organizations;
 using FlowOps.Infrastructure.Email;
 using FlowOps.Infrastructure.Identity;
 using FlowOps.Infrastructure.Persistence;
+using FlowOps.Web.Api;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -129,6 +130,37 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
     options.LoginPath = "/Account/Login";
     options.AccessDeniedPath = "/Account/AccessDenied";
+
+    // ADR-0037: callers of /api/v1 (scripts, Swagger UI) cannot do anything useful with a redirect
+    // to an HTML login page — they need the status code. Everything else keeps the standard
+    // redirect behavior exactly as before.
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        }
+        else
+        {
+            context.Response.Redirect(context.RedirectUri);
+        }
+
+        return Task.CompletedTask;
+    };
+
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        }
+        else
+        {
+            context.Response.Redirect(context.RedirectUri);
+        }
+
+        return Task.CompletedTask;
+    };
 });
 
 // Phase 15 / ADR-0013: the antiforgery cookie's own SecurePolicy is a *separate* setting from the
@@ -325,6 +357,36 @@ builder.Services.AddScoped<AnalyticsQueryService>();
 
 // ADR-0020/ADR-0026 first-run workspace setup checklist (read + skip mutations).
 builder.Services.AddScoped<WorkspaceSetupService>();
+
+// ADR-0037: the read-only /api/v1 surface. Enums travel as their names ("InProgress", "Critical"),
+// the same words the UI shows, rather than integers a caller would have to look up. This configures
+// minimal-API JSON only — Razor Pages' own JsonResult (the pending-approval status) uses separate
+// MVC options and is untouched.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
+// A query value that cannot be bound (e.g. ?status=bogus) is a caller error, 400 — in every
+// environment. By default minimal APIs THROW on a binding failure in Development-like hosts, which
+// the global exception handler would turn into a 500 that production never produces.
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
+
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.ShouldInclude = description => description.RelativePath?.StartsWith("api/", StringComparison.OrdinalIgnoreCase) == true;
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new()
+        {
+            Title = "FlowOps API",
+            Version = "v1",
+            Description = "Read-only access to the work queue, ticket detail, attention (at-risk) list and team "
+                + "workload. Uses the same login cookie as the web app: sign in at /Account/Login first, then "
+                + "call these endpoints from the same browser. Every result is limited to what the signed-in "
+                + "user's role and organization allow.",
+        };
+        return Task.CompletedTask;
+    });
+});
 
 builder.Services.AddRazorPages(options =>
 {
@@ -677,8 +739,13 @@ app.Use(async (context, next) =>
         // files under wwwroot/img; the JS-enhanced dropdown trigger itself needs no image at all
         // (a drawn CSS border-corner instead) — this only serves the plain <select> a JS-disabled
         // visitor still sees.
-        headers["Content-Security-Policy"] =
-            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+        // ADR-0037: Swagger UI's own page ships an inline <script>/<style> block and data: icons,
+        // all of which the policy above would block. Loosened for the /swagger path ONLY — a static,
+        // anonymous documentation page that renders no user data — with every other response,
+        // including the API itself, keeping the strict policy.
+        headers["Content-Security-Policy"] = context.Request.Path.StartsWithSegments("/swagger")
+            ? "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+            : "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
         return Task.CompletedTask;
     });
 
@@ -722,7 +789,18 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// ADR-0037: the OpenAPI document (/openapi/v1.json) and Swagger UI (/swagger) that renders it. Both
+// are anonymous documentation; the endpoints they describe still require the login cookie.
+app.MapOpenApi();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "FlowOps API v1");
+    options.RoutePrefix = "swagger";
+    options.DocumentTitle = "FlowOps API";
+});
+
 app.MapRazorPages();
+app.MapFlowOpsApi();
 
 // Liveness: the process is up. No dependency checks run here — a database outage should not
 // make the liveness probe fail and trigger an unnecessary restart.

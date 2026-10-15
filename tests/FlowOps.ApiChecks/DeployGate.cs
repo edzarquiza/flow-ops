@@ -129,6 +129,121 @@ public sealed partial class DeployGate : IClassFixture<ApiFixture>
     [Fact]
     public async Task Admin_can_create_a_ticket_and_open_it()
     {
+        var (detailsPath, title, _) = await CreateTicketAsAdminAsync();
+
+        var details = await _api.Admin.GetBodyAsync(detailsPath);
+        Assert.Contains(title, details, StringComparison.Ordinal);
+    }
+
+    // ---- JSON API (/api/v1) -------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("/api/v1/tickets")]
+    [InlineData("/api/v1/tickets/1")]
+    [InlineData("/api/v1/attention")]
+    [InlineData("/api/v1/workload")]
+    public async Task Api_rejects_an_anonymous_caller_with_401(string path)
+    {
+        using var response = await _api.Anonymous.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    public static TheoryData<string, string> ApiReads()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var role in new[] { "Admin", "Agent", "Viewer" })
+        {
+            foreach (var path in new[] { "/api/v1/tickets", "/api/v1/attention", "/api/v1/workload" })
+            {
+                data.Add(role, path);
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(ApiReads))]
+    public async Task Signed_in_role_can_read_api_endpoint_as_json(string role, string path)
+    {
+        using var response = await _api.For(role).GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Api_ticket_list_is_paged_json()
+    {
+        using var json = await GetJsonAsync(_api.Admin, "/api/v1/tickets");
+
+        Assert.True(json.RootElement.GetProperty("totalCount").GetInt32() >= 1);
+        Assert.Equal(1, json.RootElement.GetProperty("pageNumber").GetInt32());
+        Assert.NotEmpty(json.RootElement.GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Api_workload_scope_follows_the_role()
+    {
+        using var admin = await GetJsonAsync(_api.Admin, "/api/v1/workload");
+        using var agent = await GetJsonAsync(_api.Agent, "/api/v1/workload");
+
+        Assert.False(admin.RootElement.GetProperty("ownWorkloadOnly").GetBoolean());
+        Assert.NotEmpty(admin.RootElement.GetProperty("teams").EnumerateArray());
+        Assert.True(agent.RootElement.GetProperty("ownWorkloadOnly").GetBoolean());
+        Assert.Empty(agent.RootElement.GetProperty("teams").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Api_unknown_ticket_is_404()
+    {
+        using var response = await _api.Admin.GetAsync("/api/v1/tickets/999999");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Api_rejects_an_invalid_filter_value_with_400()
+    {
+        using var response = await _api.Admin.GetAsync("/api/v1/tickets?status=not-a-status");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Ticket_created_on_the_site_is_readable_through_the_api()
+    {
+        var (_, title, id) = await CreateTicketAsAdminAsync();
+
+        using var json = await GetJsonAsync(_api.Admin, $"/api/v1/tickets/{id}");
+
+        Assert.Equal(title, json.RootElement.GetProperty("title").GetString());
+        Assert.Equal("Incident", json.RootElement.GetProperty("workType").GetString());
+        Assert.Equal("Medium", json.RootElement.GetProperty("priority").GetString());
+    }
+
+    [Fact]
+    public async Task Openapi_document_and_swagger_ui_are_served()
+    {
+        using var document = await GetJsonAsync(_api.Anonymous, "/openapi/v1.json");
+        var paths = document.RootElement.GetProperty("paths").EnumerateObject().Select(p => p.Name).Order().ToList();
+        Assert.Equal(["/api/v1/attention", "/api/v1/tickets", "/api/v1/tickets/{id}", "/api/v1/workload"], paths);
+
+        using var swagger = await _api.Anonymous.GetAsync("/swagger/index.html");
+        Assert.Equal(HttpStatusCode.OK, swagger.StatusCode);
+    }
+
+    private static async Task<JsonDocument> GetJsonAsync(ApiSession session, string path)
+    {
+        using var response = await session.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>Creates a ticket as the Admin through the real form and returns where it landed.</summary>
+    private async Task<(string DetailsPath, string Title, int Id)> CreateTicketAsAdminAsync()
+    {
         var createPage = await _api.Admin.GetBodyAsync("/Tickets/Create");
         var categoryId = FirstCategoryId(createPage)
             ?? throw new InvalidOperationException("No category option found on /Tickets/Create.");
@@ -148,8 +263,8 @@ public sealed partial class DeployGate : IClassFixture<ApiFixture>
             ?? throw new InvalidOperationException("Create did not redirect anywhere.");
         Assert.StartsWith("/Tickets/Details", detailsPath, StringComparison.Ordinal);
 
-        var details = await _api.Admin.GetBodyAsync(detailsPath);
-        Assert.Contains(title, details, StringComparison.Ordinal);
+        var id = int.Parse(IntegerPattern().Match(detailsPath).Value, System.Globalization.CultureInfo.InvariantCulture);
+        return (detailsPath, title, id);
     }
 
     // ---- Login hardening ----------------------------------------------------------------------
@@ -200,4 +315,7 @@ public sealed partial class DeployGate : IClassFixture<ApiFixture>
 
     [GeneratedRegex("<option[^>]*value=\"(\\d+)\"")]
     private static partial Regex OptionValuePattern();
+
+    [GeneratedRegex("\\d+")]
+    private static partial Regex IntegerPattern();
 }

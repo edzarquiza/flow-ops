@@ -316,8 +316,8 @@ actually be shown, not assumed.
 `ci.yml` has two jobs. The first builds and runs the full test suite. The second, `api-checks`, runs
 only if the first passes: it starts the real container with `docker compose`, waits for `/health`, and
 runs `tests/FlowOps.ApiChecks` — black-box HTTP checks against the running app (health, login, which
-roles can open which pages, authorization redirects to Access Denied, a ticket create round trip, and the
-login rate limit). Any failing check fails the job.
+roles can open which pages, authorization redirects to Access Denied, a ticket create round trip, the
+read-only JSON API and its Swagger page, and the login rate limit). Any failing check fails the job.
 
 A red job does not stop Render by itself, because Render deploys from the repository on its own. To make
 a failed check block a release, set the service's **Auto-Deploy** option in the Render dashboard to

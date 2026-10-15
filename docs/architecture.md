@@ -24,7 +24,7 @@ being independently testable with no I/O.
 
 `FlowOps.Application` is permitted to reference `FlowOps.Infrastructure` directly (it injects
 `FlowOpsDbContext`) — this is the layered-not-onion decision recorded in ADR-0002. `FlowOps.Web`
-(Razor Pages + API controllers) calls only `FlowOps.Application` services; it never touches EF Core
+(Razor Pages + a small read-only minimal-API group, ADR-0037) calls only `FlowOps.Application` services; it never touches EF Core
 or the domain aggregate directly.
 
 ## 2. Domain concept mapping

@@ -33,6 +33,10 @@
     <!-- CLAUDE.md §12: "Data protection keys persisted to the database (PersistKeysToDbContext)."
          Without this, every process restart invalidates every cookie and antiforgery token. -->
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.12" />
+    <!-- Read-only /api/v1 documentation: the first-party OpenAPI document generator, plus Swagger UI
+         (which only renders a document, it does not generate one) served at /swagger. -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.3.0" />
   </ItemGroup>
 
 </Project>
