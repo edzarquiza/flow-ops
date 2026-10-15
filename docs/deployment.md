@@ -311,6 +311,24 @@ Per CLAUDE.md §18: **a deployment is not successful because the workflow is gre
 successful once `/health` genuinely returns healthy from the public URL**, and that response must
 actually be shown, not assumed.
 
+### CI gate for deployments
+
+`ci.yml` has two jobs. The first builds and runs the full test suite. The second, `api-checks`, runs
+only if the first passes: it starts the real container with `docker compose`, waits for `/health`, and
+runs `tests/FlowOps.ApiChecks` — black-box HTTP checks against the running app (health, login, which
+roles can open which pages, authorization redirects to Access Denied, a ticket create round trip, and the
+login rate limit). Any failing check fails the job.
+
+A red job does not stop Render by itself, because Render deploys from the repository on its own. To make
+a failed check block a release, set the service's **Auto-Deploy** option in the Render dashboard to
+**After CI Checks Pass** (Settings → Build & Deploy). That is a dashboard setting, not something in the
+repository.
+
+To run the checks yourself: `docker compose up -d`, then `dotnet test tests/FlowOps.ApiChecks`. Set
+`FLOWOPS_BASE_URL` (and `FLOWOPS_DEMO_PASSWORD`) to point at another instance. The suite creates one
+ticket per run and exercises the login rate limit (5 attempts a minute), so run it against local or CI
+stacks, not the public demo.
+
 ### Keeping the free-tier instance warm
 
 Render's free tier spins the service down after ~15 minutes idle, so the next real visitor pays a

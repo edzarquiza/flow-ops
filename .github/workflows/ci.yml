@@ -1,8 +1,10 @@
 name: FlowOps CI
 
-# CLAUDE.md §18: restore -> build -> test -> vulnerability scan -> container build, on every push
-# and PR against main. No deployment here — Render is connected directly to this repo and builds
-# the Dockerfile itself (dashboard-managed); there is no deploy.yml.
+# CLAUDE.md §18: restore -> build -> test -> vulnerability scan -> container build, then (second
+# job) API checks against the running container, on every push and PR against main. No deployment
+# here — Render is connected directly to this repo and builds the Dockerfile itself
+# (dashboard-managed); there is no deploy.yml. Render's Auto-Deploy "After CI Checks Pass" setting
+# is what makes a failed job here block a release.
 on:
   push:
     branches: [main]
@@ -79,3 +81,54 @@ jobs:
       # Dockerfile itself; there is no separate deploy workflow).
       - name: Build container image
         run: docker build -t flowops-web:ci .
+
+  # The deploy gate: real HTTP calls against the real container, run only after the build/test job
+  # above has passed. Starts the same docker-compose stack documented for local development (app +
+  # PostgreSQL, demo data seeded on first start), then runs tests/FlowOps.ApiChecks - health,
+  # login, role-based page access, authorization boundaries, a ticket create round-trip, and the
+  # login rate limit. Any failing check fails this job; with Render's Auto-Deploy set to "After CI
+  # Checks Pass", that is what stops a broken build from being deployed.
+  api-checks:
+    name: API checks against the built container
+    runs-on: ubuntu-latest
+    needs: ci
+
+    env:
+      FLOWOPS_BASE_URL: http://localhost:8080
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Start the app and database
+        run: docker compose up -d --build
+
+      # The container applies migrations and seeds the demo organization before it starts
+      # listening, so /health only answers once that has finished. Poll with a generous ceiling.
+      - name: Wait for the app to be healthy
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$FLOWOPS_BASE_URL/health" > /dev/null 2>&1; then
+              echo "App healthy after ~$((attempt * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "App did not become healthy within 300s"
+          exit 1
+
+      - name: Run API checks
+        run: dotnet test tests/FlowOps.ApiChecks/FlowOps.ApiChecks.csproj --logger "console;verbosity=normal"
+
+      - name: Show app logs
+        if: failure()
+        run: docker compose logs app
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Black-box HTTP checks against a RUNNING FlowOps instance (the built container in CI, or any
+    base URL you point it at). Deliberately NOT in FlowOps.sln: it needs a live app, so it must
+    never be picked up by `dotnet test FlowOps.sln` (which stays 100% self-contained via
+    Testcontainers). The `api-checks` job in .github/workflows/ci.yml starts the app with
+    docker compose and runs this project; a failing check fails that job.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlowOps.ApiChecks</RootNamespace>
+    <AssemblyName>FlowOps.ApiChecks</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

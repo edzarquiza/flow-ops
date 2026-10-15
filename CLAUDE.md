@@ -1003,6 +1003,12 @@ Render → dashboard-configured to build directly from the repo's Dockerfile →
 · `dotnet test` (Testcontainers needs Docker — the Ubuntu runner has it) · `dotnet list package --vulnerable --include-transitive`
 · build the container image locally (proves the Dockerfile works on every commit; not pushed anywhere).
 
+**`api-checks`** (second job in `ci.yml`, runs only after the job above passes): starts the real container
+with `docker compose`, waits for `/health`, then runs `tests/FlowOps.ApiChecks` — black-box HTTP checks
+(health, login, role-based page access, authorization redirects, a ticket create round trip, the login rate
+limit). It is deliberately outside `FlowOps.sln` because it needs a running app. A failing check fails the job;
+Render's Auto-Deploy set to "After CI Checks Pass" is what makes that block a release.
+
 **There is no `deploy.yml` and no GHCR step.** Render is connected directly to this GitHub repo and,
 on every push to `main`, builds the image itself from the repository's own `Dockerfile` (dashboard-managed
 Docker Command override: `render-start.sh`, since the Free tier has no Pre-Deploy Command — ADR-0014).

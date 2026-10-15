@@ -176,6 +176,11 @@ read-only access to organization-wide analytics with no write path at all.
 | Web | 355 | Page rendering, authorization boundaries, form behavior |
 | E2E | 35 | Real Chromium browser — actual layout, actual overflow, actual theme application |
 
+Separately, a second CI job (`api-checks`) starts the built container and runs 34 black-box HTTP checks
+against it — health, login, role-based page access, authorization redirects, a ticket create round trip,
+and the login rate limit. It runs only after the suite above passes, and a failing check fails the build.
+Those checks are not part of the 1,373 count.
+
 ## Deployment
 
 ```
