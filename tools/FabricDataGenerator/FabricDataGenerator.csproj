@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone tool for the separate "FlowOps Service Operations Analytics Platform" Fabric
+    portfolio project. Deliberately NOT added to FlowOps.sln: it must never affect `dotnet build`
+    or `dotnet test` on the real application, and it is not part of the application itself.
+
+    It references FlowOps.Infrastructure (which pulls in FlowOps.Domain transitively) purely to
+    reuse the REAL EF Core migrations and the REAL Ticket/Team/Category/... domain types — every
+    row this tool produces is created by calling the actual domain methods (Ticket.Create,
+    Assign, Resolve, ...), never a hand-rolled INSERT. It runs against a throwaway Testcontainers
+    PostgreSQL instance (destroyed at the end) and never touches flowops_dev or any Neon database.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FabricDataGenerator</RootNamespace>
+    <AssemblyName>FabricDataGenerator</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same version FlowOps.Application.Tests already pins, to avoid a divergent EF Core patch
+         version being resolved transitively. -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned to match FlowOps.Infrastructure exactly, the same reason FlowOps.Application.Tests
+         pins them: Testcontainers.PostgreSql 4.15.0 otherwise resolves a different transitive
+         Microsoft.EntityFrameworkCore.* patch version, producing an MSB3277 warning. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FlowOps.Infrastructure\FlowOps.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
