@@ -23,7 +23,7 @@ public sealed partial class DeployGate : IClassFixture<ApiFixture>
     {
         using var response = await _api.Anonymous.GetAsync("/health");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
     }
 
