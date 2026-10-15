@@ -5,6 +5,8 @@ engine — built as a tested and deployed ASP.NET Core modular monolith.
 
 `ASP.NET Core 10` · `PostgreSQL 17` · `EF Core` · `Razor Pages` · `Docker` · `Render`
 
+**Live demo:** [flow-ops.onrender.com](https://flow-ops.onrender.com) — sign-in details for the demo accounts are on the login page. API docs: [/swagger](https://flow-ops.onrender.com/swagger) (sign in first, then use "Try it out"). Free-tier hosting, so the first load after a quiet spell can take up to a minute.
+
 ![FlowOps operations dashboard](docs/images/dashboard.png)
 
 ---
@@ -218,7 +220,7 @@ notifications.
 | Two-layer, tenant-aware authorization | A page and a service both independently enforce the same rule — no page can bypass it by skipping a check |
 | Real-browser E2E tests alongside unit/integration tests | Some defects (layout overflow, theme flashing) are only visible to an actual browser |
 
-Full history: [`docs/adr/`](docs/adr/) — 30 accepted architecture decision records, including
+Full history: [`docs/adr/`](docs/adr/) — 35 accepted architecture decision records, including
 several deliberate non-decisions (e.g. [no background scheduler](docs/adr/0006-no-background-scheduler.md)).
 
 ## Technology stack
